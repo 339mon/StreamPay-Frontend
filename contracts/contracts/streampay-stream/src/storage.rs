@@ -6,7 +6,8 @@
 //! - **Instance storage** holds singletons: `Admin`, `Paused`, the
 //!   stream counter, and the per-token allowlist. These keys live for
 //!   the lifetime of the contract instance and are extended together.
-//! - **Persistent storage** holds per-stream rows keyed by stream id.
+//! - **Persistent storage** holds per-stream rows keyed by stream id,
+//!   and per-stream withdrawer allowlists keyed by stream id.
 //!   These rows are TTL-extended every time the stream is read or
 //!   written so an active stream cannot expire mid-flight.
 //!
@@ -14,7 +15,7 @@
 //! plus a generous recovery buffer; keep them in sync with the
 //! operational runbook.
 
-use soroban_sdk::{contracttype, Address, Env};
+use soroban_sdk::{contracttype, Address, Env, Vec};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
@@ -47,12 +48,17 @@ pub struct Stream {
 
 #[derive(Clone)]
 #[contracttype]
-enum DataKey {
+pub(crate) enum DataKey {
     Admin,
     Paused,
     StreamCount,
     Stream(u64),
     TokenAllowed(Address),
+    NextStreamId,
+    /// Per-stream allowlist of addresses authorized to withdraw on behalf of
+    /// the recipient. Stored in persistent storage alongside the stream row
+    /// and TTL-extended together with it.
+    WithdrawerAllowlist(u64),
 }
 
 /// Threshold and absolute target values are expressed in ledger sequences.
@@ -96,6 +102,10 @@ fn extend_instance_ttl(env: &Env, key: &DataKey) {
 
 fn extend_stream_ttl(env: &Env, stream_id: u64) {
     extend_persistent_ttl(env, &DataKey::Stream(stream_id));
+}
+
+fn extend_withdrawer_allowlist_ttl(env: &Env, stream_id: u64) {
+    extend_persistent_ttl(env, &DataKey::WithdrawerAllowlist(stream_id));
 }
 
 fn extend_admin_key_ttl(env: &Env) {
@@ -182,4 +192,83 @@ pub fn get_stream(env: &Env, stream_id: u64) -> Option<Stream> {
         extend_stream_ttl(env, stream_id);
     }
     stream
+}
+
+// ── Withdrawer allowlist storage ─────────────────────────────────────────────
+
+/// Returns the withdrawer allowlist for a stream.
+///
+/// Returns an empty `Vec` if no allowlist has been set for the stream.
+pub fn get_withdrawer_allowlist(env: &Env, stream_id: u64) -> Vec<Address> {
+    let key = DataKey::WithdrawerAllowlist(stream_id);
+    let list = env
+        .storage()
+        .persistent()
+        .get::<DataKey, Vec<Address>>(&key)
+        .unwrap_or_else(|| Vec::new(env));
+    if !list.is_empty() {
+        extend_withdrawer_allowlist_ttl(env, stream_id);
+    }
+    list
+}
+
+/// Adds `withdrawer` to the per-stream allowlist if not already present.
+///
+/// The allowlist is stored in persistent storage alongside the stream row
+/// and shares the same TTL extension policy.
+pub fn add_withdrawer(env: &Env, stream_id: u64, withdrawer: &Address) {
+    let key = DataKey::WithdrawerAllowlist(stream_id);
+    let mut list: Vec<Address> = env
+        .storage()
+        .persistent()
+        .get::<DataKey, Vec<Address>>(&key)
+        .unwrap_or_else(|| Vec::new(env));
+
+    // Idempotent: do not add duplicates.
+    for existing in list.iter() {
+        if existing == *withdrawer {
+            extend_withdrawer_allowlist_ttl(env, stream_id);
+            return;
+        }
+    }
+
+    list.push_back(withdrawer.clone());
+    env.storage().persistent().set(&key, &list);
+    extend_withdrawer_allowlist_ttl(env, stream_id);
+}
+
+/// Removes `withdrawer` from the per-stream allowlist.
+///
+/// This is a no-op if `withdrawer` is not currently in the allowlist.
+pub fn remove_withdrawer(env: &Env, stream_id: u64, withdrawer: &Address) {
+    let key = DataKey::WithdrawerAllowlist(stream_id);
+    let list: Vec<Address> = match env
+        .storage()
+        .persistent()
+        .get::<DataKey, Vec<Address>>(&key)
+    {
+        Some(l) => l,
+        None => return,
+    };
+
+    let mut new_list: Vec<Address> = Vec::new(env);
+    for existing in list.iter() {
+        if existing != *withdrawer {
+            new_list.push_back(existing);
+        }
+    }
+
+    env.storage().persistent().set(&key, &new_list);
+    extend_withdrawer_allowlist_ttl(env, stream_id);
+}
+
+/// Returns `true` if `caller` is present in the per-stream withdrawer allowlist.
+pub fn is_withdrawer_allowed(env: &Env, stream_id: u64, caller: &Address) -> bool {
+    let list = get_withdrawer_allowlist(env, stream_id);
+    for existing in list.iter() {
+        if existing == *caller {
+            return true;
+        }
+    }
+    false
 }

@@ -112,7 +112,7 @@ proptest! {
         // Withdraw a fraction of the withdrawable amount
         let withdraw_amount = withdrawable_before / withdraw_fraction as i128;
         if withdraw_amount > 0 {
-            let _ = client.withdraw(&stream_id, &withdraw_amount);
+            let _ = client.withdraw(&recipient, &stream_id, &withdraw_amount);
 
             let stream_after = client.get_stream(&stream_id);
             let withdrawable_after = client.withdrawable(&stream_id);
