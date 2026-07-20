@@ -347,6 +347,7 @@ Quick links to the long-form docs under [docs/](docs/):
 - [Network security](docs/network-security.md)
 - [Privacy](docs/PRIVACY.md)
 - [Reconciliation runbook](docs/reconciliation-runbook.md)
+- [Initial render performance](docs/performance-initial-render.md)
 
 See also [CONTRIBUTING.md](CONTRIBUTING.md) and
 [SECURITY.md](SECURITY.md) in the repository root.

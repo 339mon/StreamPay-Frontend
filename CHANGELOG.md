@@ -8,6 +8,27 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
 
 ## [Unreleased]
 
+### Performance (issue #85 — reduce initial render time)
+- **SplashScreen delay reduced**: mandatory display time cut from 2 400 ms to
+  400 ms and fade-out from 600 ms to 300 ms, removing ~2.3 s of forced
+  blocking before the app becomes interactive.
+- **SplashScreen lazy-loaded**: the branded overlay is now loaded via
+  `next/dynamic` with `ssr: false`, removing it from the critical render path
+  entirely. First paint of the actual page content no longer waits for the
+  splash bundle.
+- **Home page converted to React Server Component**: `app/page.tsx` no longer
+  carries `"use client"`. The `localStorage`-dependent onboarding state is
+  isolated in a new `OnboardingManager` client component, keeping the bulk of
+  the page as a zero-JS static render.
+- **Unused import removed**: `StreamPrimer` was imported but never rendered in
+  `app/page.tsx`; the import has been removed to reduce the client bundle.
+- **Image optimisation enabled**: `next.config.ts` now specifies
+  `images.formats: ["image/avif", "image/webp"]` so the 339 KB PNG splash
+  icon (and any future images) are served in modern formats to supporting
+  browsers.
+- **HTTP compression enabled**: `compress: true` added to `next.config.ts`
+  (gzip/brotli for all responses).
+
 ### Added
 - `lib/chaos.ts` — fault-injection middleware for chaos tests. Lets test
   suites inject latency, error responses, or request aborts at configurable
