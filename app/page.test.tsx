@@ -21,10 +21,14 @@ describe("Home", () => {
     ).toBeInTheDocument();
   });
 
-  it("does not rely on manual tab index overrides", () => {
+  it("does not rely on manual tab index overrides on interactive elements", () => {
     const { container } = render(<Home />);
 
-    expect(container.querySelectorAll("[tabindex]")).toHaveLength(0);
+    // tabindex="-1" on the dialog container is intentional (programmatic focus
+    // management for the WelcomeTour modal). What we guard against is
+    // tabindex > 0, which creates an unpredictable tab order.
+    const positiveTabIndex = container.querySelectorAll("[tabindex]:not([tabindex='-1'])");
+    expect(positiveTabIndex).toHaveLength(0);
   });
 
   it("renders stream action cards", () => {
