@@ -255,7 +255,10 @@ streampay-frontend/
 │   ├── layout.tsx
 │   ├── page.tsx
 │   ├── page.test.tsx
-│   └── globals.css
+│   ├── globals.css
+│   └── help/
+│       ├── page.tsx        ← Help & FAQ page (RSC)
+│       └── page.test.tsx
 ├── next.config.ts
 ├── tsconfig.json
 ├── jest.config.js
@@ -348,8 +351,7 @@ Quick links to the long-form docs under [docs/](docs/):
 - [Privacy](docs/PRIVACY.md)
 - [Reconciliation runbook](docs/reconciliation-runbook.md)
 - [Initial render performance](docs/performance-initial-render.md)
-
-See also [CONTRIBUTING.md](CONTRIBUTING.md) and
+- [Help & FAQ page](/help) — in-app support page at `app/help/page.tsx`
 [SECURITY.md](SECURITY.md) in the repository root.
 
 ## Troubleshooting
