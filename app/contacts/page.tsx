@@ -374,13 +374,7 @@ interface ContactRowProps {
 function ContactRow({ contact, onEdit, onDelete }: ContactRowProps) {
   return (
     <article
-      className="activity-card"
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1fr auto",
-        gap: "1rem",
-        alignItems: "center",
-      }}
+      className="activity-card contact-row"
       aria-label={`Contact: ${contact.label}`}
     >
       <div style={{ minWidth: 0 }}>
@@ -425,7 +419,7 @@ function ContactRow({ contact, onEdit, onDelete }: ContactRowProps) {
         )}
       </div>
 
-      <div style={{ display: "flex", gap: "0.5rem", flexShrink: 0 }}>
+      <div className="contact-row__actions">
         <button
           type="button"
           className="button button--secondary"
@@ -625,6 +619,12 @@ export default function ContactsPage() {
             title="No contacts yet"
             description="Add a Stellar address with a label so you can find it quickly when setting up a payment stream."
             actionLabel="Add your first contact"
+            onAction={() => setAddOpen(true)}
+            guidanceSteps={[
+              "Click \"Add your first contact\" to get started",
+              "Enter a label (e.g. Alice Design Studio) and a Stellar address",
+              "Use federation addresses (user*domain.com) for automatic resolution",
+            ]}
           />
         ) : filtered.length === 0 ? (
           <p
@@ -635,7 +635,7 @@ export default function ContactsPage() {
               padding: "3rem 0",
             }}
           >
-            No contacts match <strong>{search}</strong>
+            No saved contacts match <strong>{search}</strong>
           </p>
         ) : (
           <section aria-label="Contact list">
