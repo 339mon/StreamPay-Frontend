@@ -21,6 +21,7 @@ mod allowlist;
 mod error;
 mod events;
 mod limits;
+mod instrument;
 mod release;
 mod storage;
 mod views;
