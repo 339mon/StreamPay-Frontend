@@ -183,12 +183,12 @@ describe('Key rotation: both active and retiring keys are published', () => {
 
 describe('Error handling', () => {
   it('returns a standardised error envelope on internal failure', async () => {
-    // Simulate buildJwks throwing by injecting a corrupted key via the store.
-    // We import and reset, then mock buildJwks.
+    // Simulate buildJwks throwing by stubbing the module
     const jwksModule = await import('@/lib/jwks');
-    const original = jwksModule.buildJwks;
-
-    jest.spyOn(jwksModule, 'buildJwks').mockImplementationOnce(() => {
+    const originalBuildJwks = jwksModule.buildJwks;
+    
+    // Directly replace the function on the imported namespace
+    (jwksModule as any).buildJwks = jest.fn(() => {
       throw new Error('Simulated crypto failure');
     });
 
@@ -201,14 +201,15 @@ describe('Error handling', () => {
     expect(body.error).toHaveProperty('message');
     expect(body.error).toHaveProperty('request_id');
 
-    jest.restoreAllMocks();
-    void original; // suppress unused variable lint
+    // Restore original
+    jwksModule.buildJwks = originalBuildJwks;
   });
 
   it('handles non-Error throws (string / object) without crashing', async () => {
     const jwksModule = await import('@/lib/jwks');
-
-    jest.spyOn(jwksModule, 'buildJwks').mockImplementationOnce(() => {
+    const originalBuildJwks = jwksModule.buildJwks;
+    
+    (jwksModule as any).buildJwks = jest.fn(() => {
       throw 'string error value';
     });
 
@@ -218,6 +219,6 @@ describe('Error handling', () => {
     const body = await res.json();
     expect(body.error.code).toBe('JWKS_BUILD_FAILED');
 
-    jest.restoreAllMocks();
+    jwksModule.buildJwks = originalBuildJwks;
   });
 });

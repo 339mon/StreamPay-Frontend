@@ -4,17 +4,26 @@
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import { ThemeToggle } from "./ThemeToggle";
-import * as themeNoFlash from "../utils/theme-noflash";
 
 const mockSetTheme = jest.fn();
+const mockSetHighContrast = jest.fn((enabled: boolean) => {
+  if (enabled) {
+    document.documentElement.classList.add('high-contrast');
+  } else {
+    document.documentElement.classList.remove('high-contrast');
+  }
+});
 jest.mock("../utils/theme-noflash", () => ({
-  ...jest.requireActual("../utils/theme-noflash"),
-  setTheme: (...args: any[]) => mockSetTheme(...args),
+  setTheme: mockSetTheme,
+  setHighContrast: mockSetHighContrast,
+  setHighContrastClass: mockSetHighContrast,
+  themeNoFlash: jest.fn(),
 }));
 
 describe("ThemeToggle", () => {
   beforeEach(() => {
     mockSetTheme.mockClear();
+    mockSetHighContrast.mockClear();
     // Mock localStorage
     const store: Record<string, string> = {};
     const localStorageMock = {
@@ -43,8 +52,8 @@ describe("ThemeToggle", () => {
         matches: false,
         media: query,
         onchange: null,
-        addListener: jest.fn(), // Deprecated
-        removeListener: jest.fn(), // Deprecated
+        addListener: jest.fn(),
+        removeListener: jest.fn(),
         addEventListener: jest.fn(),
         removeEventListener: jest.fn(),
         dispatchEvent: jest.fn(),
@@ -105,18 +114,17 @@ describe("ThemeToggle", () => {
     });
 
     it("toggles theme state when clicked", () => {
-      const setHighContrastSpy = jest.spyOn(themeNoFlash, 'setHighContrast').mockImplementation(() => {});
       render(<ThemeToggle />);
       
       const hcCheckbox = screen.getByLabelText("High contrast mode") as HTMLInputElement;
       expect(hcCheckbox.checked).toBe(false);
       
       fireEvent.click(hcCheckbox);
-      expect(setHighContrastSpy).toHaveBeenCalledWith(true);
+      expect(mockSetHighContrast).toHaveBeenCalledWith(true);
       expect(hcCheckbox.checked).toBe(true);
       
       fireEvent.click(hcCheckbox);
-      expect(setHighContrastSpy).toHaveBeenCalledWith(false);
+      expect(mockSetHighContrast).toHaveBeenCalledWith(false);
       expect(hcCheckbox.checked).toBe(false);
     });
 
@@ -127,7 +135,6 @@ describe("ThemeToggle", () => {
       fireEvent.click(hcCheckbox);
       expect(window.localStorage.setItem).toHaveBeenCalledWith("streampay-high-contrast", "true");
       
-      // Simulate persisted state on next render
       window.localStorage.getItem = jest.fn((key: string) => {
         if (key === "streampay-high-contrast") return "true";
         return null;
