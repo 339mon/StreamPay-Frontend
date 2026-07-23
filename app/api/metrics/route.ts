@@ -1,6 +1,9 @@
 import { logger } from "@/app/lib/logger";
 import { getMetrics } from "@/app/lib/rate-limit-metrics";
 import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { logger } from "@/app/lib/logger";
+import { getMetrics } from "@/app/lib/rate-limit-metrics";
 
 /**
  * GET /api/metrics
