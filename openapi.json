@@ -1230,6 +1230,164 @@
         }
       }
     },
+    "/api/streams/{id}/webhooks/test": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "Stream identifier.",
+          "schema": { "type": "string", "example": "stream-abc12345" }
+        }
+      ],
+      "post": {
+        "operationId": "testStreamWebhook",
+        "summary": "Trigger a synthetic webhook test event",
+        "description": "Dispatches a synthetic webhook event for the given stream so subscribers can verify their endpoint configuration.\n\nWhen `endpoint_url` is supplied the event is dispatched through the standard HMAC-signed delivery pipeline. Without `endpoint_url` a preview payload is returned (no delivery).\n\nThe `synthetic: true` flag in the payload distinguishes test events from real lifecycle events.",
+        "tags": ["Webhooks"],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "event_type": {
+                    "type": "string",
+                    "description": "Synthetic event type. Defaults to `stream.test`.",
+                    "enum": [
+                      "stream.test",
+                      "stream.created",
+                      "stream.updated",
+                      "stream.paused",
+                      "stream.resumed",
+                      "stream.stopped",
+                      "stream.cancelled",
+                      "stream.settled"
+                    ],
+                    "default": "stream.test"
+                  },
+                  "endpoint_url": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "HTTP(S) URL to dispatch the synthetic webhook to. Omit for a preview-only response.",
+                    "example": "https://example.com/webhooks"
+                  }
+                }
+              },
+              "examples": {
+                "preview": {
+                  "summary": "Preview payload (no dispatch)",
+                  "value": {}
+                },
+                "dispatch-custom": {
+                  "summary": "Dispatch with custom event type",
+                  "value": {
+                    "event_type": "stream.paused",
+                    "endpoint_url": "https://example.com/webhooks"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Synthetic webhook event dispatched (or previewed).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "delivery_id",
+                        "stream_id",
+                        "event_type",
+                        "dispatched_at",
+                        "synthetic"
+                      ],
+                      "properties": {
+                        "delivery_id": {
+                          "type": "string",
+                          "description": "Unique delivery identifier.",
+                          "example": "wh_test_01HZ9ABCDEF"
+                        },
+                        "stream_id": {
+                          "type": "string",
+                          "example": "stream-abc12345"
+                        },
+                        "event_type": {
+                          "type": "string",
+                          "example": "stream.test"
+                        },
+                        "dispatched_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "synthetic": {
+                          "type": "boolean",
+                          "description": "Always `true` for test events.",
+                          "example": true
+                        },
+                        "request_id": {
+                          "type": "string",
+                          "example": "req_01HZ9ABCDEF"
+                        },
+                        "data": {
+                          "type": "object",
+                          "description": "Synthetic event data.",
+                          "properties": {
+                            "stream_id": { "type": "string" },
+                            "status": { "type": "string" }
+                          }
+                        },
+                        "delivery": {
+                          "type": "object",
+                          "description": "Present only when `endpoint_url` was supplied.",
+                          "properties": {
+                            "success": { "type": "boolean" },
+                            "status_code": { "type": "integer" },
+                            "error": { "type": "string" }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid event_type, malformed JSON, or invalid endpoint_url.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          },
+          "404": {
+            "description": "Stream not found.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/500" }
+        }
+      }
+    },
     "/api/v2/streams": {
       "get": {
         "operationId": "listStreamsV2",
