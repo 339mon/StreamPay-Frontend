@@ -307,8 +307,17 @@ impl Contract {
         )
     }
 
-    /// Creates a funded stream and escrows `total_amount` from `sender`.
+    /// Sets the maximum number of active streams a single sender may have
+    /// concurrently. This is a per-sender rate limit: once a sender reaches
+    /// the limit, [`Contract::create_stream`] returns
+    /// [`Error::StreamLimitExceeded`] until an existing stream transitions
+    /// to a terminal state (`Settled` or `Cancelled`).
     ///
+    /// # Errors
+    /// - [`Error::Unauthorized`] if `admin` is not the initialised admin.
+    ///
+    /// # Auth
+    /// Requires authorisation from `admin`.
     pub fn set_max_streams_per_sender(env: Env, admin: Address, limit: u64) -> Result<(), Error> {
         require_admin(&env, &admin)?;
         limits::set_max_streams_per_sender(&env, limit);
