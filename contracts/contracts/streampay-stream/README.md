@@ -21,6 +21,48 @@ Linear payment streams on Stellar/Soroban.
 | `get_stream` | No | None | Returns the stream record. |
 | `withdrawable` | No | None | Returns the currently withdrawable amount. |
 | `stream_balance` | No | None | Returns the vested balance at the current time. |
+| `list_streams` | No | None | Returns a paginated page of all streams ordered by ID. |
+| `list_streams_by_sender` | No | None | Returns a paginated page of streams filtered by sender address. |
+| `list_streams_by_recipient` | No | None | Returns a paginated page of streams filtered by recipient address. |
+| `list_streams_by_status` | No | None | Returns a paginated page of streams filtered by status. |
+| `list_streams_recipient_status` | No | None | Returns a paginated page of streams filtered by recipient and status (compound). |
+| `list_streams_sender_status` | No | None | Returns a paginated page of streams filtered by sender and status (compound). |
+
+## Paginated Stream Enumeration
+
+All `list_streams*` entrypoints share the same cursor-based pagination contract:
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `start_after` | `Option<u64>` | Exclusive cursor: return streams with `id > start_after`. Pass `None` to start from stream ID 1. |
+| `limit` | `u64` | Maximum results to return. Capped at 100 ([`MAX_PAGE_SIZE`]). |
+
+**Return type — `StreamPage`:**
+
+```
+StreamPage {
+    streams:     Vec<Stream>,   // ordered by ascending stream ID
+    next_cursor: Option<u64>,   // None → last page; Some(id) → pass as start_after
+}
+```
+
+**Paginating through all streams:**
+
+```rust
+let mut cursor: Option<u64> = None;
+loop {
+    let page = client.list_streams(&cursor, &20);
+    for stream in page.streams.iter() { /* ... */ }
+    cursor = page.next_cursor;
+    if cursor.is_none() { break; }
+}
+```
+
+View functions:
+- Never require auth.
+- Are never blocked by the global pause flag.
+- Never mutate state or extend TTLs (reads use `peek_next_stream_id` which is side-effect-free).
+- Are bounded by `MAX_PAGE_SIZE = 100` to prevent excessive resource use.
 
 ## Development
 

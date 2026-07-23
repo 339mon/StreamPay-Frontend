@@ -290,6 +290,49 @@ pub fn next_stream_id(env: &Env) -> u64 {
     id
 }
 
+/// Returns the current value of the stream-id counter **without** incrementing it.
+///
+/// This is the exclusive upper bound for paginated stream scans: all existing
+/// stream IDs satisfy `id < peek_next_stream_id(env)`.
+///
+/// Unlike [`next_stream_id`] this function is purely read-only: it never
+/// mutates the counter or extends any TTL. It is intended for view functions
+/// that need to enumerate streams without side-effects.
+///
+/// # Returns
+/// - The next stream ID that *would* be assigned to a new stream (i.e. the
+///   current counter value, which is one past the highest allocated ID).
+/// - `1` if no streams have been created yet (counter is unset).
+///
+/// # Errors
+/// This helper does not return errors.
+pub fn peek_next_stream_id(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::StreamCount)
+        .unwrap_or(1u64)
+}
+
+/// **Test-only helper** — sets the stream-id counter to an arbitrary value.
+///
+/// This allows unit tests in `views.rs` to seed the counter without going
+/// through the full `create_stream` flow. It is compiled only in `#[cfg(test)]`
+/// builds and is never available in the production WASM binary.
+///
+/// # Parameters
+/// - `next_id` — The value to write as the next stream ID. Pass `1` to
+///   represent an empty (freshly initialised) contract; pass `N + 1` to
+///   represent a state where `N` streams have been created.
+///
+/// # Errors
+/// This helper does not return errors.
+#[cfg(test)]
+pub fn set_next_stream_id_for_test(env: &Env, next_id: u64) {
+    env.storage()
+        .instance()
+        .set(&DataKey::StreamCount, &next_id);
+}
+
 /// Writes a stream record into persistent storage.
 ///
 /// This helper also extends the TTL for the corresponding per-stream entry.
@@ -621,6 +664,82 @@ mod tests {
         env.as_contract(&contract_id, || {
             let paused = is_paused(&env);
             assert!(!paused);
+        });
+    }
+
+    // ── peek_next_stream_id / set_next_stream_id_for_test ────────────────────
+
+    /// `peek_next_stream_id` returns `1` when no streams have ever been
+    /// created — same default as `next_stream_id`.
+    #[test]
+    fn peek_next_stream_id_returns_one_when_unset() {
+        let (env, contract_id) = setup();
+        env.as_contract(&contract_id, || {
+            assert_eq!(peek_next_stream_id(&env), 1u64,
+                "unset counter should default to 1");
+        });
+    }
+
+    /// After `next_stream_id` is called once, `peek_next_stream_id` must
+    /// return `2` (the next ID that *would* be assigned).
+    #[test]
+    fn peek_next_stream_id_reflects_incremented_counter() {
+        let (env, contract_id) = setup();
+        env.as_contract(&contract_id, || {
+            let assigned = next_stream_id(&env); // consumes ID 1, counter → 2
+            assert_eq!(assigned, 1u64);
+            assert_eq!(peek_next_stream_id(&env), 2u64,
+                "counter must now be 2 after one allocation");
+        });
+    }
+
+    /// `peek_next_stream_id` must NOT increment the counter — repeated calls
+    /// must return the same value.
+    #[test]
+    fn peek_next_stream_id_is_idempotent() {
+        let (env, contract_id) = setup();
+        env.as_contract(&contract_id, || {
+            let first = peek_next_stream_id(&env);
+            let second = peek_next_stream_id(&env);
+            assert_eq!(first, second,
+                "peek must be idempotent — counter must not change");
+        });
+    }
+
+    /// `set_next_stream_id_for_test` allows tests to seed the counter to any
+    /// arbitrary value; subsequent `peek` and `next_stream_id` calls should
+    /// observe the new value.
+    #[test]
+    fn set_next_stream_id_for_test_seeds_counter() {
+        let (env, contract_id) = setup();
+        env.as_contract(&contract_id, || {
+            set_next_stream_id_for_test(&env, 42);
+            assert_eq!(peek_next_stream_id(&env), 42u64,
+                "peek must return the value written by the test setter");
+
+            // next_stream_id should consume 42 and advance the counter to 43
+            let id = next_stream_id(&env);
+            assert_eq!(id, 42u64);
+            assert_eq!(peek_next_stream_id(&env), 43u64);
+        });
+    }
+
+    /// Setting the counter to `1` effectively resets to the empty-contract
+    /// state; `next_stream_id` should start again from `1`.
+    #[test]
+    fn set_next_stream_id_for_test_can_reset_to_one() {
+        let (env, contract_id) = setup();
+        env.as_contract(&contract_id, || {
+            // Advance the counter to 5
+            for _ in 0..4 {
+                next_stream_id(&env);
+            }
+            assert_eq!(peek_next_stream_id(&env), 5u64);
+
+            // Reset
+            set_next_stream_id_for_test(&env, 1);
+            assert_eq!(peek_next_stream_id(&env), 1u64);
+            assert_eq!(next_stream_id(&env), 1u64);
         });
     }
 }

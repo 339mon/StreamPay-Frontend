@@ -362,18 +362,31 @@ pub fn list_streams_by_sender_and_status(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Contract;
     use soroban_sdk::testutils::Address as _;
 
-    /// Helper to set up a test environment with multiple streams.
-    fn setup_test_streams(env: &Env) -> (Address, Address, Address) {
+    /// Register a contract instance and return `(env, contract_id)`.
+    ///
+    /// All storage calls (both `instance()` and `persistent()`) must be issued
+    /// from within `env.as_contract(&contract_id, || { … })` so that the
+    /// Soroban host associates them with the correct contract instance.
+    fn setup_env() -> (Env, soroban_sdk::Address) {
+        let env = Env::default();
+        let contract_id = env.register(Contract, ());
+        (env, contract_id)
+    }
+
+    /// Seed six streams with mixed senders/recipients/statuses and set the
+    /// stream-ID counter to 7.  Must be called from within
+    /// `env.as_contract(&contract_id, || { … })`.
+    fn seed_streams(env: &Env) -> (Address, Address, Address) {
         let sender_a = Address::generate(env);
         let sender_b = Address::generate(env);
         let recipient = Address::generate(env);
         let token = Address::generate(env);
 
-        // Create a sequence of streams with mixed senders/recipients/statuses
-        // Stream IDs will be 1, 2, 3, 4, 5, 6
-        for i in 1..=6 {
+        // Stream IDs 1–6 with varied senders/statuses
+        for i in 1u64..=6 {
             let stream = Stream {
                 id: i,
                 sender: if i % 2 == 0 {
@@ -400,8 +413,6 @@ mod tests {
             };
             storage::set_stream(env, i, &stream);
         }
-
-        // Set the next stream ID to 7
         storage::set_next_stream_id_for_test(env, 7);
 
         (sender_a, sender_b, recipient)
@@ -409,204 +420,347 @@ mod tests {
 
     #[test]
     fn test_list_streams_empty() {
-        let env = Env::default();
-        storage::set_next_stream_id_for_test(&env, 1);
-
-        let page = list_streams(&env, None, 10);
-
-        assert_eq!(page.streams.len(), 0);
-        assert_eq!(page.next_cursor, None);
+        let (env, contract_id) = setup_env();
+        env.as_contract(&contract_id, || {
+            storage::set_next_stream_id_for_test(&env, 1);
+            let page = list_streams(&env, None, 10);
+            assert_eq!(page.streams.len(), 0);
+            assert_eq!(page.next_cursor, None);
+        });
     }
 
     #[test]
     fn test_list_streams_all_fit_in_one_page() {
-        let env = Env::default();
-        setup_test_streams(&env);
-
-        let page = list_streams(&env, None, 10);
-
-        assert_eq!(page.streams.len(), 6);
-        assert_eq!(page.next_cursor, None);
+        let (env, contract_id) = setup_env();
+        env.as_contract(&contract_id, || {
+            seed_streams(&env);
+            let page = list_streams(&env, None, 10);
+            assert_eq!(page.streams.len(), 6);
+            assert_eq!(page.next_cursor, None);
+        });
     }
 
     #[test]
     fn test_list_streams_pagination() {
-        let env = Env::default();
-        setup_test_streams(&env);
+        let (env, contract_id) = setup_env();
+        env.as_contract(&contract_id, || {
+            seed_streams(&env);
 
-        // First page: limit 2
-        let page1 = list_streams(&env, None, 2);
-        assert_eq!(page1.streams.len(), 2);
-        assert_eq!(page1.streams.get(0).unwrap().id, 1);
-        assert_eq!(page1.streams.get(1).unwrap().id, 2);
-        assert!(page1.next_cursor.is_some());
+            let page1 = list_streams(&env, None, 2);
+            assert_eq!(page1.streams.len(), 2);
+            assert_eq!(page1.streams.get(0).unwrap().id, 1);
+            assert_eq!(page1.streams.get(1).unwrap().id, 2);
+            assert!(page1.next_cursor.is_some());
 
-        // Second page: start_after = 2, limit 2
-        let page2 = list_streams(&env, page1.next_cursor, 2);
-        assert_eq!(page2.streams.len(), 2);
-        assert_eq!(page2.streams.get(0).unwrap().id, 3);
-        assert_eq!(page2.streams.get(1).unwrap().id, 4);
-        assert!(page2.next_cursor.is_some());
+            let page2 = list_streams(&env, page1.next_cursor, 2);
+            assert_eq!(page2.streams.len(), 2);
+            assert_eq!(page2.streams.get(0).unwrap().id, 3);
+            assert_eq!(page2.streams.get(1).unwrap().id, 4);
+            assert!(page2.next_cursor.is_some());
 
-        // Third page: start_after = 4, limit 2
-        let page3 = list_streams(&env, page2.next_cursor, 2);
-        assert_eq!(page3.streams.len(), 2);
-        assert_eq!(page3.streams.get(0).unwrap().id, 5);
-        assert_eq!(page3.streams.get(1).unwrap().id, 6);
-        assert_eq!(page3.next_cursor, None);
+            let page3 = list_streams(&env, page2.next_cursor, 2);
+            assert_eq!(page3.streams.len(), 2);
+            assert_eq!(page3.streams.get(0).unwrap().id, 5);
+            assert_eq!(page3.streams.get(1).unwrap().id, 6);
+            assert_eq!(page3.next_cursor, None);
+        });
     }
 
     #[test]
     fn test_list_streams_respects_max_page_size() {
-        let env = Env::default();
-        setup_test_streams(&env);
-
-        // Request limit > MAX_PAGE_SIZE
-        let page = list_streams(&env, None, MAX_PAGE_SIZE + 100);
-
-        // Should be capped at min(6, MAX_PAGE_SIZE) = 6
-        assert_eq!(page.streams.len(), 6);
+        let (env, contract_id) = setup_env();
+        env.as_contract(&contract_id, || {
+            seed_streams(&env);
+            let page = list_streams(&env, None, MAX_PAGE_SIZE + 100);
+            // Capped at min(6, MAX_PAGE_SIZE) = 6
+            assert_eq!(page.streams.len(), 6);
+        });
     }
 
     #[test]
     fn test_list_streams_by_sender() {
-        let env = Env::default();
-        let (sender_a, _sender_b, _recipient) = setup_test_streams(&env);
-
-        let page = list_streams_by_sender(&env, &sender_a, None, 10);
-
-        // sender_a has streams 1, 3, 5 (odd IDs)
-        assert_eq!(page.streams.len(), 3);
-        assert_eq!(page.streams.get(0).unwrap().id, 1);
-        assert_eq!(page.streams.get(1).unwrap().id, 3);
-        assert_eq!(page.streams.get(2).unwrap().id, 5);
-        assert_eq!(page.next_cursor, None);
+        let (env, contract_id) = setup_env();
+        env.as_contract(&contract_id, || {
+            let (sender_a, _sender_b, _recipient) = seed_streams(&env);
+            let page = list_streams_by_sender(&env, &sender_a, None, 10);
+            // sender_a has streams 1, 3, 5 (odd IDs)
+            assert_eq!(page.streams.len(), 3);
+            assert_eq!(page.streams.get(0).unwrap().id, 1);
+            assert_eq!(page.streams.get(1).unwrap().id, 3);
+            assert_eq!(page.streams.get(2).unwrap().id, 5);
+            assert_eq!(page.next_cursor, None);
+        });
     }
 
     #[test]
     fn test_list_streams_by_recipient() {
-        let env = Env::default();
-        let (_sender_a, _sender_b, recipient) = setup_test_streams(&env);
-
-        let page = list_streams_by_recipient(&env, &recipient, None, 10);
-
-        // All 6 streams have the same recipient
-        assert_eq!(page.streams.len(), 6);
-        assert_eq!(page.next_cursor, None);
+        let (env, contract_id) = setup_env();
+        env.as_contract(&contract_id, || {
+            let (_sender_a, _sender_b, recipient) = seed_streams(&env);
+            let page = list_streams_by_recipient(&env, &recipient, None, 10);
+            // All 6 streams share the same recipient
+            assert_eq!(page.streams.len(), 6);
+            assert_eq!(page.next_cursor, None);
+        });
     }
 
     #[test]
     fn test_list_streams_by_status() {
-        let env = Env::default();
-        setup_test_streams(&env);
-
-        let page = list_streams_by_status(&env, StreamStatus::Active, None, 10);
-
-        // Streams 1, 2 are Active
-        assert_eq!(page.streams.len(), 2);
-        assert_eq!(page.streams.get(0).unwrap().id, 1);
-        assert_eq!(page.streams.get(1).unwrap().id, 2);
-        assert_eq!(page.next_cursor, None);
+        let (env, contract_id) = setup_env();
+        env.as_contract(&contract_id, || {
+            seed_streams(&env);
+            let page = list_streams_by_status(&env, StreamStatus::Active, None, 10);
+            // Streams 1, 2 are Active
+            assert_eq!(page.streams.len(), 2);
+            assert_eq!(page.streams.get(0).unwrap().id, 1);
+            assert_eq!(page.streams.get(1).unwrap().id, 2);
+            assert_eq!(page.next_cursor, None);
+        });
     }
 
     #[test]
     fn test_list_streams_by_recipient_and_status() {
-        let env = Env::default();
-        let (_sender_a, _sender_b, recipient) = setup_test_streams(&env);
-
-        let page = list_streams_by_recipient_and_status(
-            &env,
-            &recipient,
-            StreamStatus::Paused,
-            None,
-            10,
-        );
-
-        // Streams 3, 4 are Paused
-        assert_eq!(page.streams.len(), 2);
-        assert_eq!(page.streams.get(0).unwrap().id, 3);
-        assert_eq!(page.streams.get(1).unwrap().id, 4);
-        assert_eq!(page.next_cursor, None);
+        let (env, contract_id) = setup_env();
+        env.as_contract(&contract_id, || {
+            let (_sender_a, _sender_b, recipient) = seed_streams(&env);
+            let page = list_streams_by_recipient_and_status(
+                &env,
+                &recipient,
+                StreamStatus::Paused,
+                None,
+                10,
+            );
+            // Streams 3, 4 are Paused
+            assert_eq!(page.streams.len(), 2);
+            assert_eq!(page.streams.get(0).unwrap().id, 3);
+            assert_eq!(page.streams.get(1).unwrap().id, 4);
+            assert_eq!(page.next_cursor, None);
+        });
     }
 
     #[test]
     fn test_list_streams_by_sender_and_status() {
-        let env = Env::default();
-        let (sender_a, _sender_b, _recipient) = setup_test_streams(&env);
-
-        let page = list_streams_by_sender_and_status(
-            &env,
-            &sender_a,
-            StreamStatus::Active,
-            None,
-            10,
-        );
-
-        // sender_a has odd IDs (1, 3, 5); only 1 is Active
-        assert_eq!(page.streams.len(), 1);
-        assert_eq!(page.streams.get(0).unwrap().id, 1);
-        assert_eq!(page.next_cursor, None);
+        let (env, contract_id) = setup_env();
+        env.as_contract(&contract_id, || {
+            let (sender_a, _sender_b, _recipient) = seed_streams(&env);
+            let page = list_streams_by_sender_and_status(
+                &env,
+                &sender_a,
+                StreamStatus::Active,
+                None,
+                10,
+            );
+            // sender_a has odd IDs (1, 3, 5); only 1 is Active
+            assert_eq!(page.streams.len(), 1);
+            assert_eq!(page.streams.get(0).unwrap().id, 1);
+            assert_eq!(page.next_cursor, None);
+        });
     }
 
     #[test]
     fn test_pagination_with_gaps() {
-        let env = Env::default();
-        let sender = Address::generate(&env);
-        let recipient = Address::generate(&env);
-        let token = Address::generate(&env);
+        let (env, contract_id) = setup_env();
+        env.as_contract(&contract_id, || {
+            let sender = Address::generate(&env);
+            let recipient = Address::generate(&env);
+            let token = Address::generate(&env);
 
-        // Create streams 1, 2, 4, 5 (skip 3)
-        for i in &[1u64, 2, 4, 5] {
-            let stream = Stream {
-                id: *i,
-                sender: sender.clone(),
-                recipient: recipient.clone(),
-                token: token.clone(),
-                total_amount: 1000,
-                released_amount: 0,
-                start_time: 1000,
-                end_time: 2000,
-                duration: 1000,
-                last_update: 1000,
-                status: StreamStatus::Active,
-                pause_time: 0,
-                total_paused_duration: 0,
-            };
-            storage::set_stream(&env, *i, &stream);
-        }
-        storage::set_next_stream_id_for_test(&env, 6);
+            // Create streams 1, 2, 4, 5 (skip 3)
+            for i in &[1u64, 2, 4, 5] {
+                let stream = Stream {
+                    id: *i,
+                    sender: sender.clone(),
+                    recipient: recipient.clone(),
+                    token: token.clone(),
+                    total_amount: 1000,
+                    released_amount: 0,
+                    start_time: 1000,
+                    end_time: 2000,
+                    duration: 1000,
+                    last_update: 1000,
+                    status: StreamStatus::Active,
+                    pause_time: 0,
+                    total_paused_duration: 0,
+                };
+                storage::set_stream(&env, *i, &stream);
+            }
+            storage::set_next_stream_id_for_test(&env, 6);
 
-        let page = list_streams(&env, None, 10);
-
-        // Should return 4 streams (1, 2, 4, 5), skipping the gap at 3
-        assert_eq!(page.streams.len(), 4);
-        assert_eq!(page.streams.get(0).unwrap().id, 1);
-        assert_eq!(page.streams.get(1).unwrap().id, 2);
-        assert_eq!(page.streams.get(2).unwrap().id, 4);
-        assert_eq!(page.streams.get(3).unwrap().id, 5);
-        assert_eq!(page.next_cursor, None);
+            let page = list_streams(&env, None, 10);
+            // Should return 4 streams (1, 2, 4, 5), skipping the gap at 3
+            assert_eq!(page.streams.len(), 4);
+            assert_eq!(page.streams.get(0).unwrap().id, 1);
+            assert_eq!(page.streams.get(1).unwrap().id, 2);
+            assert_eq!(page.streams.get(2).unwrap().id, 4);
+            assert_eq!(page.streams.get(3).unwrap().id, 5);
+            assert_eq!(page.next_cursor, None);
+        });
     }
 
     #[test]
     fn test_no_streams_match_filter() {
-        let env = Env::default();
-        setup_test_streams(&env);
-
-        let non_existent_sender = Address::generate(&env);
-        let page = list_streams_by_sender(&env, &non_existent_sender, None, 10);
-
-        assert_eq!(page.streams.len(), 0);
-        assert_eq!(page.next_cursor, None);
+        let (env, contract_id) = setup_env();
+        env.as_contract(&contract_id, || {
+            seed_streams(&env);
+            let non_existent_sender = Address::generate(&env);
+            let page = list_streams_by_sender(&env, &non_existent_sender, None, 10);
+            assert_eq!(page.streams.len(), 0);
+            assert_eq!(page.next_cursor, None);
+        });
     }
 
     #[test]
     fn test_start_after_beyond_last_stream() {
-        let env = Env::default();
-        setup_test_streams(&env);
+        let (env, contract_id) = setup_env();
+        env.as_contract(&contract_id, || {
+            seed_streams(&env);
+            let page = list_streams(&env, Some(100), 10);
+            assert_eq!(page.streams.len(), 0);
+            assert_eq!(page.next_cursor, None);
+        });
+    }
 
-        let page = list_streams(&env, Some(100), 10);
+    // ── Overflow safety ───────────────────────────────────────────────────────
 
-        assert_eq!(page.streams.len(), 0);
-        assert_eq!(page.next_cursor, None);
+    /// `start_after = u64::MAX` must not panic. `saturating_add(1)` on `MAX`
+    /// stays at `MAX`, and since no stream ID can equal or exceed `max_id`
+    /// (which is at most `u64::MAX`), the loop terminates immediately.
+    #[test]
+    fn test_start_after_u64_max_is_overflow_safe() {
+        let (env, contract_id) = setup_env();
+        env.as_contract(&contract_id, || {
+            seed_streams(&env);
+            let page = list_streams(&env, Some(u64::MAX), 10);
+            assert_eq!(page.streams.len(), 0);
+            assert_eq!(page.next_cursor, None);
+        });
+    }
+
+    /// `limit = 0` returns empty streams. A `next_cursor` of `Some(0)` is
+    /// produced because the loop never ran and `current_id (1) < max_id (7)`.
+    #[test]
+    fn test_limit_zero_returns_empty_page() {
+        let (env, contract_id) = setup_env();
+        env.as_contract(&contract_id, || {
+            seed_streams(&env);
+            let page = list_streams(&env, None, 0);
+            assert_eq!(page.streams.len(), 0);
+            assert_eq!(page.next_cursor, Some(0));
+        });
+    }
+
+    /// `start_after = Some(0)` is identical to `start_after = None`:
+    /// both start from stream ID 1.
+    #[test]
+    fn test_start_after_zero_is_same_as_none() {
+        let (env, contract_id) = setup_env();
+        env.as_contract(&contract_id, || {
+            seed_streams(&env);
+            let page_none = list_streams(&env, None, 10);
+            let page_zero = list_streams(&env, Some(0), 10);
+            assert_eq!(page_none.streams.len(), page_zero.streams.len());
+            assert_eq!(page_none.next_cursor, page_zero.next_cursor);
+            for i in 0..page_none.streams.len() {
+                assert_eq!(
+                    page_none.streams.get(i).unwrap().id,
+                    page_zero.streams.get(i).unwrap().id
+                );
+            }
+        });
+    }
+
+    /// `limit = u64::MAX` is capped to `MAX_PAGE_SIZE` safely.
+    #[test]
+    fn test_limit_near_u64_max_is_capped_safely() {
+        let (env, contract_id) = setup_env();
+        env.as_contract(&contract_id, || {
+            seed_streams(&env);
+            let page = list_streams(&env, None, u64::MAX);
+            // 6 streams exist, all < MAX_PAGE_SIZE, so all returned
+            assert_eq!(page.streams.len(), 6);
+            assert_eq!(page.next_cursor, None);
+        });
+    }
+
+    /// Cursor-chaining across pages must enumerate every stream exactly once.
+    #[test]
+    fn test_cursor_continuity_no_duplicates_or_gaps() {
+        let (env, contract_id) = setup_env();
+        env.as_contract(&contract_id, || {
+            seed_streams(&env);
+            let mut all_ids: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+            let mut cursor: Option<u64> = None;
+            loop {
+                let page = list_streams(&env, cursor, 2);
+                for stream in page.streams.iter() {
+                    all_ids.push_back(stream.id);
+                }
+                cursor = page.next_cursor;
+                if cursor.is_none() {
+                    break;
+                }
+            }
+            assert_eq!(all_ids.len(), 6);
+            for (i, id) in all_ids.iter().enumerate() {
+                assert_eq!(id, (i as u64) + 1, "stream IDs must be 1–6 in order");
+            }
+        });
+    }
+
+    /// Status filter with no matches returns empty and no cursor.
+    /// `StreamStatus::Cancelled` has no streams in the fixture.
+    #[test]
+    fn test_list_streams_by_status_no_match_returns_empty() {
+        let (env, contract_id) = setup_env();
+        env.as_contract(&contract_id, || {
+            seed_streams(&env);
+            let page = list_streams_by_status(&env, StreamStatus::Cancelled, None, 10);
+            assert_eq!(page.streams.len(), 0);
+            assert_eq!(page.next_cursor, None);
+        });
+    }
+
+    /// Combined (sender + status) filter: no stream matches both conditions.
+    #[test]
+    fn test_sender_status_no_match_returns_empty() {
+        let (env, contract_id) = setup_env();
+        env.as_contract(&contract_id, || {
+            let (sender_a, _sender_b, _recipient) = seed_streams(&env);
+            // sender_a has odd IDs (1, 3, 5). None are Settled.
+            let page = list_streams_by_sender_and_status(
+                &env,
+                &sender_a,
+                StreamStatus::Settled,
+                None,
+                10,
+            );
+            assert_eq!(page.streams.len(), 0);
+            assert_eq!(page.next_cursor, None);
+        });
+    }
+
+    /// Multi-page cursor-chaining for a filtered view (by sender).
+    #[test]
+    fn test_filtered_pagination_with_cursor_chaining() {
+        let (env, contract_id) = setup_env();
+        env.as_contract(&contract_id, || {
+            let (sender_a, _sender_b, _recipient) = seed_streams(&env);
+
+            // sender_a has streams 1, 3, 5 (odd IDs). Paginate with limit=1.
+            let page1 = list_streams_by_sender(&env, &sender_a, None, 1);
+            assert_eq!(page1.streams.len(), 1);
+            assert_eq!(page1.streams.get(0).unwrap().id, 1);
+            assert!(page1.next_cursor.is_some());
+
+            let page2 = list_streams_by_sender(&env, &sender_a, page1.next_cursor, 1);
+            assert_eq!(page2.streams.len(), 1);
+            assert_eq!(page2.streams.get(0).unwrap().id, 3);
+            assert!(page2.next_cursor.is_some());
+
+            let page3 = list_streams_by_sender(&env, &sender_a, page2.next_cursor, 1);
+            assert_eq!(page3.streams.len(), 1);
+            assert_eq!(page3.streams.get(0).unwrap().id, 5);
+            assert_eq!(page3.next_cursor, None);
+        });
     }
 }
