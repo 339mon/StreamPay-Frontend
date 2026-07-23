@@ -22,13 +22,13 @@ export async function GET(request: Request) {
   }
 
   const { streamRepository } = getStore();
-  const streams = Array.from(streamRepository.getAll?.() ?? []);
+  const streams = Array.from(streamRepository.streams.values());
 
   const counts: Record<string, number> = {};
   let oldestStuckAt: string | null = null;
 
   for (const s of streams) {
-    const status = s.status ?? "unknown";
+    const status = (s.status as string) ?? "unknown";
     counts[status] = (counts[status] ?? 0) + 1;
 
     if (status === "errored" || status === "stuck") {

@@ -10,6 +10,7 @@ import {
   buildLimitsConfig,
 } from './lib/bodySize';
 import { touchLastSeenFromRequest } from './lib/lastSeen';
+import { applyChaos, getChaosConfig } from './lib/chaos';
 
 // ---------------------------------------------------------------------------
 // Request body size cap
@@ -172,9 +173,10 @@ export async function middleware(request: NextRequest) {
   // 2. CORS
   // ------------------------------------------------------------------
   const origin = request.headers.get('origin');
+  let originAllowed = false;
 
   if (origin) {
-    const originAllowed = isOriginAllowed(origin, allowedOrigins);
+    originAllowed = isOriginAllowed(origin, allowedOrigins);
 
     if (!originAllowed) {
       const response = new NextResponse(null, { status: 204 });
@@ -189,10 +191,6 @@ export async function middleware(request: NextRequest) {
       status: 204,
       headers,
     });
-
-    response.headers.set('Access-Control-Allow-Origin', origin);
-    response.headers.set('Vary', 'Origin');
-    return response;
   }
 
   // ------------------------------------------------------------------
