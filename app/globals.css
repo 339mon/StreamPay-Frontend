@@ -2220,6 +2220,67 @@ a:hover {
   justify-content: flex-end;
 }
 
+/* ─── Cancel Stream Modal ─────────────────────────────────────────────────── */
+.cancel-stream {
+  display: grid;
+  gap: 1rem;
+}
+
+.cancel-stream__warning {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  border-radius: 0.875rem;
+  color: #fee2e2;
+  padding: 0.875rem 1rem;
+}
+
+.cancel-stream__intro {
+  color: var(--muted-light);
+  line-height: 1.5;
+}
+
+.cancel-stream__split {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  display: grid;
+  gap: 0.875rem;
+  padding: 1rem;
+}
+
+.cancel-stream__split div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.cancel-stream__split dt {
+  color: var(--muted-light);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cancel-stream__split dd {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.cancel-stream__blocked {
+  background: rgba(234, 179, 8, 0.12);
+  border: 1px solid rgba(234, 179, 8, 0.4);
+  border-radius: 0.875rem;
+  color: #fde68a;
+  padding: 0.875rem 1rem;
+}
+
+.cancel-stream__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
 .explainer {
   display: grid;
   gap: 1.5rem;

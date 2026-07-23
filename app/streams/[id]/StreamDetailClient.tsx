@@ -8,12 +8,14 @@ import { NetworkBadge } from "../../components/NetworkBadge";
 import { PaymentTimeline } from "../../components/PaymentTimeline";
 import { ErrorToast } from "../../components/ErrorToast";
 import { ConfirmCancel } from "../../components/ConfirmCancel";
+import { CancelStreamModal } from "../../components/CancelStreamModal";
 import { Timestamp } from "../../components/Timestamp";
 import { CopyAddress } from "../../components/CopyAddress";
 import { fetchWithIdempotency } from "../../../lib/apiClient";
 import { isStreamPayError, normalizeError } from "../../lib/errors";
 import type { StreamPayError } from "../../lib/errors";
 import { exportStreamVestingAsIcs } from "../../utils/ics";
+import type { CancelInput } from "../../lib/cancel-stream";
 
 type StreamDetailClientProps = {
   stream: Stream;
@@ -358,7 +360,24 @@ export function StreamDetailClient({ stream, network = "testnet" }: StreamDetail
         />
       )}
 
-      {actionSummary.destructiveAction && (
+      {actionSummary.destructiveAction === "cancel" && (
+        <CancelStreamModal
+          isOpen={isDestructiveOpen}
+          onClose={() => setIsDestructiveOpen(false)}
+          onConfirm={handleDestructiveAction}
+          stream={{ status: stream.status }}
+          split={{
+            totalAmount: BigInt(stream.totalAmount ?? "0"),
+            releasedAmount: BigInt(stream.releasedAmount ?? "0"),
+            vestedAmount: BigInt(stream.vestedAmount ?? "0"),
+            token: stream.token ?? "XLM",
+            senderAddress: stream.senderAddress ?? "",
+            recipientAddress: stream.recipient,
+          }}
+          tokenLabel={stream.token ?? "XLM"}
+        />
+      )}
+      {actionSummary.destructiveAction === "withdraw" && (
         <ConfirmCancel
           action={actionSummary.destructiveAction}
           amountLabel={actionSummary.amountLabel}

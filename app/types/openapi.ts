@@ -63,6 +63,11 @@ export interface Stream {
    */
   token: string;
   /**
+   * Total amount locked in escrow when the stream was created (raw i128 units).
+   * Required for the cancel-stream refund preview split.
+   */
+  totalAmount?: string;
+  /**
    * Present only on cancelled streams. Contains the full refund-split
    * breakdown so callers can verify the escrow-conservation invariant.
    */
