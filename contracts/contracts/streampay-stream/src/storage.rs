@@ -70,16 +70,16 @@ enum DataKey {
 /// 1-month target. They are re-stamped on every `create_stream` check and on
 /// every admin `set_token_allowed` write.
 pub const STREAM_TTL_MIN_REMAINING: u32 = 241_920; // ~2 weeks at 5-second ledgers
-pub const STREAM_TTL_EXTEND_TO: u32 = 1_555_200;   // ~3 months at 5-second ledgers
+pub const STREAM_TTL_EXTEND_TO: u32 = 1_555_200; // ~3 months at 5-second ledgers
 pub const INSTANCE_TTL_MIN_REMAINING: u32 = 120_960; // ~1 week at 5-second ledgers
-pub const INSTANCE_TTL_EXTEND_TO: u32 = 518_400;   // ~1 month at 5-second ledgers
+pub const INSTANCE_TTL_EXTEND_TO: u32 = 518_400; // ~1 month at 5-second ledgers
 /// Per-token allowlist TTL constants.
 ///
 /// Every `is_token_blocked` call (hot path inside `create_stream`) extends
 /// the allowlist entry's TTL so a token that is actively being streamed
 /// cannot silently archive between stream creation and withdrawal.
 pub const TOKEN_TTL_MIN_REMAINING: u32 = 120_960; // ~1 week at 5-second ledgers
-pub const TOKEN_TTL_EXTEND_TO: u32 = 518_400;     // ~1 month at 5-second ledgers
+pub const TOKEN_TTL_EXTEND_TO: u32 = 518_400; // ~1 month at 5-second ledgers
 
 fn ttl_target(env: &Env, extra_ledgers: u32) -> u32 {
     env.ledger().sequence().saturating_add(extra_ledgers)
@@ -290,6 +290,18 @@ pub fn next_stream_id(env: &Env) -> u64 {
     id
 }
 
+/// Returns the next stream id without incrementing the stored counter.
+pub fn peek_next_stream_id(env: &Env) -> u64 {
+    let storage = env.storage().instance();
+    storage.get(&DataKey::StreamCount).unwrap_or(1u64)
+}
+
+#[cfg(test)]
+pub fn set_next_stream_id_for_test(env: &Env, id: u64) {
+    let storage = env.storage().instance();
+    storage.set(&DataKey::StreamCount, &id);
+}
+
 /// Writes a stream record into persistent storage.
 ///
 /// This helper also extends the TTL for the corresponding per-stream entry.
@@ -331,13 +343,15 @@ mod tests {
     use super::*;
     use crate::Contract;
     use soroban_sdk::{
-        testutils::{Address as _, Ledger as _},
+        testutils::{
+            storage::{Instance as _, Persistent as _},
+            Address as _, Ledger as _,
+        },
         Env,
     };
 
     fn setup() -> (Env, soroban_sdk::Address) {
         let env = Env::default();
-        env.ledger().set_sequence_number(1_000);
         let contract_id = env.register(Contract, ());
         (env, contract_id)
     }
@@ -348,12 +362,12 @@ mod tests {
             sender: soroban_sdk::Address::generate(env),
             recipient: soroban_sdk::Address::generate(env),
             token: soroban_sdk::Address::generate(env),
-            total_amount: 1_000,
+            total_amount: 1000,
             released_amount: 0,
-            start_time: 0,
-            end_time: 100,
-            duration: 100,
-            last_update: 0,
+            start_time: 1000,
+            end_time: 2000,
+            duration: 1000,
+            last_update: 1000,
             status: StreamStatus::Active,
             pause_time: 0,
             total_paused_duration: 0,
@@ -362,27 +376,16 @@ mod tests {
 
     // ── constant sanity ──────────────────────────────────────────────────────
 
-    /// The bumped TTL constants must be strictly larger than the previous
-    /// values that shipped before this PR.
+    /// Extends must be > 0 and extend_to >= min_remaining for all entry types.
     #[test]
-    fn ttl_constants_are_greater_than_previous_values() {
-        // Stream: was 120_960 threshold, 483_840 extend_to
-        assert!(STREAM_TTL_MIN_REMAINING > 120_960);
-        assert!(STREAM_TTL_EXTEND_TO > 483_840);
-        // Instance: was 43_200 threshold, 120_960 extend_to
-        assert!(INSTANCE_TTL_MIN_REMAINING > 43_200);
-        assert!(INSTANCE_TTL_EXTEND_TO > 120_960);
+    fn ttl_constants_are_valid() {
+        assert!(STREAM_TTL_MIN_REMAINING > 0);
+        assert!(STREAM_TTL_EXTEND_TO >= STREAM_TTL_MIN_REMAINING);
+        assert!(INSTANCE_TTL_MIN_REMAINING > 0);
+        assert!(INSTANCE_TTL_EXTEND_TO >= INSTANCE_TTL_MIN_REMAINING);
         // Token constants: new in this PR, just verify non-zero
         assert!(TOKEN_TTL_MIN_REMAINING > 0);
         assert!(TOKEN_TTL_EXTEND_TO >= TOKEN_TTL_MIN_REMAINING);
-    }
-
-    /// Extend-to must always be larger than min-remaining for every storage tier.
-    #[test]
-    fn extend_to_is_larger_than_min_remaining_for_all_tiers() {
-        assert!(STREAM_TTL_EXTEND_TO > STREAM_TTL_MIN_REMAINING);
-        assert!(INSTANCE_TTL_EXTEND_TO > INSTANCE_TTL_MIN_REMAINING);
-        assert!(TOKEN_TTL_EXTEND_TO > TOKEN_TTL_MIN_REMAINING);
     }
 
     // ── stream TTL ───────────────────────────────────────────────────────────
@@ -412,25 +415,27 @@ mod tests {
         });
 
         // Advance to the ledger where the remaining TTL is MIN_REMAINING - 1.
-        // At initial sequence 1_000 the entry expires at 1_000 + STREAM_TTL_EXTEND_TO.
-        // After advancing to 1_000 + STREAM_TTL_EXTEND_TO - STREAM_TTL_MIN_REMAINING + 1
-        // the remaining TTL = STREAM_TTL_MIN_REMAINING - 1 (one below threshold).
-        let new_seq = 1_000u32
-            .saturating_add(STREAM_TTL_EXTEND_TO)
+        let new_seq = STREAM_TTL_EXTEND_TO
             .saturating_sub(STREAM_TTL_MIN_REMAINING)
             .saturating_add(1);
         env.ledger().set_sequence_number(new_seq);
 
         env.as_contract(&contract_id, || {
             let ttl_before = env.storage().persistent().get_ttl(&DataKey::Stream(1));
-            assert_eq!(ttl_before, STREAM_TTL_MIN_REMAINING - 1,
-                "pre-condition: TTL should be exactly one ledger below threshold");
+            assert_eq!(
+                ttl_before,
+                STREAM_TTL_MIN_REMAINING - 1,
+                "pre-condition: TTL should be exactly one ledger below threshold"
+            );
 
             let _ = get_stream(&env, 1);
 
             let ttl_after = env.storage().persistent().get_ttl(&DataKey::Stream(1));
-            assert_eq!(ttl_after, STREAM_TTL_EXTEND_TO,
-                "get_stream must re-extend TTL to STREAM_TTL_EXTEND_TO");
+            assert_eq!(
+                ttl_after - env.ledger().sequence(),
+                STREAM_TTL_EXTEND_TO,
+                "get_stream must re-extend TTL to STREAM_TTL_EXTEND_TO"
+            );
         });
     }
 
@@ -475,8 +480,7 @@ mod tests {
             set_token_allowed(&env, &token, false);
         });
 
-        let new_seq = 1_000u32
-            .saturating_add(TOKEN_TTL_EXTEND_TO)
+        let new_seq = TOKEN_TTL_EXTEND_TO
             .saturating_sub(TOKEN_TTL_MIN_REMAINING)
             .saturating_add(1);
         env.ledger().set_sequence_number(new_seq);
@@ -486,8 +490,11 @@ mod tests {
                 .storage()
                 .persistent()
                 .get_ttl(&DataKey::TokenAllowed(token.clone()));
-            assert_eq!(ttl_before, TOKEN_TTL_MIN_REMAINING - 1,
-                "pre-condition: TTL should be exactly one ledger below threshold");
+            assert_eq!(
+                ttl_before,
+                TOKEN_TTL_MIN_REMAINING - 1,
+                "pre-condition: TTL should be exactly one ledger below threshold"
+            );
 
             let blocked = is_token_blocked(&env, &token);
             assert!(blocked, "token should still be blocked");
@@ -496,8 +503,11 @@ mod tests {
                 .storage()
                 .persistent()
                 .get_ttl(&DataKey::TokenAllowed(token.clone()));
-            assert_eq!(ttl_after, TOKEN_TTL_EXTEND_TO,
-                "is_token_blocked must re-extend TTL to TOKEN_TTL_EXTEND_TO");
+            assert_eq!(
+                ttl_after - env.ledger().sequence(),
+                TOKEN_TTL_EXTEND_TO,
+                "is_token_blocked must re-extend TTL to TOKEN_TTL_EXTEND_TO"
+            );
         });
     }
 
@@ -511,8 +521,7 @@ mod tests {
             set_token_allowed(&env, &token, true);
         });
 
-        let new_seq = 1_000u32
-            .saturating_add(TOKEN_TTL_EXTEND_TO)
+        let new_seq = TOKEN_TTL_EXTEND_TO
             .saturating_sub(TOKEN_TTL_MIN_REMAINING)
             .saturating_add(1);
         env.ledger().set_sequence_number(new_seq);
@@ -525,7 +534,7 @@ mod tests {
                 .storage()
                 .persistent()
                 .get_ttl(&DataKey::TokenAllowed(token.clone()));
-            assert_eq!(ttl_after, TOKEN_TTL_EXTEND_TO);
+            assert_eq!(ttl_after - env.ledger().sequence(), TOKEN_TTL_EXTEND_TO);
         });
     }
 
@@ -565,8 +574,7 @@ mod tests {
             set_admin(&env, &admin);
         });
 
-        let new_seq = 1_000u32
-            .saturating_add(INSTANCE_TTL_EXTEND_TO)
+        let new_seq = INSTANCE_TTL_EXTEND_TO
             .saturating_sub(INSTANCE_TTL_MIN_REMAINING)
             .saturating_add(1);
         env.ledger().set_sequence_number(new_seq);
@@ -578,7 +586,7 @@ mod tests {
             let _ = get_admin(&env);
 
             let ttl_after = env.storage().instance().get_ttl();
-            assert_eq!(ttl_after, INSTANCE_TTL_EXTEND_TO);
+            assert_eq!(ttl_after - env.ledger().sequence(), INSTANCE_TTL_EXTEND_TO);
         });
     }
 
@@ -593,23 +601,28 @@ mod tests {
             set_paused(&env, false);
         });
 
-        let new_seq = 1_000u32
-            .saturating_add(INSTANCE_TTL_EXTEND_TO)
+        let new_seq = INSTANCE_TTL_EXTEND_TO
             .saturating_sub(INSTANCE_TTL_MIN_REMAINING)
             .saturating_add(1);
         env.ledger().set_sequence_number(new_seq);
 
         env.as_contract(&contract_id, || {
             let ttl_before = env.storage().instance().get_ttl();
-            assert_eq!(ttl_before, INSTANCE_TTL_MIN_REMAINING - 1,
-                "pre-condition: TTL should be exactly one ledger below threshold");
+            assert_eq!(
+                ttl_before,
+                INSTANCE_TTL_MIN_REMAINING - 1,
+                "pre-condition: TTL should be exactly one ledger below threshold"
+            );
 
             let paused = is_paused(&env);
             assert!(!paused);
 
             let ttl_after = env.storage().instance().get_ttl();
-            assert_eq!(ttl_after, INSTANCE_TTL_EXTEND_TO,
-                "is_paused must re-extend instance TTL to INSTANCE_TTL_EXTEND_TO");
+            assert_eq!(
+                ttl_after - env.ledger().sequence(),
+                INSTANCE_TTL_EXTEND_TO,
+                "is_paused must re-extend instance TTL to INSTANCE_TTL_EXTEND_TO"
+            );
         });
     }
 

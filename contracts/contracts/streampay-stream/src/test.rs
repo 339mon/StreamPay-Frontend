@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Integration tests for the `initialize` and `init_with_token_allowlist`
 //! entrypoints.
 //!
@@ -1174,6 +1175,55 @@ fn amend_stream_rejects_end_time_not_in_future() {
 }
 
 #[test]
+fn amend_stream_fails_when_contract_paused() {
+    let data = setup_init();
+    let client = contract_client(&data.env);
+    client.initialize(&data.admin);
+
+    let id = client.create_stream(
+        &data.sender,
+        &data.recipient,
+        &data.tokens[0],
+        &1000i128,
+        &1_100u64,
+        &1_200u64,
+    );
+
+    client.set_paused(&data.admin, &true);
+    let result = client.try_amend_stream(&id, &10i128, &1_300u64);
+    assert_eq!(
+        result.expect_err("amend when paused should fail"),
+        Ok(Error::ContractPaused)
+    );
+}
+
+#[test]
+fn amend_stream_overflow_returns_overflow_error() {
+    let data = setup_init();
+    let client = contract_client(&data.env);
+    client.initialize(&data.admin);
+
+    let large_amount = i128::MAX / 10;
+    StellarAssetClient::new(&data.env, &data.tokens[0]).mint(&data.sender, &large_amount);
+
+    let id = client.create_stream(
+        &data.sender,
+        &data.recipient,
+        &data.tokens[0],
+        &large_amount,
+        &1_100u64,
+        &1_101u64,
+    );
+
+    // Amending new_end_time to 1_111 makes duration 11. (i128::MAX / 10) * 11 overflows i128.
+    let result = client.try_amend_stream(&id, &10i128, &1_111u64);
+    assert_eq!(
+        result.expect_err("amend overflow should fail"),
+        Ok(Error::Overflow)
+    );
+}
+
+#[test]
 fn pause_emits_admin_action_event() {
     let data = setup_init();
     let client = contract_client(&data.env);
@@ -1658,15 +1708,15 @@ fn claim_drip_returns_withdrawable_amount() {
     );
 
     // Before start time, should return 0
-    assert_eq!(client.claim_drip(&id), Ok(0));
+    assert_eq!(client.claim_drip(&id), 0);
 
     // Midpoint, should return half
     data.env.ledger().set_timestamp(1_150);
     let drip = client.claim_drip(&id);
-    assert_eq!(drip, Ok(500));
+    assert_eq!(drip, 500);
 
     // Withdraw some, then check drip again
     client.withdraw(&id, &200i128);
     let drip_after_withdraw = client.claim_drip(&id);
-    assert_eq!(drip_after_withdraw, Ok(300));
+    assert_eq!(drip_after_withdraw, 300);
 }

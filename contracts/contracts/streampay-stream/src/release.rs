@@ -38,9 +38,8 @@ pub fn vested_amount(stream: &Stream, now: u64) -> Result<i128, Error> {
         .saturating_sub(stream.start_time)
         .saturating_sub(stream.total_paused_duration);
 
-    // Handle edge case: zero duration (should never happen with valid streams,
-    // but we handle it defensively).
-    if stream.duration == 0 {
+    // If stream duration has fully elapsed, total amount is fully vested
+    if stream.duration == 0 || elapsed >= stream.duration {
         return Ok(stream.total_amount);
     }
 
