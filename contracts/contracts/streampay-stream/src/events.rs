@@ -89,6 +89,13 @@ pub struct AdminAction {
     pub timestamp: u64,
 }
 
+#[contractevent(topics = ["stream", "deprecated_entrypoint"], data_format = "vec")]
+pub struct DeprecatedEntrypoint {
+    pub caller: Address,
+    pub entrypoint: Symbol,
+    pub timestamp: u64,
+}
+
 pub fn created(
     env: &Env,
     stream_id: u64,
@@ -206,6 +213,16 @@ pub fn admin_action(env: &Env, stream_id: u64, admin: &Address, action: Symbol, 
         stream_id,
         admin: admin.clone(),
         action,
+        timestamp,
+    }
+    .publish(env);
+}
+
+/// Emit when a legacy/deprecated contract entrypoint is invoked.
+pub fn deprecated_entrypoint(env: &Env, caller: &Address, entrypoint: Symbol, timestamp: u64) {
+    DeprecatedEntrypoint {
+        caller: caller.clone(),
+        entrypoint,
         timestamp,
     }
     .publish(env);
