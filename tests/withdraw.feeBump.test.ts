@@ -4,7 +4,7 @@
  * Unit tests for the fee-bump logic in `lib/feeBump.ts`.
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach } from "@jest/globals";
 import { isFeeRelatedFailure, maybeFeeBump } from "@/lib/feeBump";
 import type { Stream } from "@/app/types/openapi";
 

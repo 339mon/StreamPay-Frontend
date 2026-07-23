@@ -46,9 +46,9 @@ function createErrorResponse(code: string, message: string, status: number) {
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const streamId = params.id;
+  const { id: streamId } = await params;
 
   // Validate streamId is a non-empty string
   if (!streamId || typeof streamId !== "string" || streamId.trim() === "") {

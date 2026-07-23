@@ -4,6 +4,7 @@
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import { ThemeToggle } from "./ThemeToggle";
+import * as themeNoFlash from "../utils/theme-noflash";
 
 const mockSetTheme = jest.fn();
 jest.mock("../utils/theme-noflash", () => ({
