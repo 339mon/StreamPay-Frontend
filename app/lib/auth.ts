@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { NextResponse } from "next/server";
 import type { AuditActorRole } from "@/app/types/audit";
@@ -7,7 +8,7 @@ import type { AuditActorRole } from "@/app/types/audit";
 export const INSECURE_DEV_JWT_SECRET = "streampay-dev-secret-do-not-use-in-prod";
 
 /** Token issuer — must match the value used when signing. */
-export const JWT_ISSUER   = "streampay";
+export const JWT_ISSUER = "streampay";
 
 /** Token audience — must match the value used when signing. */
 export const JWT_AUDIENCE = "streampay-api";
@@ -34,15 +35,14 @@ const MIN_SECRET_LENGTH = 32;
  */
 function resolveJwtSecret(): string {
   const secret = process.env.JWT_SECRET;
-  const env    = process.env.NODE_ENV ?? "development";
-  const isDev  = env === "development" || env === "test";
+  const env = process.env.NODE_ENV ?? "development";
+  const isDev = env === "development" || env === "test";
 
   if (!secret || secret.length === 0) {
     if (isDev) {
-      // Dev-only fallback — never reaches production.
       console.warn(
         "[auth] JWT_SECRET is not set. Using insecure dev placeholder. " +
-        "Set JWT_SECRET in production.",
+          "Set JWT_SECRET in production.",
       );
       return INSECURE_DEV_JWT_SECRET;
     }
@@ -55,12 +55,12 @@ function resolveJwtSecret(): string {
     if (isDev) {
       console.warn(
         `[auth] JWT_SECRET is shorter than ${MIN_SECRET_LENGTH} characters. ` +
-        "Use a longer secret in production.",
+          "Use a longer secret in production.",
       );
     } else {
       throw new Error(
         `[auth] JWT_SECRET must be at least ${MIN_SECRET_LENGTH} characters ` +
-        `in non-development environments (got ${secret.length}).`,
+          `in non-development environments (got ${secret.length}).`,
       );
     }
   }
@@ -109,17 +109,17 @@ function normalizeRole(role: string | undefined): AuditActorRole {
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface AuthenticatedActor {
-  actorId:       string;
+  actorId: string;
   walletAddress: string;
-  role:          AuditActorRole;
+  role: AuditActorRole;
 }
 
 interface TokenClaims {
-  sub?:     string;
-  role?:    string;
+  sub?: string;
+  role?: string;
   actorId?: string;
-  iss?:     string;
-  aud?:     string | string[];
+  iss?: string;
+  aud?: string | string[];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -131,18 +131,31 @@ function createErrorResponse(code: string, message: string, status: number) {
   );
 }
 
+/**
+ * Validates double-submit CSRF tokens using constant-time comparison.
+ * Protects wallet authentication endpoints from timing and CSRF attacks.
+ */
+export function validateCsrfToken(cookieToken: string | null, headerToken: string | null): boolean {
+  if (!cookieToken || !headerToken) return false;
+
+  try {
+    const bufCookie = Buffer.from(cookieToken);
+    const bufHeader = Buffer.from(headerToken);
+
+    if (bufCookie.length !== bufHeader.length) {
+      return false;
+    }
+
+    return crypto.timingSafeEqual(bufCookie, bufHeader);
+  } catch {
+    return false;
+  }
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
  * Sign a JWT for the given wallet address.
- *
- * Always signs with:
- *   - `iss: JWT_ISSUER`
- *   - `aud: JWT_AUDIENCE`
- *   - algorithm: HS256 (implicit from secret type)
- *
- * @param walletAddress  Stellar G... public key — becomes the `sub` claim.
- * @param extra          Additional claims (role, actorId, etc.).
  */
 export function signToken(
   walletAddress: string,
@@ -158,16 +171,6 @@ export function signToken(
 /**
  * Attempt to authenticate an incoming request via its `Authorization: Bearer`
  * header.
- *
- * Verifies:
- *   - Signature (HMAC-SHA256 with JWT_SECRET)
- *   - Issuer (`iss === JWT_ISSUER`)
- *   - Audience (`aud === JWT_AUDIENCE`)
- *   - Algorithm allowlist (`algorithms: ["HS256"]`) — rejects alg=none
- *   - Expiry
- *
- * Returns `null` (not an error) on any verification failure so callers can
- * decide whether to return 401 or fall through to another auth method.
  */
 export function tryAuthenticateRequest(request: Request): AuthenticatedActor | null {
   const authHeader = request.headers?.get?.("authorization") ?? null;
@@ -176,8 +179,8 @@ export function tryAuthenticateRequest(request: Request): AuthenticatedActor | n
   const token = authHeader.slice(7);
   try {
     const verified = jwt.verify(token, JWT_SECRET, {
-      issuer:     JWT_ISSUER,
-      audience:   JWT_AUDIENCE,
+      issuer: JWT_ISSUER,
+      audience: JWT_AUDIENCE,
       algorithms: JWT_ALGORITHMS,
     }) as TokenClaims;
 
@@ -192,7 +195,6 @@ export function tryAuthenticateRequest(request: Request): AuthenticatedActor | n
       role: normalizeRole(verified.role),
     };
   } catch {
-    // JsonWebTokenError, NotBeforeError, TokenExpiredError — all return null.
     return null;
   }
 }

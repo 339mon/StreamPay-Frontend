@@ -1,16 +1,11 @@
 import { NextResponse } from "next/server";
-import {
-  checkIdempotency,
-  computeFingerprint,
-  db,
-  idempotencyToken,
-  setIdempotency,
-  withLock,
-} from "@/app/lib/db";
+import { db, withLock } from "@/app/lib/db";
+import { withIdempotency, withdrawStore } from "@/app/lib/idempotency";
 import { getCorrelationContext, logger } from "@/app/lib/logger";
 import { checkStreamOrgPolicy } from "@/app/lib/org-policy";
 import { recordPrivilegedStreamAuditEvent } from "@/app/lib/audit-log";
 import { evaluateWithdrawalState } from "@/app/lib/withdraw-finality";
+import { maybeFeeBump } from "@/lib/feeBump";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -28,107 +23,92 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-
   const actorAddress = getHeader(request, "Actor-Wallet-Address");
-  const idempotencyKey = getHeader(request, "Idempotency-Key");
-  const token = idempotencyKey
-    ? idempotencyToken(`streams.withdraw.${id}`, idempotencyKey)
-    : null;
 
-  const fingerprint = computeFingerprint("POST", `/api/streams/${id}/withdraw`, null);
-
-  if (token) {
-    const cached = checkIdempotency(db.idempotency, token, fingerprint);
-    if (cached) {
-      if (!cached.ok) {
-        return NextResponse.json(
-          { error: { code: "IDEMPOTENCY_CONFLICT", message: "Idempotency key has been used with a different request." } },
-          { status: 409 },
-        );
+  // IDEMPOTENCY: Withdraw is non-idempotent by nature — this wrapper ensures retries return the original response without re-executing the withdrawal
+  return withIdempotency(request, "withdraw", withdrawStore, async () => {
+    return withLock(id, async () => {
+      const stream = db.streams.get(id);
+      if (!stream) {
+        return createErrorResponse("STREAM_NOT_FOUND", `Stream '${id}' not found`, 404);
       }
-      return NextResponse.json(cached.body, { status: cached.status });
-    }
-  }
 
-  return withLock(id, async () => {
-    if (token) {
-      const cached = checkIdempotency(db.idempotency, token, fingerprint);
-      if (cached) {
-        if (!cached.ok) {
-          return NextResponse.json(
-            { error: { code: "IDEMPOTENCY_CONFLICT", message: "Idempotency key has been used with a different request." } },
-            { status: 409 },
+      const policyResult = actorAddress
+        ? checkStreamOrgPolicy(id, actorAddress, "withdraw")
+        : null;
+      if (policyResult) {
+        if (!policyResult.allowed) {
+          return createErrorResponse(policyResult.code, policyResult.message, policyResult.httpStatus);
+        }
+        if (policyResult.requiresApproval) {
+          return createErrorResponse(
+            "APPROVAL_REQUIRED",
+            "This action requires multi-sig approval. Please initiate an approval request.",
+            409
           );
         }
-        return NextResponse.json(cached.body, { status: cached.status });
       }
-    }
 
-    const stream = db.streams.get(id);
-    if (!stream) {
-      return createErrorResponse("STREAM_NOT_FOUND", `Stream '${id}' not found`, 404);
-    }
-
-    const policyResult = actorAddress
-      ? checkStreamOrgPolicy(id, actorAddress, "withdraw")
-      : null;
-    if (policyResult) {
-      if (!policyResult.allowed) {
-        return createErrorResponse(policyResult.code, policyResult.message, policyResult.httpStatus);
-      }
-      if (policyResult.requiresApproval) {
-        return createErrorResponse(
-          "APPROVAL_REQUIRED",
-          "This action requires multi-sig approval. Please initiate an approval request.",
-          409
-        );
-      }
-    }
-
-    if (stream.status !== "ended") {
-      if (stream.status === "withdrawn") {
-        const payload = { data: stream, withdrawal: stream.withdrawal };
-        if (token) {
-          setIdempotency(db.idempotency, token, fingerprint, 200, payload);
+      if (stream.status !== "ended") {
+        if (stream.status === "withdrawn") {
+          const payload = { data: stream, withdrawal: stream.withdrawal };
+          return NextResponse.json(payload);
         }
-        return NextResponse.json(payload);
+        return createErrorResponse("INVALID_STREAM_STATE", "Only ended streams can be withdrawn from", 409);
       }
-      return createErrorResponse("INVALID_STREAM_STATE", "Only ended streams can be withdrawn from", 409);
-    }
 
-    const before = structuredClone(stream);
-    const { alert, stream: updated } = await evaluateWithdrawalState(stream, new Date(), fetch);
-    db.streams.set(id, updated);
+      const before = structuredClone(stream);
+      let evaluationResult = await evaluateWithdrawalState(stream, new Date(), fetch);
 
-    const payload = {
-      alert,
-      data: updated,
-      withdrawal: updated.withdrawal,
-    };
+      // ── Fee-bump: if the withdrawal failed due to insufficient fees,
+      //    automatically attempt a fee-bump resubmission ─────────────────
+      const { result: finalResult, feeBump } = await maybeFeeBump(
+        { stream: evaluationResult.stream, alert: evaluationResult.alert },
+        fetch,
+      );
 
-    recordPrivilegedStreamAuditEvent({
-      action: "stream.withdraw",
-      after: updated as any,
-      before: before as any,
-      metadata: {
-        resultingStatus: updated.status,
-        withdrawalState: updated.withdrawal?.state ?? null,
-      },
-      request,
-      streamId: id,
-      targetAccount: updated.recipient,
+      if (feeBump.bumped) {
+        logger.info("Fee-bump transaction submitted successfully", {
+          streamId: id,
+          newTxHash: feeBump.newTxHash,
+        });
+      } else if (feeBump.error) {
+        logger.warn("Fee-bump attempt failed", {
+          streamId: id,
+          error: feeBump.error,
+        });
+      }
+
+      const updated = finalResult.stream;
+      db.streams.set(id, updated);
+
+      const payload = {
+        alert: finalResult.alert,
+        data: updated,
+        withdrawal: updated.withdrawal,
+        ...(feeBump.bumped ? { feeBump: { bumped: true, newTxHash: feeBump.newTxHash } } : {}),
+      };
+
+      recordPrivilegedStreamAuditEvent({
+        action: "stream.withdraw",
+        after: updated as any,
+        before: before as any,
+        metadata: {
+          resultingStatus: updated.status,
+          withdrawalState: updated.withdrawal?.state ?? null,
+        },
+        request,
+        streamId: id,
+        targetAccount: updated.recipient,
+      });
+
+      logger.info("Stream withdrawn successfully", {
+        streamId: id,
+        action: "withdraw",
+        status: "success",
+      });
+
+      return NextResponse.json(payload);
     });
-
-    if (token) {
-      setIdempotency(db.idempotency, token, fingerprint, 200, payload);
-    }
-
-    logger.info("Stream withdrawn successfully", {
-      streamId: id,
-      action: "withdraw",
-      status: "success",
-    });
-
-    return NextResponse.json(payload);
   });
 }

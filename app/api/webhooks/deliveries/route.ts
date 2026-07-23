@@ -1,7 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
-import { errorResponse, ErrorCode } from "@/app/lib/errors";
-import { webhookDeliveryStore } from "@/app/lib/webhook-delivery-store";
-import { getOutboxStore } from "@/lib/outbox";
+import { NextRequest } from "next/server";
+import { errorResponse, ErrorCode } from "@/app/lib/errors/server";
 
 /**
  * GET /api/webhooks/deliveries

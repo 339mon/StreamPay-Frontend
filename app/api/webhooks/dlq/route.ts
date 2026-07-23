@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { errorResponse, ErrorCode } from "@/app/lib/errors";
-import { appendToOutbox, getOutboxStore, outboxDrainWorker } from "@/lib/outbox";
-import type { WebhookEndpoint, WebhookEvent } from "@/app/lib/webhook-delivery";
+import { errorResponse, ErrorCode } from "@/app/lib/errors/server";
 
 /**
  * POST /api/webhooks/dlq
@@ -19,28 +17,13 @@ import type { WebhookEndpoint, WebhookEvent } from "@/app/lib/webhook-delivery";
  */
 export async function POST(req: NextRequest) {
   try {
-    // Let json() throws propagate to the outer catch → 500 WEBHOOK_PROCESSING_FAILED.
     const body = await req.json();
 
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return errorResponse(ErrorCode.BAD_REQUEST, "Request body must be a JSON object.", 400);
     }
 
-    // If the body has structured endpoint+event fields, record it in the
-    // transactional outbox and trigger a best-effort drain.
-    if (hasEndpoint(body) && hasEvent(body)) {
-      const endpoint = (body as { endpoint: WebhookEndpoint }).endpoint;
-      const event = (body as { event: WebhookEvent }).event;
-
-      const entry = appendToOutbox({ endpoint, event, store: getOutboxStore() });
-
-      // Best-effort synchronous drain — errors are swallowed inside drain().
-      outboxDrainWorker.drain().catch(() => {});
-
-      return NextResponse.json({ received: true, outboxId: entry.id }, { status: 200 });
-    }
-
-    // Legacy / unstructured body: acknowledge receipt without outbox integration.
+    // TODO: enqueue body for reprocessing
     return NextResponse.json({ received: true }, { status: 200 });
   } catch {
     return errorResponse(
