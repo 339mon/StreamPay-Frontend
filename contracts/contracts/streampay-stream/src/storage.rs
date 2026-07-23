@@ -41,7 +41,7 @@ pub struct Stream {
     pub duration: u64,
     pub last_update: u64,
     pub status: StreamStatus,
-    pub pause_time: u64,
+    pub paused_at: u64,
     pub total_paused_duration: u64,
 }
 
@@ -355,7 +355,7 @@ mod tests {
             duration: 100,
             last_update: 0,
             status: StreamStatus::Active,
-            pause_time: 0,
+            paused_at: 0,
             total_paused_duration: 0,
         }
     }

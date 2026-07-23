@@ -961,7 +961,7 @@ fn cancel_stream_after_partial_withdraw_correct_split() {
 
 /// Cancelling a paused stream respects the frozen accrual point.
 #[test]
-fn cancel_stream_while_paused_uses_pause_time_for_split() {
+fn cancel_stream_while_paused_uses_paused_at_for_split() {
     let data = setup_init();
     let client = contract_client(&data.env);
     client.initialize(&data.admin);
@@ -1551,7 +1551,7 @@ fn vested_amount_extreme_values_overflow() {
         duration: 1000,
         last_update: 0,
         status: StreamStatus::Active,
-        pause_time: 0,
+        paused_at: 0,
         total_paused_duration: 0,
     };
 

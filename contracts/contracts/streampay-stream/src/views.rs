@@ -395,7 +395,7 @@ mod tests {
                     6 => StreamStatus::Draft,
                     _ => StreamStatus::Active,
                 },
-                pause_time: 0,
+                paused_at: 0,
                 total_paused_duration: 0,
             };
             storage::set_stream(env, i, &stream);
@@ -569,7 +569,7 @@ mod tests {
                 duration: 1000,
                 last_update: 1000,
                 status: StreamStatus::Active,
-                pause_time: 0,
+                paused_at: 0,
                 total_paused_duration: 0,
             };
             storage::set_stream(&env, *i, &stream);
