@@ -1,10 +1,14 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { errorResponse, ErrorCode } from "@/app/lib/errors";
+import { webhookDeliveryStore } from "@/app/lib/webhook-delivery-store";
+import { getOutboxStore } from "@/lib/outbox";
 
 /**
  * GET /api/webhooks/deliveries
  *
- * Returns a paginated list of webhook delivery attempts.
+ * Returns a paginated list of webhook delivery attempts alongside a snapshot
+ * of the current outbox queue (pending / dispatched / failed entries).
+ *
  * Query params:
  *   - limit  (number, default 20, max 100)
  *   - cursor (opaque pagination cursor)
@@ -25,10 +29,21 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // TODO: fetch delivery records from the data layer
-    const deliveries: unknown[] = [];
+    // Delivery records from the in-process WebhookDeliveryStore.
+    const allDeliveries = webhookDeliveryStore.getAllDeliveries();
+    const deliveries = allDeliveries.slice(0, limit);
 
-    return Response.json({ deliveries, cursor: cursor ?? null, limit }, { status: 200 });
+    // Outbox snapshot: current status of all entries in the transactional outbox.
+    const outboxEntries = getOutboxStore().list();
+    const outbox = {
+      total: outboxEntries.length,
+      pending: outboxEntries.filter((e) => e.status === "pending").length,
+      dispatched: outboxEntries.filter((e) => e.status === "dispatched").length,
+      failed: outboxEntries.filter((e) => e.status === "failed").length,
+      entries: outboxEntries.slice(0, limit),
+    };
+
+    return NextResponse.json({ deliveries, cursor: cursor ?? null, limit, outbox }, { status: 200 });
   } catch {
     return errorResponse(
       ErrorCode.DELIVERY_FETCH_FAILED,
