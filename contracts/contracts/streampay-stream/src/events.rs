@@ -139,7 +139,6 @@ pub fn settled(env: &Env, stream_id: u64, recipient: &Address, total_amount: i12
     .publish(env);
 }
 
-#[allow(dead_code)]
 pub fn paused(env: &Env, stream_id: u64, sender: &Address, pause_time: u64, timestamp: u64) {
     StreamPaused {
         stream_id,
@@ -150,7 +149,6 @@ pub fn paused(env: &Env, stream_id: u64, sender: &Address, pause_time: u64, time
     .publish(env);
 }
 
-#[allow(dead_code)]
 pub fn resumed(env: &Env, stream_id: u64, sender: &Address, end_time: u64, timestamp: u64) {
     StreamResumed {
         stream_id,

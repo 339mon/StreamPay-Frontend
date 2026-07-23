@@ -740,14 +740,7 @@ impl Contract {
 
         storage::set_stream(&env, stream_id, &stream);
 
-        // Emit admin_action event for resume
-        events::admin_action(
-            &env,
-            stream_id,
-            &stream.sender,
-            soroban_sdk::symbol_short!("resume"),
-            now,
-        );
+        events::resumed(&env, stream_id, &stream.sender, stream.end_time, now);
 
         Ok(stream)
     }
@@ -801,13 +794,7 @@ impl Contract {
 
         limits::decrement_sender_stream_count(&env, &stream.sender);
         storage::set_stream(&env, stream_id, &stream);
-        events::admin_action(
-            &env,
-            stream_id,
-            &stream.recipient,
-            soroban_sdk::symbol_short!("settle"),
-            now,
-        );
+        events::settled(&env, stream_id, &stream.recipient, stream.released_amount, now);
 
         Ok(())
     }
@@ -1223,6 +1210,12 @@ mod coverage_test;
 
 #[cfg(test)]
 mod views_integration_test;
+
+/// Focused lifecycle-event tests: each test asserts that the exact structured
+/// event (correct topic pair, correct payload fields) is emitted for every
+/// state-changing entrypoint.  See `src/events_test.rs`.
+#[cfg(test)]
+mod events_test;
 
 #[cfg(test)]
 mod upgrade_test {
