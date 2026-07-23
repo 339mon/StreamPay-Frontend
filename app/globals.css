@@ -2887,3 +2887,195 @@ a:hover {
     transition: none !important;
   }
 }
+
+/* ─── Templates Marketplace ───────────────────────────────────────────────── */
+.template-controls {
+  display: grid;
+  gap: 1rem;
+}
+
+.template-controls__categories {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.template-controls__categories::-webkit-scrollbar {
+  display: none;
+}
+
+.template-controls__tab {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  transition: all 160ms ease;
+  white-space: nowrap;
+}
+
+.template-controls__tab:hover {
+  border-color: var(--accent);
+  color: var(--foreground);
+}
+
+.template-controls__tab--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-on);
+}
+
+.template-controls__tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.template-controls__search {
+  display: block;
+  width: 100%;
+}
+
+.template-controls__input {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  color: var(--foreground);
+  font-size: 0.95rem;
+  padding: 0.75rem 1rem;
+  width: 100%;
+  transition: border-color 160ms ease;
+}
+
+.template-controls__input::placeholder {
+  color: var(--muted);
+}
+
+.template-controls__input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.template-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+}
+
+.template-card {
+  background: linear-gradient(180deg, var(--panel-elevated), var(--panel));
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+  box-shadow: var(--shadow-soft);
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.25rem;
+}
+
+.template-card--skeleton {
+  pointer-events: none;
+}
+
+.template-card__header {
+  display: flex;
+  align-items: center;
+}
+
+.template-card__category {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  text-transform: uppercase;
+}
+
+.template-card__category--savings {
+  background: var(--system-success-bg);
+  color: var(--system-success-text);
+  border: 1px solid var(--system-success-border);
+}
+
+.template-card__category--income {
+  background: var(--system-info-bg);
+  color: var(--system-info-text);
+  border: 1px solid var(--system-info-border);
+}
+
+.template-card__category--bills {
+  background: var(--system-warning-bg);
+  color: var(--system-warning-text);
+  border: 1px solid var(--system-warning-border);
+}
+
+.template-card__category--custom {
+  background: rgba(113, 113, 122, 0.12);
+  color: var(--muted-light);
+  border: 1px solid var(--border);
+}
+
+.template-card__name {
+  font-size: 1.125rem;
+}
+
+.template-card__details {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.template-card__detail dt {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.25rem;
+  text-transform: uppercase;
+}
+
+.template-card__detail dd {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.template-card__memo {
+  color: var(--muted-light);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.template-card__apply {
+  margin-top: 0.5rem;
+  width: 100%;
+}
+
+@media (min-width: 40rem) {
+  .template-grid {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+
+  .template-controls {
+    grid-template-columns: 1fr auto;
+    align-items: center;
+  }
+
+  .template-controls__input {
+    max-width: 20rem;
+  }
+}
+
+@media (min-width: 64rem) {
+  .template-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .template-controls__tab {
+    transition: none !important;
+  }
+}
