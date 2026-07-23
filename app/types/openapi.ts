@@ -103,6 +103,7 @@ export interface User {
   display_name: string;
   avatar_url: string | null;
   created_at: string;
+  last_seen: string | null;
 }
 
 export interface ApiError {
