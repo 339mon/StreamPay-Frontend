@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 
-import { render } from "@testing-library/react";
+import { render, fireEvent } from "@testing-library/react";
 const { screen } = require("@testing-library/react") as any;
 import { StreamsPageContent } from "./StreamsPageContent";
 
@@ -132,5 +132,70 @@ describe("StreamsPageContent", () => {
     
     expect(screen.getByText(/100 XLM \/ month/i)).toHaveClass("stream-row__accrued--animated");
     expect(screen.getByText(/50 XLM \/ month/i)).not.toHaveClass("stream-row__accrued--animated");
+  });
+
+  describe("tag chip filtering", () => {
+    const taggedStreams = [
+      {
+        id: "stream-ada",
+        nextAction: "Pause",
+        rate: "120 XLM / month",
+        recipient: "Ada Creative Studio",
+        schedule: "Pays every 30 days",
+        status: "active" as const,
+        tags: ["design", "vendor"],
+      },
+      {
+        id: "stream-kemi",
+        nextAction: "Start",
+        rate: "32 XLM / week",
+        recipient: "Kemi Onboarding Support",
+        schedule: "Draft stream ready to launch",
+        status: "draft" as const,
+        tags: ["onboarding"],
+      },
+    ];
+
+    it("does not render a tag filter bar when no stream has tags", () => {
+      render(
+        <StreamsPageContent
+          state="populated"
+          streams={[
+            {
+              id: "stream-untagged",
+              nextAction: "Pause",
+              rate: "10 XLM / month",
+              recipient: "Untagged Recipient",
+              schedule: "Daily",
+              status: "active",
+            },
+          ]}
+        />,
+      );
+
+      expect(screen.queryByRole("group", { name: /filter by tag/i })).not.toBeInTheDocument();
+    });
+
+    it("filters the list to streams matching the clicked tag", () => {
+      render(<StreamsPageContent state="populated" streams={taggedStreams} />);
+
+      expect(screen.getByText(/ada creative studio/i)).toBeInTheDocument();
+      expect(screen.getByText(/kemi onboarding support/i)).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "onboarding" }));
+
+      expect(screen.getByText(/kemi onboarding support/i)).toBeInTheDocument();
+      expect(screen.queryByText(/ada creative studio/i)).not.toBeInTheDocument();
+    });
+
+    it("shows a no-matches message and clears back to the full list", () => {
+      render(<StreamsPageContent state="populated" streams={taggedStreams} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "onboarding" }));
+      fireEvent.click(screen.getByRole("button", { name: "onboarding" }));
+
+      expect(screen.getByText(/ada creative studio/i)).toBeInTheDocument();
+      expect(screen.getByText(/kemi onboarding support/i)).toBeInTheDocument();
+    });
   });
 });

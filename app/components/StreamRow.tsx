@@ -24,6 +24,8 @@ export type StreamRowData = {
   startedAt?: string;
   /** ISO-8601 expected end timestamp. Used by StreamProgress fallback. */
   endsAt?: string;
+  /** Freeform labels shown on the row and used by the tag-chip filter. */
+  tags?: string[];
 };
 
 type StreamRowProps = {
@@ -113,6 +115,15 @@ export function StreamRow({ stream }: StreamRowProps) {
             {stream.recipient}
           </h2>
           <p className="stream-row__schedule">{stream.schedule}</p>
+          {stream.tags && stream.tags.length > 0 && (
+            <ul className="stream-row__tags" aria-label="Tags">
+              {stream.tags.map((tag) => (
+                <li key={tag} className="tag-pill">
+                  {tag}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         <StatusBadge status={stream.status} />
       </div>
