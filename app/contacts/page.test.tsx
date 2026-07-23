@@ -171,6 +171,17 @@ describe("ContactsPage — empty state", () => {
   });
 });
 
+describe("ContactsPage — localStorage edge cases", () => {
+  it("handles corrupted localStorage gracefully", () => {
+    store["streampay_contacts"] = "{invalid-json}";
+    render(<ContactsPage />);
+    // Should show the empty state, not crash
+    expect(
+      screen.getByRole("heading", { name: /no contacts yet/i }),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("ContactsPage — rendering saved contacts", () => {
   it("displays a contact loaded from localStorage", () => {
     seedContacts([ALICE]);
@@ -414,6 +425,35 @@ describe("ContactsPage — federation address resolution", () => {
 });
 
 describe("ContactsPage — edit contact", () => {
+  it("pre-fills the address with the federation address when one exists", () => {
+    const fedContact: Contact = {
+      ...ALICE,
+      federationAddress: "alice*example.com",
+    };
+    seedContacts([fedContact]);
+    render(<ContactsPage />);
+    fireEvent.click(
+      screen.getByRole("button", { name: /edit contact alice design/i }),
+    );
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByLabelText(/stellar address or federation address/i),
+    ).toHaveValue("alice*example.com");
+  });
+
+  it("pre-fills the address with the raw address when no federation address exists", () => {
+    seedContacts([ALICE]);
+    render(<ContactsPage />);
+    fireEvent.click(
+      screen.getByRole("button", { name: /edit contact alice design/i }),
+    );
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByLabelText(/stellar address or federation address/i),
+    ).toHaveValue(
+      "GABC1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF12345678",
+    );
+  });
   it("opens the edit modal when the Edit button is clicked", () => {
     seedContacts([ALICE]);
     render(<ContactsPage />);

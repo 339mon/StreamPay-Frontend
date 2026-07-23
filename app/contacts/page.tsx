@@ -49,7 +49,9 @@ function persistContacts(contacts: Contact[]): void {
 const STELLAR_ACCOUNT_RE = /^G[A-Z2-7]{55}$/;
 
 function isValidStellarAddress(value: string): boolean {
-  return STELLAR_ACCOUNT_RE.test(value);
+  // Stellar addresses use base32 (RFC 4648) which is case-insensitive.
+  // Normalise to uppercase so the regex works for lowercase input.
+  return STELLAR_ACCOUNT_RE.test(value.toUpperCase());
 }
 
 // ─── ContactForm ──────────────────────────────────────────────────────────────
@@ -121,7 +123,8 @@ function ContactForm({
         setResolving(false);
       }
     } else if (isValidStellarAddress(trimmed)) {
-      setResolvedAddress(trimmed);
+      // Normalise to uppercase so stored addresses are canonical.
+      setResolvedAddress(trimmed.toUpperCase());
       setFederationAddress(undefined);
     } else {
       setResolvedAddress("");

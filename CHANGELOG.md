@@ -9,6 +9,10 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
 ## [Unreleased]
 
 ### Added
+- **Address book** (`/contacts`) — client-side Stellar address book with labels,
+  federation address resolution, search/filter, and full CRUD via modals.
+  Persisted to `localStorage` under `streampay_contacts`. See
+  [docs/address-book.md](docs/address-book.md) for the complete reference.
 - `lib/chaos.ts` — fault-injection middleware for chaos tests. Lets test
   suites inject latency, error responses, or request aborts at configurable
   rates (defaults disabled; opt in via `CHAOS_ENABLED=true` or programmatic
