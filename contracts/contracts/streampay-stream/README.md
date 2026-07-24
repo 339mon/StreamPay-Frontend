@@ -109,6 +109,23 @@ cargo test
 make coverage
 ```
 
+## CI gas budget gate
+
+The repository now includes a dedicated GitHub Actions gate at
+`.github/workflows/gas.yml` for the GrantFox campaign.  The job compiles the
+criterion benchmark harness and then compares the optimized WASM footprint
+against the budget manifest at `contracts/gas-budget.json`.
+
+The gate is intentionally conservative:
+
+- it uses a stable, deterministic build path;
+- it compares the current optimized WASM size to a checked-in baseline;
+- it fails when the contract grows by more than `5%`.
+
+Reviewers should update `contracts/gas-budget.json` only when they are
+intentionally changing the contract footprint and have confirmed the new
+size budget is still acceptable.
+
 ## Benchmark harness
 
 Criterion benchmarks live in `benches/entrypoints.rs`.  There is one
