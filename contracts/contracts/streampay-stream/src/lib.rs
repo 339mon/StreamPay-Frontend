@@ -20,6 +20,7 @@
 mod allowlist;
 mod error;
 mod events;
+mod fees;
 mod limits;
 mod release;
 mod storage;
@@ -225,6 +226,76 @@ impl Contract {
         Ok(())
     }
 
+    // ── Fee configuration entrypoints ─────────────────────────────────────────
+
+    /// Sets the address that receives protocol fees on every withdrawal.
+    ///
+    /// When no fee collector is set (default), the full withdrawal amount goes
+    /// to the recipient regardless of `fee_bps`. Setting a non-`None` collector
+    /// activates fee collection on all streams whose `fee_bps > 0`.
+    ///
+    /// # Parameters
+    /// - `admin`     — Must match the admin set at initialisation.
+    /// - `collector` — Address that will receive future fee transfers.
+    ///
+    /// # Errors
+    /// - [`Error::Unauthorized`] if `admin` is not the initialised admin.
+    ///
+    /// # Auth
+    /// Requires authorisation from `admin`.
+    pub fn set_fee_collector(env: Env, admin: Address, collector: Address) -> Result<(), Error> {
+        require_admin(&env, &admin)?;
+        fees::set_fee_collector(&env, &collector);
+        events::fee_collector_set(&env, &admin, &collector, env.ledger().timestamp());
+        Ok(())
+    }
+
+    /// Returns the current fee collector address, or `None` if unset.
+    pub fn get_fee_collector(env: Env) -> Option<Address> {
+        fees::get_fee_collector(&env)
+    }
+
+    /// Sets the global default `fee_bps` applied to streams that do not supply
+    /// an explicit per-stream override.
+    ///
+    /// The value must be in `[0, 10_000]` (0 % – 100 %).
+    ///
+    /// # Parameters
+    /// - `admin`   — Must match the admin set at initialisation.
+    /// - `fee_bps` — Default fee in basis points.
+    ///
+    /// # Errors
+    /// - [`Error::Unauthorized`] if `admin` is not the initialised admin.
+    /// - [`Error::InvalidFeeBps`] if `fee_bps > 10_000`.
+    ///
+    /// # Auth
+    /// Requires authorisation from `admin`.
+    pub fn set_default_fee_bps(env: Env, admin: Address, fee_bps: u32) -> Result<(), Error> {
+        require_admin(&env, &admin)?;
+        fees::validate_fee_bps(fee_bps)?;
+        fees::set_default_fee_bps(&env, fee_bps);
+        events::default_fee_bps_set(&env, &admin, fee_bps, env.ledger().timestamp());
+        Ok(())
+    }
+
+    /// Returns the global default `fee_bps` (0 if never set).
+    pub fn get_default_fee_bps(env: Env) -> u32 {
+        fees::get_default_fee_bps(&env)
+    }
+
+    /// Returns the effective `fee_bps` for `stream_id`.
+    ///
+    /// This is the per-stream override if one was supplied at creation time,
+    /// otherwise it falls back to the global default (which is `0` by default).
+    ///
+    /// # Errors
+    /// - [`Error::NotFound`] if `stream_id` does not exist.
+    pub fn get_stream_fee_bps(env: Env, stream_id: u64) -> Result<u32, Error> {
+        // Verify the stream actually exists before returning a fee value.
+        get_existing_stream(&env, stream_id)?;
+        Ok(fees::get_stream_fee_bps(&env, stream_id))
+    }
+
     /// Configures the **per-organisation** token allowlist for `org`.
     ///
     /// This layers on top of the global allowlist ([`Contract::set_token_allowed`]):
@@ -289,6 +360,7 @@ impl Contract {
         total_amount: i128,
         start_time: u64,
         end_time: u64,
+        fee_bps: u32,
     ) -> Result<u64, Error> {
         // Per-org allowlist gate runs first so a blocked token is rejected
         // before any auth/escrow side effects in create_stream.
@@ -304,6 +376,7 @@ impl Contract {
             total_amount,
             start_time,
             end_time,
+            fee_bps,
         )
     }
 
@@ -390,10 +463,14 @@ impl Contract {
         total_amount: i128,
         start_time: u64,
         end_time: u64,
+        fee_bps: u32,
     ) -> Result<u64, Error> {
         require_not_paused(&env)?;
         sender.require_auth();
         limits::check_sender_limit(&env, &sender)?;
+
+        // Validate fee_bps before any side effects.
+        fees::validate_fee_bps(fee_bps)?;
 
         if total_amount <= 0 {
             return Err(Error::InvalidAmount);
@@ -444,9 +521,13 @@ impl Contract {
             status: StreamStatus::Active,
             pause_time: 0,
             total_paused_duration: 0,
+            fee_bps,
         };
 
         storage::set_stream(&env, id, &stream);
+        // Persist the per-stream fee_bps so it can be retrieved independently
+        // from the stream row for read-only callers.
+        fees::set_stream_fee_bps(&env, id, fee_bps);
         limits::increment_sender_stream_count(&env, &stream.sender);
         events::created(
             &env,
@@ -641,12 +722,49 @@ impl Contract {
             limits::decrement_sender_stream_count(&env, &stream.sender);
         }
 
+        // ── Fee split ──────────────────────────────────────────────────────────
+        // Compute fee and net amount based on the per-stream fee_bps.  If no
+        // fee collector has been configured the full `amount` goes to the
+        // recipient regardless of `fee_bps`.
+        let fee_result = fees::apply_fee(amount, stream.fee_bps)?;
+        let maybe_collector = fees::get_fee_collector(&env);
+
+        // Transfer to recipient (net amount after fee).
         #[allow(clippy::needless_borrows_for_generic_args)]
         token::Client::new(&env, &stream.token).transfer(
             &env.current_contract_address(),
             &stream.recipient,
-            &amount,
+            &fee_result.net_amount,
         );
+
+        // Transfer fee to the collector if one is configured and fee > 0.
+        if fee_result.fee_amount > 0 {
+            if let Some(collector) = maybe_collector.clone() {
+                #[allow(clippy::needless_borrows_for_generic_args)]
+                token::Client::new(&env, &stream.token).transfer(
+                    &env.current_contract_address(),
+                    &collector,
+                    &fee_result.fee_amount,
+                );
+                events::fee_charged(
+                    &env,
+                    stream_id,
+                    fee_result.fee_amount,
+                    stream.fee_bps,
+                    &collector,
+                    now,
+                );
+            } else {
+                // No collector configured: forward fee to recipient as well so
+                // no funds are stranded in the contract.
+                #[allow(clippy::needless_borrows_for_generic_args)]
+                token::Client::new(&env, &stream.token).transfer(
+                    &env.current_contract_address(),
+                    &stream.recipient,
+                    &fee_result.fee_amount,
+                );
+            }
+        }
 
         storage::set_stream(&env, stream_id, &stream);
         let ts = stream.last_update;

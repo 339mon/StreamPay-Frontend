@@ -242,3 +242,39 @@ pub fn token_allowed_set(
         (admin.clone(), token.clone(), allowed, timestamp),
     );
 }
+
+/// Emitted when the fee collector address is updated via
+/// [`Contract::set_fee_collector`].
+pub fn fee_collector_set(env: &Env, admin: &Address, collector: &Address, timestamp: u64) {
+    env.events().publish(
+        (symbol_short!("stream"), symbol_short!("set_fee_c")),
+        (admin.clone(), collector.clone(), timestamp),
+    );
+}
+
+/// Emitted when the global default fee bps is updated via
+/// [`Contract::set_default_fee_bps`].
+pub fn default_fee_bps_set(env: &Env, admin: &Address, fee_bps: u32, timestamp: u64) {
+    env.events().publish(
+        (symbol_short!("stream"), symbol_short!("set_dfee")),
+        (admin.clone(), fee_bps, timestamp),
+    );
+}
+
+/// Emitted for every withdrawal that incurs a non-zero fee.
+///
+/// Topics: `("stream", "fee_charged")`.
+/// Data: `(stream_id, fee_amount, fee_bps, collector, timestamp)`.
+pub fn fee_charged(
+    env: &Env,
+    stream_id: u64,
+    fee_amount: i128,
+    fee_bps: u32,
+    collector: &Address,
+    timestamp: u64,
+) {
+    env.events().publish(
+        (symbol_short!("stream"), symbol_short!("fee")),
+        (stream_id, fee_amount, fee_bps, collector.clone(), timestamp),
+    );
+}
