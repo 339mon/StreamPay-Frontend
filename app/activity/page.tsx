@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { EmptyState } from "../components/EmptyState";
-import { PageError } from "../components/PageError";
+import { StateTriad } from "../components/StateTriad";
 import {
   ActivityTimeline,
   ActivityTimelineSkeleton,
   type ActivityGroup,
 } from "../components/ActivityTimeline";
+import type { StateTriadState } from "../components/StateTriad";
 
 type ActivityPageState = "loading" | "populated" | "empty" | "error";
 
@@ -58,7 +58,6 @@ const MOCK_ACTIVITY: ActivityGroup[] = [
 export default function ActivityPage() {
   const [pageState, setPageState] = useState<ActivityPageState>("loading");
   const [activities, setActivities] = useState<ActivityGroup[]>([]);
-  // Incrementing this key re-triggers the data-loading effect (retry).
   const [loadKey, setLoadKey] = useState(0);
 
   const handleRetry = useCallback(() => {
@@ -68,7 +67,6 @@ export default function ActivityPage() {
   useEffect(() => {
     setPageState("loading");
 
-    // In production replace with a real API call; reject to exercise error path.
     const timer = setTimeout(() => {
       setActivities(MOCK_ACTIVITY);
       setPageState(MOCK_ACTIVITY.length > 0 ? "populated" : "empty");
@@ -76,6 +74,14 @@ export default function ActivityPage() {
 
     return () => clearTimeout(timer);
   }, [loadKey]);
+
+  // Map to StateTriad state
+  const getTriadState = (): StateTriadState => {
+    if (pageState === "loading") return "loading";
+    if (pageState === "error") return "error";
+    if (pageState === "empty" || activities.length === 0) return "empty";
+    return "success";
+  };
 
   return (
     <main className="page-shell">
@@ -90,11 +96,6 @@ export default function ActivityPage() {
         </div>
       </section>
 
-      {/*
-       * aria-live="polite" lets screen readers announce content changes without
-       * interrupting. aria-busy signals that a fetch is in progress so assistive
-       * technology can defer reading until data arrives.
-       */}
       <section
         aria-busy={pageState === "loading"}
         aria-labelledby="activity-overview-title"
@@ -103,7 +104,10 @@ export default function ActivityPage() {
       >
         <div className="section-heading">
           <div>
-            <h2 className="section-heading__title" id="activity-overview-title">
+            <h2
+              className="section-heading__title"
+              id="activity-overview-title"
+            >
               Activity feed
             </h2>
             <p className="section-heading__description">
@@ -113,33 +117,30 @@ export default function ActivityPage() {
           </div>
         </div>
 
-        {/* Screen-reader-only live announcement for state changes */}
-        <span aria-live="polite" className="sr-only" role="status">
-          {pageState === "loading"
-            ? "Loading activity feed…"
-            : pageState === "error"
-              ? "Failed to load activity feed."
-              : ""}
-        </span>
-
-        {pageState === "loading" ? (
-          <ActivityTimelineSkeleton />
-        ) : pageState === "error" ? (
-          <PageError
-            heading="Couldn't load your activity"
-            message="There was a problem fetching your activity feed. Check your connection and try again."
-            onRetry={handleRetry}
-          />
-        ) : activities.length > 0 ? (
+        <StateTriad
+          state={getTriadState()}
+          loading={{
+            renderSkeleton: () => <ActivityTimelineSkeleton />,
+          }}
+          empty={{
+            eyebrow: "Activity",
+            title: "Activity will appear here",
+            description:
+              "Any payment stream updates, payments, or wallet events will show up once activity begins. Stay connected to monitor your flow.",
+            actionLabel: "View Streams",
+            onAction: () => {
+              window.location.href = "/streams";
+            },
+          }}
+          error={{
+            heading: "Couldn't load your activity",
+            message:
+              "There was a problem fetching your activity feed. Check your connection and try again.",
+            onRetry: handleRetry,
+          }}
+        >
           <ActivityTimeline groups={activities} />
-        ) : (
-          <EmptyState
-            actionLabel="View streams"
-            description="Any payment stream updates, payments, or wallet events will show up once activity begins. Stay connected to monitor your flow."
-            eyebrow="Activity"
-            title="Activity will appear here"
-          />
-        )}
+        </StateTriad>
       </section>
     </main>
   );
