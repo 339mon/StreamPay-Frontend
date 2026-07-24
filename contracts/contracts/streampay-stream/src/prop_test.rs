@@ -76,12 +76,11 @@ fn safe_timestamp() -> impl Strategy<Value = u64> {
 
 /// A valid `(start, end)` pair with `end > start` and both in safe range.
 fn valid_time_range() -> impl Strategy<Value = (u64, u64)> {
-    safe_timestamp()
-        .prop_flat_map(|start| {
-            // end is at least start+1, at most start + 2^32 seconds (~136 years)
-            let end_range = (start + 1)..=start.saturating_add(u32::MAX as u64);
-            end_range.prop_map(move |end| (start, end))
-        })
+    safe_timestamp().prop_flat_map(|start| {
+        // end is at least start+1, at most start + 2^32 seconds (~136 years)
+        let end_range = (start + 1)..=start.saturating_add(u32::MAX as u64);
+        end_range.prop_map(move |end| (start, end))
+    })
 }
 
 // ── property tests ────────────────────────────────────────────────────────────

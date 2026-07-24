@@ -183,7 +183,10 @@ fn stream_balance_returns_total_after_end_time() {
 
     data.env.ledger().set_timestamp(1_300); // past end
     let bal = client.stream_balance(&id);
-    assert_eq!(bal, 1_000, "stream_balance past end should equal total_amount");
+    assert_eq!(
+        bal, 1_000,
+        "stream_balance past end should equal total_amount"
+    );
 }
 
 /// `stream_balance` returns `NotFound` for a non-existent stream.
@@ -400,7 +403,7 @@ fn create_stream_start_time_in_past_returns_invalid_time_range() {
         &data.recipient,
         &data.token,
         &100i128,
-        &500u64,  // in the past
+        &500u64, // in the past
         &1_000u64,
     );
     let err = result.expect_err("start_time in past should fail");

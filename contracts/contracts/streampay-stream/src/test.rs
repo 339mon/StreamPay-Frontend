@@ -1658,15 +1658,15 @@ fn claim_drip_returns_withdrawable_amount() {
     );
 
     // Before start time, should return 0
-    assert_eq!(client.claim_drip(&id), Ok(0));
+    assert_eq!(client.claim_drip(&id), 0);
 
     // Midpoint, should return half
     data.env.ledger().set_timestamp(1_150);
     let drip = client.claim_drip(&id);
-    assert_eq!(drip, Ok(500));
+    assert_eq!(drip, 500);
 
     // Withdraw some, then check drip again
     client.withdraw(&id, &200i128);
     let drip_after_withdraw = client.claim_drip(&id);
-    assert_eq!(drip_after_withdraw, Ok(300));
+    assert_eq!(drip_after_withdraw, 300);
 }

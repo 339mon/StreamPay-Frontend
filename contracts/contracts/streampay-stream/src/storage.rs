@@ -53,6 +53,11 @@ enum DataKey {
     StreamCount,
     Stream(u64),
     TokenAllowed(Address),
+    /// Protocol-level fee in basis points (0–10 000).
+    ///
+    /// Absent means no fee (equivalent to `0`). Stored in instance storage so
+    /// it lives for the lifetime of the contract.
+    FeeBps,
 }
 
 /// Threshold and absolute target values are expressed in ledger sequences.
@@ -70,16 +75,16 @@ enum DataKey {
 /// 1-month target. They are re-stamped on every `create_stream` check and on
 /// every admin `set_token_allowed` write.
 pub const STREAM_TTL_MIN_REMAINING: u32 = 241_920; // ~2 weeks at 5-second ledgers
-pub const STREAM_TTL_EXTEND_TO: u32 = 1_555_200;   // ~3 months at 5-second ledgers
+pub const STREAM_TTL_EXTEND_TO: u32 = 1_555_200; // ~3 months at 5-second ledgers
 pub const INSTANCE_TTL_MIN_REMAINING: u32 = 120_960; // ~1 week at 5-second ledgers
-pub const INSTANCE_TTL_EXTEND_TO: u32 = 518_400;   // ~1 month at 5-second ledgers
+pub const INSTANCE_TTL_EXTEND_TO: u32 = 518_400; // ~1 month at 5-second ledgers
 /// Per-token allowlist TTL constants.
 ///
 /// Every `is_token_blocked` call (hot path inside `create_stream`) extends
 /// the allowlist entry's TTL so a token that is actively being streamed
 /// cannot silently archive between stream creation and withdrawal.
 pub const TOKEN_TTL_MIN_REMAINING: u32 = 120_960; // ~1 week at 5-second ledgers
-pub const TOKEN_TTL_EXTEND_TO: u32 = 518_400;     // ~1 month at 5-second ledgers
+pub const TOKEN_TTL_EXTEND_TO: u32 = 518_400; // ~1 month at 5-second ledgers
 
 fn ttl_target(env: &Env, extra_ledgers: u32) -> u32 {
     env.ledger().sequence().saturating_add(extra_ledgers)
@@ -290,6 +295,31 @@ pub fn next_stream_id(env: &Env) -> u64 {
     id
 }
 
+/// Returns the next stream id **without** incrementing the counter.
+///
+/// This is a read-only helper used by paginated list views to determine the
+/// upper bound of stream IDs to scan. It does not consume a stream ID or
+/// modify any storage state.
+///
+/// # Returns
+/// The value of the next-stream-ID counter (i.e. the ID that *would* be
+/// assigned to the next `create_stream` call). Returns `1` if no streams
+/// have ever been created.
+pub fn peek_next_stream_id(env: &Env) -> u64 {
+    let storage = env.storage().instance();
+    let id: u64 = storage.get(&DataKey::StreamCount).unwrap_or(1u64);
+    id
+}
+
+/// Test-only helper: directly sets the stream-ID counter to `id`.
+///
+/// Allows unit tests to seed the counter to a known value without having to
+/// create actual streams. Not available in production builds.
+#[cfg(test)]
+pub fn set_next_stream_id_for_test(env: &Env, id: u64) {
+    env.storage().instance().set(&DataKey::StreamCount, &id);
+}
+
 /// Writes a stream record into persistent storage.
 ///
 /// This helper also extends the TTL for the corresponding per-stream entry.
@@ -326,12 +356,44 @@ pub fn get_stream(env: &Env, stream_id: u64) -> Option<Stream> {
     stream
 }
 
+/// Sets the protocol-level fee in basis points (0–10 000).
+///
+/// Stored in instance storage so it lives for the contract lifetime. Extends
+/// instance TTL on every write to keep the fee configuration alive.
+///
+/// A value of `0` means no fee is charged; `10_000` means 100 % (full amount).
+///
+/// # Returns
+/// This helper does not return a value.
+pub fn set_fee_bps(env: &Env, fee_bps: u32) {
+    env.storage().instance().set(&DataKey::FeeBps, &fee_bps);
+    extend_instance_ttl(env, &DataKey::FeeBps);
+}
+
+/// Returns the current protocol-level fee in basis points.
+///
+/// Returns `0` if no fee has been configured (absent key). Extends instance
+/// TTL on the hot path so the fee configuration stays live under normal use.
+///
+/// # Returns
+/// Fee in basis points, in the range `[0, 10_000]`.
+pub fn get_fee_bps(env: &Env) -> u32 {
+    let fee: Option<u32> = env.storage().instance().get(&DataKey::FeeBps);
+    if fee.is_some() {
+        extend_instance_ttl(env, &DataKey::FeeBps);
+    }
+    fee.unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Contract;
     use soroban_sdk::{
-        testutils::{Address as _, Ledger as _},
+        testutils::{
+            storage::{Instance, Persistent},
+            Address as _, Ledger as _,
+        },
         Env,
     };
 
@@ -423,14 +485,19 @@ mod tests {
 
         env.as_contract(&contract_id, || {
             let ttl_before = env.storage().persistent().get_ttl(&DataKey::Stream(1));
-            assert_eq!(ttl_before, STREAM_TTL_MIN_REMAINING - 1,
-                "pre-condition: TTL should be exactly one ledger below threshold");
+            assert_eq!(
+                ttl_before,
+                STREAM_TTL_MIN_REMAINING - 1,
+                "pre-condition: TTL should be exactly one ledger below threshold"
+            );
 
             let _ = get_stream(&env, 1);
 
             let ttl_after = env.storage().persistent().get_ttl(&DataKey::Stream(1));
-            assert_eq!(ttl_after, STREAM_TTL_EXTEND_TO,
-                "get_stream must re-extend TTL to STREAM_TTL_EXTEND_TO");
+            assert_eq!(
+                ttl_after, STREAM_TTL_EXTEND_TO,
+                "get_stream must re-extend TTL to STREAM_TTL_EXTEND_TO"
+            );
         });
     }
 
@@ -486,8 +553,11 @@ mod tests {
                 .storage()
                 .persistent()
                 .get_ttl(&DataKey::TokenAllowed(token.clone()));
-            assert_eq!(ttl_before, TOKEN_TTL_MIN_REMAINING - 1,
-                "pre-condition: TTL should be exactly one ledger below threshold");
+            assert_eq!(
+                ttl_before,
+                TOKEN_TTL_MIN_REMAINING - 1,
+                "pre-condition: TTL should be exactly one ledger below threshold"
+            );
 
             let blocked = is_token_blocked(&env, &token);
             assert!(blocked, "token should still be blocked");
@@ -496,8 +566,10 @@ mod tests {
                 .storage()
                 .persistent()
                 .get_ttl(&DataKey::TokenAllowed(token.clone()));
-            assert_eq!(ttl_after, TOKEN_TTL_EXTEND_TO,
-                "is_token_blocked must re-extend TTL to TOKEN_TTL_EXTEND_TO");
+            assert_eq!(
+                ttl_after, TOKEN_TTL_EXTEND_TO,
+                "is_token_blocked must re-extend TTL to TOKEN_TTL_EXTEND_TO"
+            );
         });
     }
 
@@ -601,15 +673,20 @@ mod tests {
 
         env.as_contract(&contract_id, || {
             let ttl_before = env.storage().instance().get_ttl();
-            assert_eq!(ttl_before, INSTANCE_TTL_MIN_REMAINING - 1,
-                "pre-condition: TTL should be exactly one ledger below threshold");
+            assert_eq!(
+                ttl_before,
+                INSTANCE_TTL_MIN_REMAINING - 1,
+                "pre-condition: TTL should be exactly one ledger below threshold"
+            );
 
             let paused = is_paused(&env);
             assert!(!paused);
 
             let ttl_after = env.storage().instance().get_ttl();
-            assert_eq!(ttl_after, INSTANCE_TTL_EXTEND_TO,
-                "is_paused must re-extend instance TTL to INSTANCE_TTL_EXTEND_TO");
+            assert_eq!(
+                ttl_after, INSTANCE_TTL_EXTEND_TO,
+                "is_paused must re-extend instance TTL to INSTANCE_TTL_EXTEND_TO"
+            );
         });
     }
 

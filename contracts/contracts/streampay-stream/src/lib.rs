@@ -331,6 +331,208 @@ impl Contract {
         limits::remaining_sender_capacity(&env, &sender)
     }
 
+    /// Sets the protocol-level fee in basis points charged on each withdrawal.
+    ///
+    /// A fee of `0` means no fee is deducted. A fee of `10_000` means 100 % of
+    /// the withdrawn amount is taken as a fee (degenerate case; callers that set
+    /// `max_fee_bps = 0` will always reject this). The fee is charged at
+    /// withdrawal time via [`Contract::withdraw_with_max_fee_bps`]; the plain
+    /// [`Contract::withdraw`] entrypoint is never modified and remains
+    /// fee-free to preserve backward compatibility.
+    ///
+    /// # Parameters
+    /// - `admin`   — Must match the admin set at initialisation.
+    /// - `fee_bps` — New fee in basis points. Must be in the range `[0, 10_000]`.
+    ///
+    /// # Errors
+    /// - [`Error::Unauthorized`] if `admin` is not the initialised admin.
+    /// - [`Error::NotFound`] if the contract has not been initialised.
+    /// - [`Error::InvalidAmount`] if `fee_bps > 10_000`.
+    ///
+    /// # Auth
+    /// Requires authorisation from `admin`.
+    pub fn set_fee_bps(env: Env, admin: Address, fee_bps: u32) -> Result<(), Error> {
+        require_admin(&env, &admin)?;
+        if fee_bps > 10_000 {
+            return Err(Error::InvalidAmount);
+        }
+        storage::set_fee_bps(&env, fee_bps);
+        Ok(())
+    }
+
+    /// Returns the current protocol-level fee in basis points.
+    ///
+    /// Returns `0` when no fee has been configured.
+    pub fn fee_bps(env: Env) -> u32 {
+        storage::get_fee_bps(&env)
+    }
+
+    /// Withdraws `amount` of accrued tokens with a per-call slippage guard.
+    ///
+    /// This is the guarded variant of [`Contract::withdraw`]. Before executing
+    /// the withdrawal, the caller specifies the maximum protocol fee (in basis
+    /// points) they are willing to accept. If the current protocol fee exceeds
+    /// `max_fee_bps`, the call reverts with [`Error::FeeTooHigh`] — no funds
+    /// are moved and no state is changed. This prevents an on-chain fee increase
+    /// from silently changing the economics of an in-flight transaction.
+    ///
+    /// ## Fee deduction
+    ///
+    /// When `fee_bps > 0`, the protocol fee is deducted from the transferred
+    /// amount:
+    ///
+    /// - `fee_amount = amount * fee_bps / 10_000` (rounds down; safe for the
+    ///   recipient, never exceeds `amount`)
+    /// - `recipient_amount = amount - fee_amount`
+    /// - `recipient_amount` is transferred to the stream recipient.
+    /// - `fee_amount` is transferred to the contract admin address.
+    ///
+    /// When `fee_bps == 0` (no fee), the full `amount` goes to the recipient,
+    /// identical to the plain [`Contract::withdraw`].
+    ///
+    /// ## Overflow safety
+    ///
+    /// All fee arithmetic uses checked or saturating operations. The product
+    /// `amount * fee_bps` is computed as `i128 * u32 → i128` via
+    /// [`i128::checked_mul`]; if the multiplication overflows
+    /// [`Error::Overflow`] is returned rather than panicking.
+    ///
+    /// ## Backward compatibility
+    ///
+    /// The plain [`Contract::withdraw`] entrypoint is unmodified. Existing
+    /// callers that do not want fee-aware withdrawals continue to work as
+    /// before.
+    ///
+    /// # Parameters
+    /// - `stream_id`    — Numeric ID of the stream to withdraw from.
+    /// - `amount`       — Token amount (base units) to withdraw. Must be > 0 and
+    ///   ≤ the currently accrued withdrawable balance.
+    /// - `max_fee_bps`  — Caller's maximum acceptable fee in basis points
+    ///   (0–10 000). The call reverts if `current_fee_bps > max_fee_bps`.
+    ///
+    /// # Returns
+    /// The `amount` that was charged against the stream balance on success
+    /// (i.e. the gross withdrawal before fee deduction).
+    ///
+    /// # Errors
+    /// - [`Error::FeeTooHigh`] if the current protocol fee exceeds `max_fee_bps`.
+    /// - [`Error::ContractPaused`] if the global pause flag is set.
+    /// - [`Error::InvalidAmount`] if `amount <= 0`.
+    /// - [`Error::NotFound`] if `stream_id` does not exist.
+    /// - [`Error::AlreadySettled`] if the stream is already `Settled`.
+    /// - [`Error::InvalidState`] if the stream is not `Active` or `Paused`.
+    /// - [`Error::OverWithdraw`] if `amount` exceeds the currently accrued
+    ///   withdrawable balance.
+    /// - [`Error::Overflow`] if the fee arithmetic overflows `i128`.
+    ///
+    /// # Auth
+    /// Requires authorisation from the stream's `recipient`.
+    pub fn withdraw_with_max_fee_bps(
+        env: Env,
+        stream_id: u64,
+        amount: i128,
+        max_fee_bps: u32,
+    ) -> Result<i128, Error> {
+        // ── Slippage guard ────────────────────────────────────────────────
+        // Read the current protocol fee *before* any state changes so that
+        // a fee update racing with this call cannot slip through.
+        let current_fee_bps = storage::get_fee_bps(&env);
+        if current_fee_bps > max_fee_bps {
+            return Err(Error::FeeTooHigh);
+        }
+
+        // ── Standard withdraw guards ──────────────────────────────────────
+        require_not_paused(&env)?;
+        if amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
+
+        let mut stream = get_existing_stream(&env, stream_id)?;
+        stream.recipient.require_auth();
+
+        if stream.status == StreamStatus::Settled {
+            return Err(Error::AlreadySettled);
+        }
+
+        // Allow withdrawals from Active or Paused streams.
+        if stream.status != StreamStatus::Active && stream.status != StreamStatus::Paused {
+            return Err(Error::InvalidState);
+        }
+
+        let now = env.ledger().timestamp();
+        let available = release::withdrawable(&stream, now)?;
+        if amount > available {
+            return Err(Error::OverWithdraw);
+        }
+
+        // ── Overflow-safe fee calculation ─────────────────────────────────
+        //
+        // fee_amount = amount * current_fee_bps / 10_000
+        //
+        // We use checked_mul to guard against overflow on very large `amount`
+        // values. The cast `current_fee_bps as i128` is safe because u32::MAX
+        // (≈ 4.3 × 10⁹) is well within the positive range of i128.
+        //
+        // Division by 10_000 cannot overflow (divisor > 0) and cannot panic
+        // in checked_div because the divisor is the non-zero constant 10_000.
+        let fee_amount: i128 = if current_fee_bps == 0 {
+            0
+        } else {
+            amount
+                .checked_mul(i128::from(current_fee_bps))
+                .ok_or(Error::Overflow)?
+                .checked_div(10_000)
+                .ok_or(Error::Overflow)?
+        };
+
+        // recipient_amount is always ≤ amount because fee_amount ≥ 0.
+        // The subtraction is safe and cannot underflow.
+        let recipient_amount = amount.checked_sub(fee_amount).ok_or(Error::Overflow)?;
+
+        // ── State update ──────────────────────────────────────────────────
+        stream.released_amount = stream
+            .released_amount
+            .checked_add(amount)
+            .ok_or(Error::Overflow)?;
+        stream.last_update = now;
+
+        if stream.released_amount == stream.total_amount {
+            stream.status = StreamStatus::Settled;
+            limits::decrement_sender_stream_count(&env, &stream.sender);
+        }
+
+        let contract = env.current_contract_address();
+
+        // Transfer recipient's net share.
+        if recipient_amount > 0 {
+            #[allow(clippy::needless_borrows_for_generic_args)]
+            token::Client::new(&env, &stream.token).transfer(
+                &contract,
+                &stream.recipient,
+                &recipient_amount,
+            );
+        }
+
+        // Transfer fee to admin when applicable.
+        if fee_amount > 0 {
+            // The admin is guaranteed to exist at this point (require_auth on
+            // every state-changing entrypoint ensures the contract is
+            // initialised). We propagate NotFound in the unlikely case that
+            // storage is in an inconsistent state.
+            let admin = storage::get_admin(&env).ok_or(Error::NotFound)?;
+            #[allow(clippy::needless_borrows_for_generic_args)]
+            token::Client::new(&env, &stream.token).transfer(&contract, &admin, &fee_amount);
+        }
+
+        storage::set_stream(&env, stream_id, &stream);
+        let ts = stream.last_update;
+        events::withdrawn(&env, stream_id, &stream.recipient, amount, ts);
+        if stream.status == StreamStatus::Settled {
+            events::settled(&env, stream_id, &stream.recipient, stream.total_amount, ts);
+        }
+
+        Ok(amount)
+    }
     /// Creates a funded stream and escrows `total_amount` from `sender`.
     ///
     /// **Token transfer**: `total_amount` is transferred from `sender` to the
@@ -1223,6 +1425,9 @@ mod coverage_test;
 
 #[cfg(test)]
 mod views_integration_test;
+
+#[cfg(test)]
+mod fee_test;
 
 #[cfg(test)]
 mod upgrade_test {
