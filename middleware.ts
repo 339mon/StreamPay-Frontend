@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateConfig } from './app/lib/config/index';
-import { buildAllowedOriginSet, isOriginAllowed, DEFAULT_CORS_HEADERS, DEFAULT_CORS_METHODS, DEFAULT_CORS_MAX_AGE_SECONDS } from './app/lib/cors';
+import {
+  buildAllowedOriginSet,
+  isOriginAllowed,
+  DEFAULT_CORS_HEADERS,
+  DEFAULT_CORS_METHODS,
+  DEFAULT_CORS_MAX_AGE_SECONDS,
+} from './app/lib/cors';
 import {
   REQUEST_FINGERPRINT_HEADER,
   captureRequestFingerprint,
@@ -10,9 +16,7 @@ import {
   buildLimitsConfig,
 } from './lib/bodySize';
 import { touchLastSeenFromRequest } from './lib/lastSeen';
-import { getChaosConfig, applyChaos } from './lib/chaos';
-import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME, generateCsrfToken, isValidCsrfToken, verifyCsrf } from './lib/csrf';
-
+import { applyChaos, getChaosConfig } from './lib/chaos';
 
 // ---------------------------------------------------------------------------
 // Request body size cap
@@ -113,12 +117,12 @@ function setCanaryHeader(headers: Headers, isCanary: boolean) {
   }
 }
 
-function shouldEnforceBodySizeLimit(request: NextRequest | Request): boolean {
-  const pathname = 'nextUrl' in request && request.nextUrl?.pathname
-    ? request.nextUrl.pathname
-    : new URL(request.url).pathname;
-
-  return pathname === '/api/v2/streams' || pathname.startsWith('/api/v2/streams/') || pathname.startsWith('/api/webhooks');
+function resolveRequestId(request: NextRequest): string {
+  const forwarded = request.headers.get('x-request-id');
+  if (forwarded && forwarded.trim().length > 0) {
+    return forwarded.trim();
+  }
+  return `req_${Date.now().toString(36)}_${Math.random().toString(16).slice(2, 10)}`;
 }
 
 function getCookieValue(request: NextRequest | Request, name: string): string | undefined {
@@ -175,11 +179,9 @@ export async function middleware(request: NextRequest) {
   let isAllowed = false;
 
   // ------------------------------------------------------------------
-  // 1. Request body size cap (path-scoped, O(1) — reads Content-Length)
+  // 1. Request body size cap (O(1) — reads Content-Length)
   // ------------------------------------------------------------------
-  const sizeError = shouldEnforceBodySizeLimit(request)
-    ? checkRequestBodySize(request, bodyLimits)
-    : null;
+  const sizeError = checkRequestBodySize(request, bodyLimits);
   if (sizeError !== null) {
     sizeError.headers.set(REQUEST_FINGERPRINT_HEADER, fingerprint);
     setCanaryHeader(sizeError.headers, isCanary);
@@ -195,11 +197,12 @@ export async function middleware(request: NextRequest) {
   if (chaosConfig.enabled && request.method !== 'OPTIONS') {
     const outcome = await applyChaos(chaosConfig);
     if (outcome.injectedStatus !== undefined) {
-      return NextResponse.json(
+      const chaosResponse = NextResponse.json(
         {
           error: {
             code: 'CHAOS_INJECTED',
             message: 'Synthetic fault injected by chaos middleware.',
+            request_id: resolveRequestId(request),
           },
         },
         {
@@ -210,6 +213,8 @@ export async function middleware(request: NextRequest) {
           },
         },
       );
+      setCanaryHeader(chaosResponse.headers, isCanary);
+      return chaosResponse;
     }
   }
 
@@ -223,9 +228,7 @@ export async function middleware(request: NextRequest) {
     originAllowed = isOriginAllowed(origin, allowedOrigins);
 
     if (!originAllowed) {
-      const requestId =
-        (request.headers.get('x-request-id') as string) ??
-        `req_${Date.now().toString(36)}`;
+      const requestId = resolveRequestId(request);
 
       console.warn(
         JSON.stringify({
@@ -255,73 +258,31 @@ export async function middleware(request: NextRequest) {
 
     // Origin is allowed
     if (request.method === 'OPTIONS') {
-      const response = new NextResponse(null, {
+      const headers = buildCorsHeaders(origin);
+      setCanaryHeader(headers, isCanary);
+      return new NextResponse(null, {
         status: 204,
-        headers: buildCorsHeaders(origin),
+        headers,
       });
-      setCanaryHeader(response.headers, isCanary);
-      return response;
     }
-  } else {
-    // No origin header — no CORS processing needed
-    if (request.method === 'OPTIONS') {
-      const response = new NextResponse(null, { status: 204 });
-      setCanaryHeader(response.headers, isCanary);
-      return response;
-    }
+
+    const response = NextResponse.next({
+      request: {
+        headers: requestHeaders,
+      },
+    });
+
+    response.headers.set('Access-Control-Allow-Origin', origin);
+    response.headers.set('Vary', 'Origin');
+    setCanaryHeader(response.headers, isCanary);
+    return response;
   }
 
-  // ------------------------------------------------------------------
-  // 2b. CSRF Protection — double-submit token check for state-changing routes
-  // ------------------------------------------------------------------
-  const requestPathname = 'nextUrl' in request && request.nextUrl?.pathname
-    ? request.nextUrl.pathname
-    : new URL(request.url).pathname;
-
-  const isWebhook = requestPathname === '/api/webhooks' || requestPathname.startsWith('/api/webhooks/');
-  const STATE_CHANGING_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
-  const isStateChanging = STATE_CHANGING_METHODS.includes(request.method);
-
-  if (!isWebhook) {
-    if (isStateChanging) {
-      const cookieToken = getCookieValue(request, CSRF_COOKIE_NAME);
-      const headerToken = request.headers.get(CSRF_HEADER_NAME);
-
-      if (!verifyCsrf(cookieToken, headerToken)) {
-        const requestId =
-          (request.headers.get('x-request-id') as string) ??
-          `req_${Date.now().toString(36)}`;
-
-        console.warn(
-          JSON.stringify({
-            type: 'csrf.rejection',
-            method: request.method,
-            pathname: requestPathname,
-            request_id: requestId,
-            has_cookie: !!cookieToken,
-            has_header: !!headerToken,
-          })
-        );
-
-        const errorResponse = NextResponse.json(
-          {
-            error: {
-              code: 'CSRF_TOKEN_INVALID',
-              message: 'CSRF token validation failed.',
-              request_id: requestId,
-            },
-          },
-          { status: 403 }
-        );
-        errorResponse.headers.set(REQUEST_FINGERPRINT_HEADER, fingerprint);
-        setCanaryHeader(errorResponse.headers, isCanary);
-        if (originAllowed) {
-          errorResponse.headers.set('Access-Control-Allow-Origin', origin!);
-          errorResponse.headers.set('Vary', 'Origin');
-        }
-        return errorResponse;
-      }
-    }
+  // No origin header — no CORS processing needed
+  if (request.method === 'OPTIONS') {
+    const response = new NextResponse(null, { status: 204 });
+    setCanaryHeader(response.headers, isCanary);
+    return response;
   }
 
   const response = NextResponse.next({
@@ -329,22 +290,6 @@ export async function middleware(request: NextRequest) {
       headers: requestHeaders,
     },
   });
-
   setCanaryHeader(response.headers, isCanary);
-
-  if (originAllowed) {
-    response.headers.set('Access-Control-Allow-Origin', origin!);
-    response.headers.set('Vary', 'Origin');
-  }
-
-  // Set CSRF cookie for safe methods or if we need to initialize it
-  if (!isWebhook && !isStateChanging) {
-    const cookieToken = getCookieValue(request, CSRF_COOKIE_NAME);
-    if (!isValidCsrfToken(cookieToken)) {
-      const newCsrfToken = generateCsrfToken();
-      setCookie(response, CSRF_COOKIE_NAME, newCsrfToken);
-    }
-  }
-
   return response;
 }

@@ -83,10 +83,23 @@ These limits apply per IP address and are independent of the general rate limiti
 {
   "error": {
     "code": "rate_limit_exceeded",
-    "message": "Too many requests. Please try again later."
+    "message": "Too many requests. Please try again later.",
+    "request_id": "req_01HZ9ABCDEF"
   }
 }
 ```
+
+Headers:
+
+```
+HTTP/1.1 429 Too Many Requests
+Retry-After: 30
+x-request-id: req_01HZ9ABCDEF
+```
+
+Throttle events are also emitted as structured JSON logs
+(`event: "wallet_ip_rate_limit_exceeded"`) including the same `request_id`
+for correlation across gateways and SIEM.
 
 ## Requesting Higher Limits
 

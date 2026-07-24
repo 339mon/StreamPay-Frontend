@@ -188,7 +188,20 @@ describe('Error handling', () => {
     // of how the jwks module is consumed (dependency injection pattern).
   });
 
-  it.skip('handles non-Error throws (string / object) without crashing', async () => {
-    // NOTE: Skipped — same ESM mocking limitation as above.
+  it('handles non-Error throws (string / object) without crashing', async () => {
+    const jwksModule = await import('@/lib/jwks');
+
+    jest.spyOn(jwksModule, 'buildJwks').mockImplementationOnce(() => {
+      // Intentionally throw a non-Error value to exercise the catch path.
+      throw 'string error value';
+    });
+
+    const res = await GET(makeRequest());
+    expect(res.status).toBe(500);
+
+    const body = await res.json();
+    expect(body.error.code).toBe('JWKS_BUILD_FAILED');
+
+    jest.restoreAllMocks();
   });
 });

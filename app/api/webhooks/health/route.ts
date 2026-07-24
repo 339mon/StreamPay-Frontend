@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { errorResponse, ErrorCode } from "@/app/lib/errors/server";
 import {
   deriveHealthStatus,
-  type WebhookSubscriptionStats,
   type WebhookDeliveryStats,
   type WebhookHealthResponse,
-} from "@/app/lib/webhook-health";
+  type WebhookSubscriptionStats,
+} from "./health";
 
 /**
  * GET /api/webhooks/health

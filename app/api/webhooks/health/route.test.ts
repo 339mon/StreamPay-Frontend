@@ -3,11 +3,8 @@
  */
 
 import { GET } from "./route";
-import {
-  deriveHealthStatus,
-  type WebhookSubscriptionStats,
-  type WebhookDeliveryStats,
-} from "@/app/lib/webhook-health";
+import { deriveHealthStatus } from "./health";
+import type { WebhookSubscriptionStats, WebhookDeliveryStats } from "./health";
 
 jest.mock("next/server", () => ({
   NextResponse: {

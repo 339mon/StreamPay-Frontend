@@ -629,12 +629,38 @@
             }
           },
           "400": { "$ref": "#/components/responses/400" },
+          "429": {
+            "description": "IP rate limit exceeded for challenge issuance (20 req/min per IP).",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the client may retry.",
+                "schema": { "type": "integer" }
+              },
+              "x-request-id": {
+                "description": "Correlation ID for this response.",
+                "schema": { "type": "string" }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "example": {
+                  "error": {
+                    "code": "rate_limit_exceeded",
+                    "message": "Too many requests. Please try again later.",
+                    "request_id": "req_01HZ9ABCDEF"
+                  }
+                }
+              }
+            }
+          },
           "500": { "$ref": "#/components/responses/500" }
         }
       },
       "post": {
         "operationId": "verifyWalletSignature",
         "summary": "Verify a signed challenge and issue a bearer token",
+        "description": "Wallet login endpoint. Rate-limited to 5 requests per minute per client IP to mitigate brute-force attempts.",
         "security": [],
         "tags": ["Auth"],
         "requestBody": {
@@ -676,6 +702,31 @@
           },
           "400": { "$ref": "#/components/responses/400" },
           "401": { "$ref": "#/components/responses/401" },
+          "429": {
+            "description": "IP rate limit exceeded for wallet login (5 req/min per IP).",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the client may retry.",
+                "schema": { "type": "integer" }
+              },
+              "x-request-id": {
+                "description": "Correlation ID for this response.",
+                "schema": { "type": "string" }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "example": {
+                  "error": {
+                    "code": "rate_limit_exceeded",
+                    "message": "Too many requests. Please try again later.",
+                    "request_id": "req_01HZ9ABCDEF"
+                  }
+                }
+              }
+            }
+          },
           "500": { "$ref": "#/components/responses/500" }
         }
       }
