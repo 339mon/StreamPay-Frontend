@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   }
 
   const { streamRepository } = getStore();
-  const streams = Array.from(streamRepository.getAll?.() ?? []);
+  const streams = Array.from(streamRepository.streams.values());
 
   const counts: Record<string, number> = {};
   let oldestStuckAt: string | null = null;

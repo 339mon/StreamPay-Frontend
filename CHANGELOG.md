@@ -27,6 +27,11 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
   and the middleware dispatch surface.
 
 ### Security
+- Wallet auth IP rate limiting on `GET|POST /api/auth/wallet` now returns the
+  canonical `{ error: { code, message, request_id } }` envelope on 429, echoes
+  `x-request-id`, and emits structured `wallet_ip_rate_limit_exceeded` logs
+  with correlation IDs. OpenAPI documents the login (5/min) and challenge
+  (20/min) IP limits.
 - Boundary validation rejects NaN/Infinity rates, negative latency, 1xx/2xx/
   3xx status codes, malformed path prefixes (whitespace or control chars),
   empty/whitespace `errorCode` / `errorMessage`, and non-integer seeds.

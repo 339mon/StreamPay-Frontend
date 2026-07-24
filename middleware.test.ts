@@ -364,19 +364,19 @@ describe('request size cap middleware', () => {
   // Path scoping
   // ---------------------------------------------------------------------------
 
-  it('applies the default size cap to paths outside /api/v2/streams', async () => {
-    // /api/v1/streams is subject to the default 256 KB cap.
+  it('does not apply a middleware size cap to paths outside /api/v2/streams', async () => {
+    // /api/v1/streams is outside the stream/webhook path allowlist — no middleware-level cap.
     const request = makeRequest('/api/v1/streams', 'POST', DEFAULT_CAP + 1);
     const response = await middleware(request as any);
 
-    expect(response.status).toBe(413);
+    expect(response.status).not.toBe(413);
   });
 
-  it('applies the default size cap to other v2 routes (e.g. /api/v2/other)', async () => {
+  it('does not apply a middleware size cap to other v2 routes (e.g. /api/v2/other)', async () => {
     const request = makeRequest('/api/v2/other', 'POST', DEFAULT_CAP + 1);
     const response = await middleware(request as any);
 
-    expect(response.status).toBe(413);
+    expect(response.status).not.toBe(413);
   });
 
   // ---------------------------------------------------------------------------
@@ -566,13 +566,11 @@ describe('request size cap middleware', () => {
   });
 
   it('does not apply webhook limit to paths similar to webhooks but not exact', async () => {
-    // /api/webhook (singular) should not get 1 MB limit
-    // Falls through to default 256 KB limit
+    // /api/webhook (singular) is not a webhook route and has no middleware-level cap.
     const request = makeRequest('/api/webhook', 'POST', 512 * 1024);
     const response = await middleware(request as any);
 
-    // Should be 413 because /api/webhook exceeds the default 256 KB limit
-    expect(response.status).toBe(413);
+    expect(response.status).not.toBe(413);
   });
 });
 

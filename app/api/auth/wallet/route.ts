@@ -11,7 +11,7 @@ import { checkIpRateLimit, rateLimitResponse } from "@/lib/rateLimitIp";
 export async function GET(req: NextRequest) {
   const rateCheck = await checkIpRateLimit(req, "challenge");
   if (!rateCheck.allowed) {
-    return rateLimitResponse(rateCheck.retryAfter!);
+    return rateLimitResponse(rateCheck.retryAfter!, req);
   }
 
   try {
@@ -44,9 +44,10 @@ export async function GET(req: NextRequest) {
  * Rate-limited by IP (5 req/min) to prevent brute-force login attempts.
  */
 export async function POST(req: NextRequest) {
+  // IP throttle for login (POST /api/auth/wallet) — 5 req/min per IP
   const rateCheck = await checkIpRateLimit(req, "login");
   if (!rateCheck.allowed) {
-    return rateLimitResponse(rateCheck.retryAfter!);
+    return rateLimitResponse(rateCheck.retryAfter!, req);
   }
 
   try {

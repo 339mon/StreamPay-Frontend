@@ -14,6 +14,7 @@
     "test": "node scripts/run-from-realpath.mjs jest",
     "test:e2e": "node scripts/run-from-realpath.mjs jest --runInBand --testPathPattern=e2e\\.test\\.ts$",
     "test:e2e:coverage": "node scripts/run-from-realpath.mjs jest --runInBand --testPathPattern=stream-lifecycle.e2e --coverage --collectCoverageFrom='app/api/streams/**/*.ts' --forceExit",
+    "smoke": "node scripts/validate-openapi.mjs && node scripts/run-from-realpath.mjs jest lib/rateLimitIp.test.ts app/api/auth/wallet/route.test.ts --forceExit",
     "reconcile": "node scripts/run-from-realpath.mjs ts-node scripts/reconcile-streams.ts",
     "recon:cli": "node scripts/run-from-realpath.mjs ts-node scripts/recon-cli.ts"
   },
@@ -29,8 +30,8 @@
   "devDependencies": {
     "@next/eslint-plugin-next": "^15.5.12",
     "@testing-library/dom": "^10.4.1",
-    "@testing-library/jest-dom": "^6.6.0",
-    "@testing-library/react": "^16.0.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/jest": "^29.5.14",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.0.0",

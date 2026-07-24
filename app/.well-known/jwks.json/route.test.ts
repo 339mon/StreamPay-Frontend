@@ -209,7 +209,7 @@ describe('Error handling', () => {
     const jwksModule = await import('@/lib/jwks');
 
     jest.spyOn(jwksModule, 'buildJwks').mockImplementationOnce(() => {
-      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      // Intentionally throw a non-Error value to exercise the catch path.
       throw 'string error value';
     });
 

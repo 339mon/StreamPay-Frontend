@@ -143,6 +143,7 @@ describe("POST /api/auth/wallet", () => {
     expect(limited.status).toBe(429);
     expect((limited as any).body.error.code).toBe("rate_limit_exceeded");
     expect((limited as any).body.error.message).toBeTruthy();
+    expect(typeof (limited as any).body.error.request_id).toBe("string");
   });
 });
 
