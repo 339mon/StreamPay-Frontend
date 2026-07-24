@@ -8,6 +8,11 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { GET as getV2Streams, POST as createV2Stream } from "@/app/api/v2/streams/route";
+import { GET as getV2StreamById } from "@/app/api/v2/streams/[id]/route";
+import { createDefaultStore, setStore, db } from "@/app/lib/db";
+import { resetOrgQuotaStore } from "@/app/lib/org-quota-store";
+import type { Stream } from "@/app/types/openapi";
 
 // ---------------------------------------------------------------------------
 // Load spec once
@@ -58,6 +63,31 @@ function assertWalletToken(obj: unknown): void {
   expect(typeof o.token).toBe("string");
   expect(typeof o.expires_at).toBe("string");
   expect(new Date(o.expires_at as string).getTime()).not.toBeNaN();
+}
+
+function makeApiRequest(method: string, pathSuffix: string, body?: unknown): Request {
+  const url = `http://localhost${pathSuffix}`;
+  const init: RequestInit = { method };
+  if (body !== undefined) {
+    init.body = JSON.stringify(body);
+    init.headers = { "Content-Type": "application/json" };
+  }
+  return new Request(url, init);
+}
+
+function createTestStream(id: string): Stream {
+  const now = new Date().toISOString();
+  return {
+    id,
+    recipient: "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+    rate: "120",
+    schedule: "month",
+    status: "draft",
+    nextAction: "start",
+    createdAt: now,
+    updatedAt: now,
+    token: "XLM",
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -204,6 +234,86 @@ describe("StreamV2 shape", () => {
     const response = { streams: [activeStream, draftStream] };
     expect(Array.isArray(response.streams)).toBe(true);
     response.streams.forEach((s) => assertStreamV2(s));
+  });
+});
+
+describe("/api/v2/streams runtime contract", () => {
+  beforeEach(() => {
+    setStore(createDefaultStore());
+    resetOrgQuotaStore();
+  });
+
+  afterAll(() => {
+    resetOrgQuotaStore();
+  });
+
+  it("returns a top-level streams array for GET /api/v2/streams", async () => {
+    const stream = createTestStream("stream_test_1");
+    db.streams.set(stream.id, stream);
+
+    const response = await getV2Streams(makeApiRequest("GET", "/api/v2/streams?limit=10"));
+    expect(response.status).toBe(200);
+
+    const body = await response.json();
+    expect(Array.isArray(body.streams)).toBe(true);
+    expect(body.streams.length).toBeGreaterThanOrEqual(1);
+    expect(body.streams.some((item: Record<string, unknown>) => item.id === stream.id)).toBe(true);
+    expect(body.streams.find((item: Record<string, unknown>) => item.id === stream.id)).toMatchObject({
+      id: stream.id,
+      recipient: stream.recipient,
+      status: stream.status,
+      allowed_actions: ["start"],
+      settlement: null,
+    });
+  });
+
+  it("returns a StreamV2 object for POST /api/v2/streams", async () => {
+    const response = await createV2Stream(
+      makeApiRequest("POST", "/api/v2/streams", {
+        recipient: "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+        rate: "120",
+        schedule: "month",
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.id).toBeTruthy();
+    expect(body.allowed_actions).toEqual(["start"]);
+    expect(body.created_at).toBeTruthy();
+    expect(body.links).toBeUndefined();
+  });
+
+  it("returns an ErrorEnvelope with request_id for invalid POST /api/v2/streams", async () => {
+    const response = await createV2Stream(
+      makeApiRequest("POST", "/api/v2/streams", {
+        recipient: "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+      }),
+    );
+
+    expect(response.status).toBe(422);
+    const body = await response.json();
+
+    expect(body.error).toEqual(expect.objectContaining({
+      code: "VALIDATION_ERROR",
+      message: expect.any(String),
+      request_id: expect.any(String),
+    }));
+    expect(body.error.request_id).toMatch(/^req-/);
+  });
+
+  it("returns a 404 ErrorEnvelope with request_id for GET /api/v2/streams/:id when missing", async () => {
+    const response = await getV2StreamById(
+      makeApiRequest("GET", "/api/v2/streams/nonexistent"),
+      { params: Promise.resolve({ id: "nonexistent" }) },
+    );
+
+    expect(response.status).toBe(404);
+    const body = await response.json();
+    expect(body.error).toEqual(expect.objectContaining({
+      code: "STREAM_NOT_FOUND",
+      request_id: expect.any(String),
+    }));
   });
 });
 

@@ -1,8 +1,18 @@
 import type { Metadata } from "next";
+import dynamic from "next/dynamic";
 import "./globals.css";
-import SplashScreen from "./components/SplashScreen";
 import { ToastProvider } from "./components/ToastProvider";
+import { CommandPaletteWrapper } from "./components/CommandPaletteWrapper";
 import { getThemeScript } from "./utils/theme-noflash";
+
+/**
+ * SplashScreen is loaded lazily (issue #85) so it is excluded from the
+ * critical rendering path. The `ssr: false` option prevents a meaningless
+ * server render of a purely client-side overlay and avoids hydration mismatches.
+ */
+const SplashScreen = dynamic(() => import("./components/SplashScreen"), {
+  ssr: false,
+});
 
 export const metadata: Metadata = {
   title: "StreamPay - Payment Streaming",
@@ -25,7 +35,9 @@ export default function RootLayout({
       <body>
         <ToastProvider>
           <SplashScreen />
+          <CommandPaletteWrapper />
           {children}
+          <AppBottomNav />
         </ToastProvider>
       </body>
     </html>

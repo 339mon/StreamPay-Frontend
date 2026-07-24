@@ -4,7 +4,7 @@
  * Unit tests for the fee-bump logic in `lib/feeBump.ts`.
  */
 
-// Jest provides describe/it/expect/beforeEach as globals — no import needed.
+import { describe, it, expect, beforeEach } from "@jest/globals";
 import { isFeeRelatedFailure, maybeFeeBump } from "@/lib/feeBump";
 import type { Stream } from "@/app/types/openapi";
 

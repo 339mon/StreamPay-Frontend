@@ -27,7 +27,7 @@ function makeNextRequest(interaction: PactInteraction): NextRequest {
   if (interaction.request.body) {
     init.body = JSON.stringify(interaction.request.body);
   }
-  return new NextRequest(url, init);
+  return new NextRequest(url, init as any);
 }
 
 async function callHandler(

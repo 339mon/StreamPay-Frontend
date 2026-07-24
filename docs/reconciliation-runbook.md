@@ -2,6 +2,55 @@
 
 This document outlines the steps to take when the nightly reconciliation job detects a mismatch between the StreamPay database and the on-chain (Stellar/Soroban) state.
 
+## Per-stream diff endpoint
+
+`GET /api/internal/reconciliation/diff/:id` lets you inspect the DB-vs-on-chain diff for a single stream without triggering a full reconciliation run. Use it to quickly triage alerts from the nightly job.
+
+**Auth**: HMAC-signed service-to-service headers (same scheme as `POST /api/internal/reconciliation`). Auth failures return `404` to conceal the route. See [docs/internal-service-auth.md](internal-service-auth.md) for the signing guide.
+
+**Example request (using `curl` with pre-signed headers):**
+```bash
+# Assuming $HMAC_HEADERS is a bash associative array of the required headers
+curl -s -X GET \
+  -H "x-streampay-service-name: ops-automation" \
+  -H "x-streampay-key-id: $KEY_ID" \
+  -H "x-streampay-timestamp: $TS_MS" \
+  -H "x-streampay-content-sha256: $BODY_SHA256" \
+  -H "x-streampay-signature: v1=$SIG" \
+  "https://api.streampay.example/api/internal/reconciliation/diff/stream_2"
+```
+
+**200 response shape:**
+```json
+{
+  "data": {
+    "streamId": "stream_2",
+    "checkedAt": "2026-07-23T22:00:00.000Z",
+    "inSync": false,
+    "diffs": [
+      {
+        "field": "released_amount",
+        "dbValue": "1000000000",
+        "onChainValue": "1100000000",
+        "toleranceApplied": false
+      }
+    ],
+    "db": { "id": "stream_2", "recipient_address": "G…", "total_amount": "5000000000", "released_amount": "1000000000", "status": "ACTIVE", "last_sync_ledger": 0 },
+    "onChain": { "id": "stream_2", "recipient_address": "G…", "total_amount": "5000000000", "released_amount": "1100000000", "status": "active" }
+  },
+  "meta": { "auth": { "keyId": "current", "timestamp": "2026-07-23T22:00:00.000Z" } }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `inSync` | `true` when DB and on-chain agree within tolerance |
+| `diffs` | Array of per-field mismatches; empty when `inSync: true` |
+| `db` | Snapshot of the DB record at time of check |
+| `onChain` | Snapshot of the on-chain record; `null` if absent on-chain |
+
+**404 responses** are returned for unknown stream IDs **and** for any auth failure (route concealment). If you receive an unexpected 404 for a valid stream, verify your HMAC headers first.
+
 ## 1. Identify the Mismatch
 Check the reconciliation report (logs or Slack alert). Each mismatch includes:
 - **Stream ID**: The unique identifier of the stream.

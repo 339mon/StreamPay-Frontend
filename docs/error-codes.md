@@ -11,6 +11,7 @@ shape is documented in the [README](../README.md#error-envelope).
 | `BAD_REQUEST`          | 400  | no        | Input failed schema validation. |
 | `UNAUTHORIZED`         | 401  | no        | Missing or invalid bearer token. |
 | `FORBIDDEN`            | 403  | no        | Authenticated but lacks permission. |
+| `CSRF_TOKEN_INVALID`   | 403  | no        | CSRF token validation failed or tokens mismatched. |
 | `NOT_FOUND`            | 404  | no        | Resource does not exist (or not visible to you). |
 | `ORG_NOT_FOUND`        | 404  | no        | Organization id does not exist. |
 | `REQUEST_TIMEOUT`      | 408  | yes       | Upstream did not respond in time. |

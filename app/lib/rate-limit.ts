@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getCorrelationContext } from "./logger";
 import { RATE_LIMITS, getLimitForRoute, LimitType } from "./rate-limit-config";
 import { getRateLimitStore } from "./rate-limit-store";
 
@@ -85,11 +86,13 @@ export async function checkRateLimit(
 }
 
 export function rateLimitResponse(retryAfter: number) {
+  const requestId = getCorrelationContext()?.request_id ?? `req-${crypto.randomUUID()}`;
   return NextResponse.json(
     {
       error: {
         code: "rate_limit_exceeded",
         message: "Rate limit exceeded. Please try again later.",
+        request_id: requestId,
       },
     },
     {

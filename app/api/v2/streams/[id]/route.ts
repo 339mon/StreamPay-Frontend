@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { getStore } from "@/app/lib/db";
+import { getCorrelationContext } from "@/app/lib/logger";
 import { toV2Stream, dbStreamToV1 } from "@/app/lib/api-version";
 
 type Context = { params: Promise<{ id: string }> };
 
 function errorResponse(code: string, message: string, status: number) {
-  return NextResponse.json({ error: { code, message } }, { status });
+  const requestId = getCorrelationContext()?.request_id ?? `req-${crypto.randomUUID()}`;
+  return NextResponse.json({ error: { code, message, request_id: requestId } }, { status });
 }
 
 /** GET /api/v2/streams/:id — single stream in v2 shape. */
