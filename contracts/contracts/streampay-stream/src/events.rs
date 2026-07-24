@@ -6,7 +6,7 @@
 //! Failed calls (returning Err) emit no events.
 //! `settled` is emitted in addition to `withdrawn` when a withdrawal fully drains the stream.
 
-use soroban_sdk::{contractevent, Address, BytesN, Env, Symbol};
+use soroban_sdk::{contractevent, symbol_short, Address, BytesN, Env, Symbol};
 
 /// Emitted when a new stream is created (topic: `"stream"`, sub-topic: `"created"`).
 ///

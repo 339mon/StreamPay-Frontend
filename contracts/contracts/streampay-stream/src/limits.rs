@@ -10,13 +10,13 @@ const DEFAULT_MAX_STREAMS_PER_SENDER: u64 = 10;
 /// it stays warm under normal use; the wider window guards against archival
 /// during long gaps between transactions.
 const SENDER_COUNT_TTL_MIN_REMAINING: u32 = 241_920; // ~2 weeks at 5-second ledgers
-const SENDER_COUNT_TTL_EXTEND_TO: u32 = 1_555_200;   // ~3 months at 5-second ledgers
+const SENDER_COUNT_TTL_EXTEND_TO: u32 = 1_555_200; // ~3 months at 5-second ledgers
 
 /// Instance-storage TTL constants for the per-sender stream-count limit key.
 /// Aligned with `storage::INSTANCE_TTL_*` to keep all singleton keys on the
 /// same expiry schedule.
 const INSTANCE_TTL_MIN_REMAINING: u32 = 120_960; // ~1 week at 5-second ledgers
-const INSTANCE_TTL_EXTEND_TO: u32 = 518_400;     // ~1 month at 5-second ledgers
+const INSTANCE_TTL_EXTEND_TO: u32 = 518_400; // ~1 month at 5-second ledgers
 
 #[derive(Clone)]
 #[contracttype]

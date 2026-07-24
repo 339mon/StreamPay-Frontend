@@ -1057,6 +1057,7 @@ impl Contract {
         new_rate_per_second: i128,
         new_end_time: u64,
     ) -> Result<Stream, Error> {
+        require_not_paused(&env)?;
         let mut stream = get_existing_stream(&env, stream_id)?;
         stream.sender.require_auth();
 

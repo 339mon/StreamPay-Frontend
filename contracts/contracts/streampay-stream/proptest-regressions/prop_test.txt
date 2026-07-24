@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 47e99f635c2f1e3d0dfdb05c060e1fd47c35aa618493b8bec70d87de7829d23a # shrinks to total_amount = 1000000, duration = 100, pause_time = 10, resume_delay = 10
+cc 45943e43c75c11757131ba76b492ceb5f5a530326bcff236572806538af84c28 # shrinks to total = 51186070126285485175204223874, (start, end) = (69341273521, 72665727661), extra = 112

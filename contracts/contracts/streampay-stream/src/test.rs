@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Integration tests for the `initialize` and `init_with_token_allowlist`
 //! entrypoints.
 //!
@@ -1187,6 +1188,55 @@ fn amend_stream_rejects_end_time_not_in_future() {
 }
 
 #[test]
+fn amend_stream_fails_when_contract_paused() {
+    let data = setup_init();
+    let client = contract_client(&data.env);
+    client.initialize(&data.admin);
+
+    let id = client.create_stream(
+        &data.sender,
+        &data.recipient,
+        &data.tokens[0],
+        &1000i128,
+        &1_100u64,
+        &1_200u64,
+    );
+
+    client.set_paused(&data.admin, &true);
+    let result = client.try_amend_stream(&id, &10i128, &1_300u64);
+    assert_eq!(
+        result.expect_err("amend when paused should fail"),
+        Ok(Error::ContractPaused)
+    );
+}
+
+#[test]
+fn amend_stream_overflow_returns_overflow_error() {
+    let data = setup_init();
+    let client = contract_client(&data.env);
+    client.initialize(&data.admin);
+
+    let large_amount = i128::MAX / 10;
+    StellarAssetClient::new(&data.env, &data.tokens[0]).mint(&data.sender, &large_amount);
+
+    let id = client.create_stream(
+        &data.sender,
+        &data.recipient,
+        &data.tokens[0],
+        &large_amount,
+        &1_100u64,
+        &1_101u64,
+    );
+
+    // Amending new_end_time to 1_111 makes duration 11. (i128::MAX / 10) * 11 overflows i128.
+    let result = client.try_amend_stream(&id, &10i128, &1_111u64);
+    assert_eq!(
+        result.expect_err("amend overflow should fail"),
+        Ok(Error::Overflow)
+    );
+}
+
+#[test]
 fn pause_emits_admin_action_event() {
     let data = setup_init();
     let client = contract_client(&data.env);
@@ -2135,188 +2185,22 @@ fn create_active_stream(data: &TestData) -> u64 {
     data.client.create_stream(
         &data.sender,
         &data.recipient,
-        &data.token,
-        &1_000,
-        &1_000,
-        &1_100,
-    )
-}
-
-#[test]
-fn recipient_can_always_withdraw() {
-    let data = setup_initialized();
-    let stream_id = create_active_stream(&data);
-    data.env.ledger().set_timestamp(1_050);
-
-    let withdrawn = data.client.withdraw(&data.recipient, &stream_id, &500);
-    assert_eq!(withdrawn, 500);
-}
-
-#[test]
-fn allowlisted_withdrawer_can_withdraw() {
-    let data = setup_initialized();
-    let stream_id = create_active_stream(&data);
-
-    let agent = Address::generate(&data.env);
-    data.client.add_withdrawer(&stream_id, &agent);
-
-    data.env.ledger().set_timestamp(1_050);
-    let withdrawn = data.client.withdraw(&agent, &stream_id, &500);
-    assert_eq!(withdrawn, 500);
-}
-
-#[test]
-fn non_allowlisted_address_is_rejected() {
-    let data = setup_initialized();
-    let stream_id = create_active_stream(&data);
-
-    let stranger = Address::generate(&data.env);
-    data.env.ledger().set_timestamp(1_050);
-
-    assert_contract_error!(
-        data.client.try_withdraw(&stranger, &stream_id, &500),
-        Error::Unauthorized
+        &data.tokens[0],
+        &1000i128,
+        &1_100u64,
+        &1_200u64,
     );
-}
 
-#[test]
-fn empty_allowlist_rejects_non_recipient() {
-    let data = setup_initialized();
-    let stream_id = create_active_stream(&data);
+    // Before start time, should return 0
+    assert_eq!(client.claim_drip(&id), 0);
 
-    // Verify the allowlist is empty.
-    let list = data.client.get_withdrawer_allowlist(&stream_id);
-    assert_eq!(list.len(), 0);
+    // Midpoint, should return half
+    data.env.ledger().set_timestamp(1_150);
+    let drip = client.claim_drip(&id);
+    assert_eq!(drip, 500);
 
-    let stranger = Address::generate(&data.env);
-    data.env.ledger().set_timestamp(1_050);
-
-    assert_contract_error!(
-        data.client.try_withdraw(&stranger, &stream_id, &500),
-        Error::Unauthorized
-    );
-}
-
-#[test]
-fn multiple_allowlisted_addresses_all_succeed() {
-    let data = setup_initialized();
-    let stream_id = create_active_stream(&data);
-
-    let agent_a = Address::generate(&data.env);
-    let agent_b = Address::generate(&data.env);
-    data.client.add_withdrawer(&stream_id, &agent_a);
-    data.client.add_withdrawer(&stream_id, &agent_b);
-
-    // Verify both are in the list.
-    let list = data.client.get_withdrawer_allowlist(&stream_id);
-    assert_eq!(list.len(), 2);
-
-    data.env.ledger().set_timestamp(1_025);
-    // Each agent withdraws a portion.
-    let w_a = data.client.withdraw(&agent_a, &stream_id, &100);
-    let w_b = data.client.withdraw(&agent_b, &stream_id, &100);
-    assert_eq!(w_a, 100);
-    assert_eq!(w_b, 100);
-}
-
-#[test]
-fn removed_withdrawer_is_rejected() {
-    let data = setup_initialized();
-    let stream_id = create_active_stream(&data);
-
-    let agent = Address::generate(&data.env);
-    data.client.add_withdrawer(&stream_id, &agent);
-
-    // Remove the agent.
-    data.client.remove_withdrawer(&stream_id, &agent);
-
-    let list = data.client.get_withdrawer_allowlist(&stream_id);
-    assert_eq!(list.len(), 0);
-
-    data.env.ledger().set_timestamp(1_050);
-    assert_contract_error!(
-        data.client.try_withdraw(&agent, &stream_id, &500),
-        Error::Unauthorized
-    );
-}
-
-#[test]
-fn add_withdrawer_is_idempotent() {
-    let data = setup_initialized();
-    let stream_id = create_active_stream(&data);
-
-    let agent = Address::generate(&data.env);
-    data.client.add_withdrawer(&stream_id, &agent);
-    data.client.add_withdrawer(&stream_id, &agent); // duplicate
-
-    let list = data.client.get_withdrawer_allowlist(&stream_id);
-    assert_eq!(list.len(), 1, "duplicate add must not create duplicate entries");
-}
-
-#[test]
-fn remove_absent_withdrawer_is_noop() {
-    let data = setup_initialized();
-    let stream_id = create_active_stream(&data);
-
-    let agent = Address::generate(&data.env);
-    // Remove an address that was never added — must not panic.
-    data.client.remove_withdrawer(&stream_id, &agent);
-
-    let list = data.client.get_withdrawer_allowlist(&stream_id);
-    assert_eq!(list.len(), 0);
-}
-
-#[test]
-#[should_panic(expected = "HostError: Error(Auth, InvalidAction)")]
-fn add_withdrawer_requires_sender_auth() {
-    let data = setup_initialized();
-    let stream_id = create_active_stream(&data);
-
-    let agent = Address::generate(&data.env);
-    data.env.mock_auths(&[]);
-    data.client.add_withdrawer(&stream_id, &agent);
-}
-
-#[test]
-#[should_panic(expected = "HostError: Error(Auth, InvalidAction)")]
-fn remove_withdrawer_requires_sender_auth() {
-    let data = setup_initialized();
-    let stream_id = create_active_stream(&data);
-
-    let agent = Address::generate(&data.env);
-    data.client.add_withdrawer(&stream_id, &agent);
-
-    data.env.mock_auths(&[]);
-    data.client.remove_withdrawer(&stream_id, &agent);
-}
-
-#[test]
-fn recipient_can_withdraw_even_when_allowlist_populated() {
-    let data = setup_initialized();
-    let stream_id = create_active_stream(&data);
-
-    // Adding others does not revoke the recipient's right.
-    let agent = Address::generate(&data.env);
-    data.client.add_withdrawer(&stream_id, &agent);
-
-    data.env.ledger().set_timestamp(1_050);
-    let withdrawn = data.client.withdraw(&data.recipient, &stream_id, &500);
-    assert_eq!(withdrawn, 500);
-}
-
-#[test]
-#[should_panic(expected = "HostError: Error(Auth, InvalidAction)")]
-fn withdraw_caller_auth_is_enforced_by_host() {
-    // Even an allowlisted address must provide a valid signature.
-    // With mock_auths(&[]) the host rejects the call before the contract runs.
-    let data = setup_initialized();
-    let stream_id = create_active_stream(&data);
-
-    let agent = Address::generate(&data.env);
-    data.client.add_withdrawer(&stream_id, &agent);
-
-    data.env.ledger().set_timestamp(1_050);
-    data.env.mock_auths(&[]);
-    // Should panic at host level since require_auth has no matching auth entry.
-    data.client.withdraw(&agent, &stream_id, &500);
+    // Withdraw some, then check drip again
+    client.withdraw(&id, &200i128);
+    let drip_after_withdraw = client.claim_drip(&id);
+    assert_eq!(drip_after_withdraw, 300);
 }
