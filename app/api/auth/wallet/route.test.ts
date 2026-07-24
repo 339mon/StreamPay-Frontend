@@ -11,7 +11,10 @@ jest.mock("next/server", () => ({
   },
 }));
 
-const VALID_ADDRESS = "GABC2345674567ABCDEFGHIJKLMNOPQRSTUVWXYZ2345674567ABCDEF";
+const VALID_ADDRESS = "GCLH2SNM5MTV4TGNNOADLYOZJYIFBXTIDVSNW4XP3LEI2UQV2MZ46OD7";
+// Right shape, bad strkey checksum
+const SHAPE_ONLY_ADDRESS = "GABC2345674567ABCDEFGHIJKLMNOPQRSTUVWXYZ2345674567ABCDEF";
+const VALID_CHALLENGE = "streampay_auth_1721800000000_abc123xyz";
 
 function makeGetRequest(params: Record<string, string> = {}) {
   const searchParams = new URLSearchParams(params);
@@ -48,6 +51,20 @@ function makePostRequest(
   } as unknown as import("next/server").NextRequest;
 }
 
+function validPostBody() {
+  return {
+    address: VALID_ADDRESS,
+    challenge: VALID_CHALLENGE,
+    signature: "validbase64sig==",
+  };
+}
+
+function detailFields(res: unknown): string[] {
+  return ((res as any).body.error.details as { field: string }[]).map(
+    (d) => d.field,
+  );
+}
+
 beforeEach(() => {
   resetRateLimitStore();
 });
@@ -61,76 +78,125 @@ describe("GET /api/auth/wallet", () => {
     expect(body.challenge).toMatch(/^streampay_auth_/);
   });
 
-  it("returns 400 when address is missing", async () => {
+  it("returns 422 VALIDATION_ERROR with details when address is missing", async () => {
     const res = await GET(makeGetRequest());
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
+    const body = (res as any).body;
+    expect(body.error.code).toBe("VALIDATION_ERROR");
+    expect(detailFields(res)).toEqual(["address"]);
+  });
+
+  it("returns 422 when address has the right shape but a bad checksum", async () => {
+    const res = await GET(makeGetRequest({ address: SHAPE_ONLY_ADDRESS }));
+    expect(res.status).toBe(422);
+    expect((res as any).body.error.code).toBe("VALIDATION_ERROR");
+  });
+});
+
+describe("POST /api/auth/wallet validation", () => {
+  it("returns 422 with a detail per missing field on an empty body", async () => {
+    const res = await POST(makePostRequest({}, "csrf", "csrf"));
+    expect(res.status).toBe(422);
+    expect(detailFields(res).sort()).toEqual([
+      "address",
+      "challenge",
+      "signature",
+    ]);
+  });
+
+  it("returns 422 when fields have the wrong type", async () => {
+    const res = await POST(
+      makePostRequest(
+        { address: 5, challenge: true, signature: null },
+        "csrf",
+        "csrf",
+      ),
+    );
+    expect(res.status).toBe(422);
+    expect(detailFields(res).sort()).toEqual([
+      "address",
+      "challenge",
+      "signature",
+    ]);
+  });
+
+  it("returns 422 when the challenge does not match the issued format", async () => {
+    const res = await POST(
+      makePostRequest({ ...validPostBody(), challenge: "ch" }, "csrf", "csrf"),
+    );
+    expect(res.status).toBe(422);
+    expect(detailFields(res)).toEqual(["challenge"]);
+  });
+
+  it("returns 422 when signature is empty", async () => {
+    const res = await POST(
+      makePostRequest({ ...validPostBody(), signature: "" }, "csrf", "csrf"),
+    );
+    expect(res.status).toBe(422);
+    expect(detailFields(res)).toEqual(["signature"]);
+  });
+
+  it("returns 422 when signature exceeds the maximum length", async () => {
+    const res = await POST(
+      makePostRequest(
+        { ...validPostBody(), signature: "a".repeat(1025) },
+        "csrf",
+        "csrf",
+      ),
+    );
+    expect(res.status).toBe(422);
+    expect(detailFields(res)).toEqual(["signature"]);
+  });
+
+  it("returns 422 INVALID_JSON detail when the body is not valid JSON", async () => {
+    const res = await POST(makePostRequest("THROW"));
+    expect(res.status).toBe(422);
+    const body = (res as any).body;
+    expect(body.error.code).toBe("VALIDATION_ERROR");
+    expect(body.error.details[0].code).toBe("INVALID_JSON");
+  });
+
+  it("ignores unknown extra fields when the known fields are valid", async () => {
+    const res = await POST(
+      makePostRequest(
+        { ...validPostBody(), extra: "ignored" },
+        "securecsrf123",
+        "securecsrf123",
+      ),
+    );
+    expect(res.status).toBe(200);
   });
 });
 
 describe("POST /api/auth/wallet", () => {
   it("returns 403 when csrf token is missing entirely", async () => {
-    const res = await POST(
-      makePostRequest({
-        address: VALID_ADDRESS,
-        challenge: "ch",
-        signature: "sig",
-      })
-    );
+    const res = await POST(makePostRequest(validPostBody()));
     expect(res.status).toBe(403);
   });
 
   it("returns 403 when csrf tokens are tampered/mismatched", async () => {
     const res = await POST(
       makePostRequest(
-        { address: VALID_ADDRESS, challenge: "ch", signature: "sig" },
+        validPostBody(),
         "valid_cookie_token",
-        "tampered_header_token"
-      )
+        "tampered_header_token",
+      ),
     );
     expect(res.status).toBe(403);
   });
 
   it("returns 200 with token for valid matching double-submit CSRF tokens", async () => {
     const res = await POST(
-      makePostRequest(
-        {
-          address: VALID_ADDRESS,
-          challenge: "streampay_auth_123_abc",
-          signature: "validbase64sig==",
-        },
-        "securecsrf123",
-        "securecsrf123"
-      )
+      makePostRequest(validPostBody(), "securecsrf123", "securecsrf123"),
     );
     expect(res.status).toBe(200);
     const body = (res as any).body;
     expect(typeof body.token).toBe("string");
   });
 
-  it("returns 401 when signature is empty but CSRF matches", async () => {
-    const res = await POST(
-      makePostRequest(
-        { address: VALID_ADDRESS, challenge: "ch", signature: "" },
-        "securecsrf123",
-        "securecsrf123"
-      )
-    );
-    expect(res.status).toBe(401);
-  });
-
-  it("returns 500 canonical error when json() throws", async () => {
-    const res = await POST(makePostRequest("THROW"));
-    expect(res.status).toBe(500);
-  });
-
   it("returns 429 when rate limit is exceeded on POST (login)", async () => {
-    const validBody = {
-      address: VALID_ADDRESS,
-      challenge: "ch",
-      signature: "validbase64sig==",
-    };
     const req = () =>
-      makePostRequest(validBody, "securecsrf123", "securecsrf123");
+      makePostRequest(validPostBody(), "securecsrf123", "securecsrf123");
 
     // Exhaust the login limit (5/min)
     for (let i = 0; i < 5; i++) {
