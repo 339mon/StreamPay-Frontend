@@ -20,16 +20,15 @@
 mod allowlist;
 mod error;
 mod events;
-mod limits;
 mod release;
 mod storage;
-mod views;
+mod withdrawer;
 
 pub use error::Error;
 use soroban_sdk::contracttype;
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env};
 pub use storage::{Stream, StreamStatus};
-pub use views::{StreamPage, MAX_PAGE_SIZE};
+pub(crate) use storage::DataKey;
 
 /// The `StreamPay` contract entry point registered with the Soroban host.
 #[contract]
@@ -334,42 +333,15 @@ impl Contract {
     /// Creates a funded stream and escrows `total_amount` from `sender`.
     ///
     /// **Token transfer**: `total_amount` is transferred from `sender` to the
-    /// contract address immediately, regardless of `draft`.
+    /// contract address immediately.
     ///
     /// If `draft = false` the stream is `Active` immediately with
-    /// `start_time = now` and `end_time = now + duration`.
-    /// If `draft = true` the stream is `Draft`; `start_time`, `end_time`, and
-    /// `last_update` are all zero until [`Contract::start_stream`] is called.
+    /// `start_time = start_time_or_duration` interpreted as `start_time` and
+    /// `end_time_or_draft_flag` interpreted as `end_time`.
     ///
-    /// # Parameters
-    /// - `sender`       — Address funding the stream; `total_amount` is pulled from here.
-    /// - `recipient`    — Address that will receive streamed tokens.
-    /// - `token`        — Stellar asset contract address to stream.
-    /// - `total_amount` — Total tokens (base units) to lock in escrow. Must be > 0.
-    /// - `duration`     — Stream length in seconds. Must be > 0.
-    /// - `draft`        — `true` → create in `Draft` state; `false` → activate immediately.
-    ///
-    /// # Returns
-    /// The numeric ID of the newly created stream.
-    /// `last_update` are all zero until `start_stream` is called.
-    ///
-    /// Returns the new stream's numeric ID.
-    ///
-    /// # Errors
-    /// - [`Error::ContractPaused`] if the global pause flag is set.
-    /// - [`Error::InvalidAmount`] if `total_amount <= 0`.
-    /// - [`Error::TokenNotAllowed`] if the token has been blocked by the admin.
-    /// - [`Error::InvalidTimeRange`] if `duration == 0` or if
-    ///   `now + duration` overflows `u64` (active streams only).
-    /// - [`Error::StreamLimitExceeded`] if the sender already has the maximum
-    ///   number of active streams.
-    ///
-    /// # Auth
-    /// Requires authorisation from `sender`.
-    /// Creates a funded active stream and escrows `total_amount` from `sender`.
-    ///
-    /// **Token transfer**: `total_amount` is transferred from `sender` to the
-    /// contract address immediately.
+    /// If `draft = true` the stream is `Draft`; the second numeric argument is
+    /// treated as `duration`. `start_time`, `end_time`, and `last_update` are
+    /// all zero until `start_stream` is called.
     ///
     /// Returns the new stream's numeric ID.
     ///
@@ -378,7 +350,7 @@ impl Contract {
     /// - [`Error::InvalidAmount`] if `total_amount <= 0`.
     /// - [`Error::SelfStream`] if `sender == recipient`.
     /// - [`Error::TokenNotAllowed`] if the token has been blocked by the admin.
-    /// - [`Error::InvalidTimeRange`] if `end_time <= start_time` or `start_time < now`.
+    /// - [`Error::InvalidTimeRange`] if `end_time <= start_time` or `start_time < now` (active only).
     ///
     /// # Auth
     /// Requires authorisation from `sender`.
@@ -447,7 +419,89 @@ impl Contract {
         };
 
         storage::set_stream(&env, id, &stream);
-        limits::increment_sender_stream_count(&env, &stream.sender);
+        events::created(
+            &env,
+            id,
+            &stream.sender,
+            &stream.recipient,
+            &stream.token,
+            stream.total_amount,
+            now,
+        );
+
+        Ok(id)
+    }
+
+    /// Creates a funded draft stream, escrowing `total_amount` from `sender`.
+    ///
+    /// The stream starts in `Draft` status; `start_time`, `end_time`, and
+    /// `last_update` are zero until [`start_stream`] is called, at which point
+    /// the stream becomes `Active` with `end_time = now + duration`.
+    ///
+    /// **Token transfer**: `total_amount` is transferred from `sender` to the
+    /// contract address immediately.
+    ///
+    /// Returns the new stream's numeric ID.
+    ///
+    /// # Errors
+    /// - [`Error::ContractPaused`] if the global pause flag is set.
+    /// - [`Error::InvalidAmount`] if `total_amount <= 0`.
+    /// - [`Error::InvalidState`] if `sender == recipient`.
+    /// - [`Error::TokenNotAllowed`] if the token has been blocked by the admin.
+    /// - [`Error::InvalidTimeRange`] if `duration == 0`.
+    ///
+    /// # Auth
+    /// Requires authorisation from `sender`.
+    pub fn create_draft_stream(
+        env: Env,
+        sender: Address,
+        recipient: Address,
+        token: Address,
+        total_amount: i128,
+        duration: u64,
+    ) -> Result<u64, Error> {
+        require_not_paused(&env)?;
+        sender.require_auth();
+
+        if total_amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
+
+        if sender == recipient {
+            return Err(Error::InvalidState);
+        }
+
+        if storage::is_token_blocked(&env, &token) {
+            return Err(Error::TokenNotAllowed);
+        }
+
+        if duration == 0 {
+            return Err(Error::InvalidTimeRange);
+        }
+
+        let now = env.ledger().timestamp();
+        let id = storage::next_stream_id(&env);
+        let contract_address = env.current_contract_address();
+
+        token::Client::new(&env, &token).transfer(&sender, &contract_address, &total_amount);
+
+        let stream = Stream {
+            id,
+            sender,
+            recipient,
+            token,
+            total_amount,
+            released_amount: 0,
+            start_time: 0,
+            end_time: 0,
+            duration,
+            last_update: 0,
+            status: StreamStatus::Draft,
+            pause_time: 0,
+            total_paused_duration: 0,
+        };
+
+        storage::set_stream(&env, id, &stream);
         events::created(
             &env,
             id,
@@ -538,82 +592,53 @@ impl Contract {
 
     /// Returns the token amount currently accrued and available for withdrawal.
     ///
-    /// Delegates to [`release::withdrawable`]. Returns `0` for `Draft` streams
-    /// (accrual has not started) and for any stream in a non-`Active` state.
-    ///
-    /// This is a read-only call and is never blocked by the pause flag.
-    ///
-    /// # Parameters
-    /// - `stream_id` — Numeric ID of the stream to query.
-    ///
-    /// # Returns
-    /// Token amount (base units) available to withdraw right now.
-    ///
     /// # Errors
     /// - [`Error::NotFound`] if `stream_id` does not exist.
     /// - [`Error::Overflow`] if the vested-amount computation overflows.
     pub fn withdrawable(env: Env, stream_id: u64) -> Result<i128, Error> {
         let stream = get_existing_stream(&env, stream_id)?;
-        release::withdrawable(&stream, env.ledger().timestamp())
+        Ok(release::withdrawable(&stream, env.ledger().timestamp()))
     }
 
-    /// Returns the stream balance (vested amount) at a given ledger timestamp.
-    ///
-    /// This is a view function that computes how much of the stream has vested
-    /// based on linear accrual from `start_time` to `end_time`. It uses overflow-safe
-    /// checked arithmetic to ensure correctness even with large amounts.
-    ///
-    /// # Arguments
-    ///
-    /// * `stream_id` - The ID of the stream to query
-    ///
-    /// # Returns
-    ///
-    /// The vested amount as an i128, always in the range `[0, total_amount]`.
-    /// Returns `Err(Error::Overflow)` if arithmetic overflows on extreme inputs.
+    /// Returns the stream balance (total vested amount) at the current ledger
+    /// timestamp using overflow-safe linear accrual.
     ///
     /// # Errors
     /// - [`Error::NotFound`] if `stream_id` does not exist.
-    /// - [`Error::Overflow`] if the vested-amount computation overflows.
     pub fn stream_balance(env: Env, stream_id: u64) -> Result<i128, Error> {
         let stream = get_existing_stream(&env, stream_id)?;
-        release::vested_amount(&stream, env.ledger().timestamp())
+        Ok(release::vested_amount(&stream, env.ledger().timestamp()))
     }
 
-    /// Withdraws `amount` of accrued tokens to the stream's `recipient`.
+    /// Withdraws accrued escrow on behalf of `caller`.
     ///
-    /// **Token transfer**: `amount` is transferred from the contract address to
-    /// `recipient`. If this brings `released_amount` to `total_amount` the
-    /// stream transitions to [`StreamStatus::Settled`].
-    ///
-    /// # Parameters
-    /// - `stream_id` — Numeric ID of the stream to withdraw from.
-    /// - `amount`    — Token amount (base units) to withdraw. Must be > 0 and
-    ///   ≤ the currently accrued withdrawable balance.
-    ///
-    /// # Returns
-    /// The `amount` that was withdrawn on success.
+    /// `caller` must be either the stream recipient or an address that has been
+    /// added to the per-stream withdrawer allowlist via [`add_withdrawer`].
+    /// Funds are always transferred to the stream recipient regardless of who
+    /// initiates the withdrawal.
     ///
     /// # Errors
     /// - [`Error::ContractPaused`] if the global pause flag is set.
     /// - [`Error::InvalidAmount`] if `amount <= 0`.
     /// - [`Error::NotFound`] if `stream_id` does not exist.
-    /// - [`Error::AlreadySettled`] if the stream is already `Settled`.
-    /// - [`Error::InvalidState`] if the stream is not `Active` (e.g. `Draft`
-    ///   or `Cancelled`).
-    /// - [`Error::OverWithdraw`] if `amount` exceeds the currently accrued
-    ///   withdrawable balance.
+    /// - [`Error::Unauthorized`] if `caller` is not the recipient or an
+    ///   allowlisted withdrawer.
+    /// - [`Error::AlreadySettled`] if the stream is already fully settled.
+    /// - [`Error::InvalidState`] if the stream is not Active or Paused.
+    /// - [`Error::OverWithdraw`] if `amount` exceeds accrued funds.
     ///
     /// # Auth
-    /// Requires authorisation from the stream's `recipient`.
-    pub fn withdraw(env: Env, stream_id: u64, amount: i128) -> Result<i128, Error> {
+    /// Requires authorisation from `caller`.
+    pub fn withdraw(env: Env, caller: Address, stream_id: u64, amount: i128) -> Result<i128, Error> {
         require_not_paused(&env)?;
         if amount <= 0 {
             return Err(Error::InvalidAmount);
         }
 
         let mut stream = get_existing_stream(&env, stream_id)?;
-        stream.recipient.require_auth();
+
+        // Enforce allowlist authorization: caller must be recipient or allowlisted.
+        withdrawer::require_withdraw_auth(&env, stream_id, &caller, &stream.recipient)?;
 
         if stream.status == StreamStatus::Settled {
             return Err(Error::AlreadySettled);
@@ -625,7 +650,7 @@ impl Contract {
         }
 
         let now = env.ledger().timestamp();
-        let available = release::withdrawable(&stream, now)?;
+        let available = release::withdrawable(&stream, now);
         if amount > available {
             return Err(Error::OverWithdraw);
         }
@@ -633,7 +658,7 @@ impl Contract {
         stream.released_amount = stream
             .released_amount
             .checked_add(amount)
-            .ok_or(Error::Overflow)?;
+            .ok_or(Error::InvalidAmount)?;
         stream.last_update = now;
 
         if stream.released_amount == stream.total_amount {
@@ -658,12 +683,112 @@ impl Contract {
         Ok(amount)
     }
 
-    // ── Private helpers ───────────────────────────────────────────────────────────
-
-    /// Pauses an Active stream. Only the `sender` may pause.
+    /// Adds `withdrawer` to the per-stream allowlist, granting them the right
+    /// to call [`withdraw`] on behalf of the recipient.
+    ///
+    /// Only the stream sender may manage the allowlist. Adding an address that
+    /// is already present is a no-op (idempotent).
+    ///
+    /// # Errors
+    /// - [`Error::NotFound`] if `stream_id` does not exist.
+    /// - [`Error::Unauthorized`] if the caller is not the stream sender.
     ///
     /// # Auth
     /// Requires authorisation from the stream's `sender`.
+    pub fn add_withdrawer(
+        env: Env,
+        stream_id: u64,
+        withdrawer: Address,
+    ) -> Result<(), Error> {
+        let stream = get_existing_stream(&env, stream_id)?;
+        stream.sender.require_auth();
+        storage::add_withdrawer(&env, stream_id, &withdrawer);
+        Ok(())
+    }
+
+    /// Removes `withdrawer` from the per-stream allowlist.
+    ///
+    /// Only the stream sender may manage the allowlist. Removing an address
+    /// that is not in the allowlist is a no-op (idempotent).
+    ///
+    /// # Errors
+    /// - [`Error::NotFound`] if `stream_id` does not exist.
+    /// - [`Error::Unauthorized`] if the caller is not the stream sender.
+    ///
+    /// # Auth
+    /// Requires authorisation from the stream's `sender`.
+    pub fn remove_withdrawer(
+        env: Env,
+        stream_id: u64,
+        withdrawer: Address,
+    ) -> Result<(), Error> {
+        let stream = get_existing_stream(&env, stream_id)?;
+        stream.sender.require_auth();
+        storage::remove_withdrawer(&env, stream_id, &withdrawer);
+        Ok(())
+    }
+
+    /// Returns the current withdrawer allowlist for a stream.
+    ///
+    /// Returns an empty list if no allowlist has been set.
+    ///
+    /// # Errors
+    /// - [`Error::NotFound`] if `stream_id` does not exist.
+    pub fn get_withdrawer_allowlist(
+        env: Env,
+        stream_id: u64,
+    ) -> Result<soroban_sdk::Vec<Address>, Error> {
+        // Verify the stream exists before returning the allowlist.
+        get_existing_stream(&env, stream_id)?;
+        Ok(storage::get_withdrawer_allowlist(&env, stream_id))
+    }
+
+    /// Cancels an active or paused stream before it reaches its end time.
+    ///
+    /// Only the stream sender may cancel. Unvested funds are refunded to the
+    /// sender; any already-vested-but-undrawn funds remain claimable by the
+    /// recipient (they stay in escrow and the stream transitions to Cancelled
+    /// so that the recipient can still call `withdraw`). If all vested funds
+    /// have already been withdrawn, the stream is settled immediately.
+    ///
+    /// # Errors
+    /// - [`Error::NotFound`] if `stream_id` does not exist.
+    /// - [`Error::InvalidState`] if the stream is not Active or Paused.
+    ///
+    /// # Auth
+    /// Requires authorisation from the stream's `sender`.
+    pub fn cancel_stream(env: Env, stream_id: u64) -> Result<(), Error> {
+        let mut stream = get_existing_stream(&env, stream_id)?;
+        stream.sender.require_auth();
+
+        if stream.status != StreamStatus::Active && stream.status != StreamStatus::Paused {
+            return Err(Error::InvalidState);
+        }
+
+        let now = env.ledger().timestamp();
+        let vested = release::vested_amount(&stream, now);
+        let unvested = stream
+            .total_amount
+            .checked_sub(vested)
+            .ok_or(Error::InvalidAmount)?;
+
+        if unvested > 0 {
+            #[allow(clippy::needless_borrows_for_generic_args)]
+            token::Client::new(&env, &stream.token).transfer(
+                &env.current_contract_address(),
+                &stream.sender,
+                &unvested,
+            );
+        }
+
+        stream.status = StreamStatus::Cancelled;
+        stream.last_update = now;
+
+        storage::set_stream(&env, stream_id, &stream);
+
+        Ok(())
+    }
+
     /// Pauses an active stream, freezing accrual while preserving vested funds.
     ///
     /// Only the stream sender may call this. On pause, status is set to Paused
@@ -683,7 +808,7 @@ impl Contract {
         }
 
         let now = env.ledger().timestamp();
-        stream.pause_time = now;
+
         stream.last_update = now;
         stream.status = StreamStatus::Paused;
 
@@ -1157,11 +1282,6 @@ fn get_existing_stream(env: &Env, stream_id: u64) -> Result<Stream, Error> {
     storage::get_stream(env, stream_id).ok_or(Error::NotFound)
 }
 
-/// Verifies `caller` is the stored admin and requires their authorisation.
-///
-/// # Errors
-/// - [`Error::NotFound`] if the contract has not been initialised.
-/// - [`Error::Unauthorized`] if `caller` differs from the stored admin.
 fn require_admin(env: &Env, caller: &Address) -> Result<(), Error> {
     caller.require_auth();
 

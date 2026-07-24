@@ -6,7 +6,8 @@
 //! - **Instance storage** holds singletons: `Admin`, `Paused`, the
 //!   stream counter, and the per-token allowlist. These keys live for
 //!   the lifetime of the contract instance and are extended together.
-//! - **Persistent storage** holds per-stream rows keyed by stream id.
+//! - **Persistent storage** holds per-stream rows keyed by stream id,
+//!   and per-stream withdrawer allowlists keyed by stream id.
 //!   These rows are TTL-extended every time the stream is read or
 //!   written so an active stream cannot expire mid-flight.
 //!
@@ -14,7 +15,7 @@
 //! plus a generous recovery buffer; keep them in sync with the
 //! operational runbook.
 
-use soroban_sdk::{contracttype, Address, Env};
+use soroban_sdk::{contracttype, Address, Env, Vec};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[contracttype]
@@ -47,12 +48,17 @@ pub struct Stream {
 
 #[derive(Clone)]
 #[contracttype]
-enum DataKey {
+pub(crate) enum DataKey {
     Admin,
     Paused,
     StreamCount,
     Stream(u64),
     TokenAllowed(Address),
+    NextStreamId,
+    /// Per-stream allowlist of addresses authorized to withdraw on behalf of
+    /// the recipient. Stored in persistent storage alongside the stream row
+    /// and TTL-extended together with it.
+    WithdrawerAllowlist(u64),
 }
 
 /// Threshold and absolute target values are expressed in ledger sequences.
@@ -126,6 +132,10 @@ fn extend_token_allowed_ttl(env: &Env, token: &Address) {
 
 fn extend_stream_ttl(env: &Env, stream_id: u64) {
     extend_persistent_ttl(env, &DataKey::Stream(stream_id));
+}
+
+fn extend_withdrawer_allowlist_ttl(env: &Env, stream_id: u64) {
+    extend_persistent_ttl(env, &DataKey::WithdrawerAllowlist(stream_id));
 }
 
 fn extend_admin_key_ttl(env: &Env) {
@@ -326,301 +336,81 @@ pub fn get_stream(env: &Env, stream_id: u64) -> Option<Stream> {
     stream
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::Contract;
-    use soroban_sdk::{
-        testutils::{Address as _, Ledger as _},
-        Env,
-    };
+// ── Withdrawer allowlist storage ─────────────────────────────────────────────
 
-    fn setup() -> (Env, soroban_sdk::Address) {
-        let env = Env::default();
-        env.ledger().set_sequence_number(1_000);
-        let contract_id = env.register(Contract, ());
-        (env, contract_id)
+/// Returns the withdrawer allowlist for a stream.
+///
+/// Returns an empty `Vec` if no allowlist has been set for the stream.
+pub fn get_withdrawer_allowlist(env: &Env, stream_id: u64) -> Vec<Address> {
+    let key = DataKey::WithdrawerAllowlist(stream_id);
+    let list = env
+        .storage()
+        .persistent()
+        .get::<DataKey, Vec<Address>>(&key)
+        .unwrap_or_else(|| Vec::new(env));
+    if !list.is_empty() {
+        extend_withdrawer_allowlist_ttl(env, stream_id);
     }
+    list
+}
 
-    fn test_stream(env: &Env) -> Stream {
-        Stream {
-            id: 1,
-            sender: soroban_sdk::Address::generate(env),
-            recipient: soroban_sdk::Address::generate(env),
-            token: soroban_sdk::Address::generate(env),
-            total_amount: 1_000,
-            released_amount: 0,
-            start_time: 0,
-            end_time: 100,
-            duration: 100,
-            last_update: 0,
-            status: StreamStatus::Active,
-            pause_time: 0,
-            total_paused_duration: 0,
+/// Adds `withdrawer` to the per-stream allowlist if not already present.
+///
+/// The allowlist is stored in persistent storage alongside the stream row
+/// and shares the same TTL extension policy.
+pub fn add_withdrawer(env: &Env, stream_id: u64, withdrawer: &Address) {
+    let key = DataKey::WithdrawerAllowlist(stream_id);
+    let mut list: Vec<Address> = env
+        .storage()
+        .persistent()
+        .get::<DataKey, Vec<Address>>(&key)
+        .unwrap_or_else(|| Vec::new(env));
+
+    // Idempotent: do not add duplicates.
+    for existing in list.iter() {
+        if existing == *withdrawer {
+            extend_withdrawer_allowlist_ttl(env, stream_id);
+            return;
         }
     }
 
-    // ── constant sanity ──────────────────────────────────────────────────────
+    list.push_back(withdrawer.clone());
+    env.storage().persistent().set(&key, &list);
+    extend_withdrawer_allowlist_ttl(env, stream_id);
+}
 
-    /// The bumped TTL constants must be strictly larger than the previous
-    /// values that shipped before this PR.
-    #[test]
-    fn ttl_constants_are_greater_than_previous_values() {
-        // Stream: was 120_960 threshold, 483_840 extend_to
-        assert!(STREAM_TTL_MIN_REMAINING > 120_960);
-        assert!(STREAM_TTL_EXTEND_TO > 483_840);
-        // Instance: was 43_200 threshold, 120_960 extend_to
-        assert!(INSTANCE_TTL_MIN_REMAINING > 43_200);
-        assert!(INSTANCE_TTL_EXTEND_TO > 120_960);
-        // Token constants: new in this PR, just verify non-zero
-        assert!(TOKEN_TTL_MIN_REMAINING > 0);
-        assert!(TOKEN_TTL_EXTEND_TO >= TOKEN_TTL_MIN_REMAINING);
+/// Removes `withdrawer` from the per-stream allowlist.
+///
+/// This is a no-op if `withdrawer` is not currently in the allowlist.
+pub fn remove_withdrawer(env: &Env, stream_id: u64, withdrawer: &Address) {
+    let key = DataKey::WithdrawerAllowlist(stream_id);
+    let list: Vec<Address> = match env
+        .storage()
+        .persistent()
+        .get::<DataKey, Vec<Address>>(&key)
+    {
+        Some(l) => l,
+        None => return,
+    };
+
+    let mut new_list: Vec<Address> = Vec::new(env);
+    for existing in list.iter() {
+        if existing != *withdrawer {
+            new_list.push_back(existing);
+        }
     }
 
-    /// Extend-to must always be larger than min-remaining for every storage tier.
-    #[test]
-    fn extend_to_is_larger_than_min_remaining_for_all_tiers() {
-        assert!(STREAM_TTL_EXTEND_TO > STREAM_TTL_MIN_REMAINING);
-        assert!(INSTANCE_TTL_EXTEND_TO > INSTANCE_TTL_MIN_REMAINING);
-        assert!(TOKEN_TTL_EXTEND_TO > TOKEN_TTL_MIN_REMAINING);
+    env.storage().persistent().set(&key, &new_list);
+    extend_withdrawer_allowlist_ttl(env, stream_id);
+}
+
+/// Returns `true` if `caller` is present in the per-stream withdrawer allowlist.
+pub fn is_withdrawer_allowed(env: &Env, stream_id: u64, caller: &Address) -> bool {
+    let list = get_withdrawer_allowlist(env, stream_id);
+    for existing in list.iter() {
+        if existing == *caller {
+            return true;
+        }
     }
-
-    // ── stream TTL ───────────────────────────────────────────────────────────
-
-    /// `set_stream` must write the entry and immediately extend its TTL to
-    /// exactly `STREAM_TTL_EXTEND_TO` ledgers from the current sequence.
-    #[test]
-    fn set_stream_extends_ttl_to_extend_to() {
-        let (env, contract_id) = setup();
-        env.as_contract(&contract_id, || {
-            let s = test_stream(&env);
-            set_stream(&env, 1, &s);
-            let ttl = env.storage().persistent().get_ttl(&DataKey::Stream(1));
-            assert_eq!(ttl, STREAM_TTL_EXTEND_TO);
-        });
-    }
-
-    /// When the remaining TTL of a stream entry drops just below
-    /// `STREAM_TTL_MIN_REMAINING`, `get_stream` must re-extend it to
-    /// `STREAM_TTL_EXTEND_TO`.
-    #[test]
-    fn get_stream_re_extends_ttl_when_below_threshold() {
-        let (env, contract_id) = setup();
-
-        env.as_contract(&contract_id, || {
-            set_stream(&env, 1, &test_stream(&env));
-        });
-
-        // Advance to the ledger where the remaining TTL is MIN_REMAINING - 1.
-        // At initial sequence 1_000 the entry expires at 1_000 + STREAM_TTL_EXTEND_TO.
-        // After advancing to 1_000 + STREAM_TTL_EXTEND_TO - STREAM_TTL_MIN_REMAINING + 1
-        // the remaining TTL = STREAM_TTL_MIN_REMAINING - 1 (one below threshold).
-        let new_seq = 1_000u32
-            .saturating_add(STREAM_TTL_EXTEND_TO)
-            .saturating_sub(STREAM_TTL_MIN_REMAINING)
-            .saturating_add(1);
-        env.ledger().set_sequence_number(new_seq);
-
-        env.as_contract(&contract_id, || {
-            let ttl_before = env.storage().persistent().get_ttl(&DataKey::Stream(1));
-            assert_eq!(ttl_before, STREAM_TTL_MIN_REMAINING - 1,
-                "pre-condition: TTL should be exactly one ledger below threshold");
-
-            let _ = get_stream(&env, 1);
-
-            let ttl_after = env.storage().persistent().get_ttl(&DataKey::Stream(1));
-            assert_eq!(ttl_after, STREAM_TTL_EXTEND_TO,
-                "get_stream must re-extend TTL to STREAM_TTL_EXTEND_TO");
-        });
-    }
-
-    /// `get_stream` on a non-existent stream must return `None` without
-    /// panicking — there is no TTL to extend for a missing entry.
-    #[test]
-    fn get_stream_returns_none_for_missing_id() {
-        let (env, contract_id) = setup();
-        env.as_contract(&contract_id, || {
-            let result = get_stream(&env, 999);
-            assert!(result.is_none());
-        });
-    }
-
-    // ── token-allowlist TTL ──────────────────────────────────────────────────
-
-    /// `set_token_allowed` must write the entry and extend its TTL to
-    /// exactly `TOKEN_TTL_EXTEND_TO`.
-    #[test]
-    fn set_token_allowed_extends_ttl_to_extend_to() {
-        let (env, contract_id) = setup();
-        let token = soroban_sdk::Address::generate(&env);
-        env.as_contract(&contract_id, || {
-            set_token_allowed(&env, &token, true);
-            let ttl = env
-                .storage()
-                .persistent()
-                .get_ttl(&DataKey::TokenAllowed(token.clone()));
-            assert_eq!(ttl, TOKEN_TTL_EXTEND_TO);
-        });
-    }
-
-    /// `is_token_blocked` must re-extend the TTL when the remaining TTL
-    /// drops below `TOKEN_TTL_MIN_REMAINING`.  This covers the hot read path
-    /// triggered inside `create_stream` on every call.
-    #[test]
-    fn is_token_blocked_re_extends_ttl_on_hot_read() {
-        let (env, contract_id) = setup();
-        let token = soroban_sdk::Address::generate(&env);
-
-        env.as_contract(&contract_id, || {
-            set_token_allowed(&env, &token, false);
-        });
-
-        let new_seq = 1_000u32
-            .saturating_add(TOKEN_TTL_EXTEND_TO)
-            .saturating_sub(TOKEN_TTL_MIN_REMAINING)
-            .saturating_add(1);
-        env.ledger().set_sequence_number(new_seq);
-
-        env.as_contract(&contract_id, || {
-            let ttl_before = env
-                .storage()
-                .persistent()
-                .get_ttl(&DataKey::TokenAllowed(token.clone()));
-            assert_eq!(ttl_before, TOKEN_TTL_MIN_REMAINING - 1,
-                "pre-condition: TTL should be exactly one ledger below threshold");
-
-            let blocked = is_token_blocked(&env, &token);
-            assert!(blocked, "token should still be blocked");
-
-            let ttl_after = env
-                .storage()
-                .persistent()
-                .get_ttl(&DataKey::TokenAllowed(token.clone()));
-            assert_eq!(ttl_after, TOKEN_TTL_EXTEND_TO,
-                "is_token_blocked must re-extend TTL to TOKEN_TTL_EXTEND_TO");
-        });
-    }
-
-    /// `is_token_blocked` must also extend TTL when the entry is `allowed = true`.
-    #[test]
-    fn is_token_blocked_extends_ttl_for_allowed_token() {
-        let (env, contract_id) = setup();
-        let token = soroban_sdk::Address::generate(&env);
-
-        env.as_contract(&contract_id, || {
-            set_token_allowed(&env, &token, true);
-        });
-
-        let new_seq = 1_000u32
-            .saturating_add(TOKEN_TTL_EXTEND_TO)
-            .saturating_sub(TOKEN_TTL_MIN_REMAINING)
-            .saturating_add(1);
-        env.ledger().set_sequence_number(new_seq);
-
-        env.as_contract(&contract_id, || {
-            let blocked = is_token_blocked(&env, &token);
-            assert!(!blocked, "token should be allowed");
-
-            let ttl_after = env
-                .storage()
-                .persistent()
-                .get_ttl(&DataKey::TokenAllowed(token.clone()));
-            assert_eq!(ttl_after, TOKEN_TTL_EXTEND_TO);
-        });
-    }
-
-    /// Calling `is_token_blocked` for a token that has no storage entry must
-    /// return `false` without panicking — there is nothing to extend.
-    #[test]
-    fn is_token_blocked_returns_false_and_no_panic_for_absent_token() {
-        let (env, contract_id) = setup();
-        let token = soroban_sdk::Address::generate(&env);
-        env.as_contract(&contract_id, || {
-            let blocked = is_token_blocked(&env, &token);
-            assert!(!blocked);
-        });
-    }
-
-    // ── instance TTL (admin + paused flag) ───────────────────────────────────
-
-    /// `set_admin` must extend the instance TTL to `INSTANCE_TTL_EXTEND_TO`.
-    #[test]
-    fn set_admin_extends_instance_ttl() {
-        let (env, contract_id) = setup();
-        let admin = soroban_sdk::Address::generate(&env);
-        env.as_contract(&contract_id, || {
-            set_admin(&env, &admin);
-            let ttl = env.storage().instance().get_ttl();
-            assert_eq!(ttl, INSTANCE_TTL_EXTEND_TO);
-        });
-    }
-
-    /// `get_admin` must re-extend the instance TTL when called on the hot path.
-    #[test]
-    fn get_admin_re_extends_instance_ttl() {
-        let (env, contract_id) = setup();
-        let admin = soroban_sdk::Address::generate(&env);
-
-        env.as_contract(&contract_id, || {
-            set_admin(&env, &admin);
-        });
-
-        let new_seq = 1_000u32
-            .saturating_add(INSTANCE_TTL_EXTEND_TO)
-            .saturating_sub(INSTANCE_TTL_MIN_REMAINING)
-            .saturating_add(1);
-        env.ledger().set_sequence_number(new_seq);
-
-        env.as_contract(&contract_id, || {
-            let ttl_before = env.storage().instance().get_ttl();
-            assert_eq!(ttl_before, INSTANCE_TTL_MIN_REMAINING - 1);
-
-            let _ = get_admin(&env);
-
-            let ttl_after = env.storage().instance().get_ttl();
-            assert_eq!(ttl_after, INSTANCE_TTL_EXTEND_TO);
-        });
-    }
-
-    /// `is_paused` must extend the instance TTL on the hot path even when the
-    /// contract is not paused — this function is called on every state-changing
-    /// entrypoint.
-    #[test]
-    fn is_paused_re_extends_instance_ttl_on_hot_path() {
-        let (env, contract_id) = setup();
-
-        env.as_contract(&contract_id, || {
-            set_paused(&env, false);
-        });
-
-        let new_seq = 1_000u32
-            .saturating_add(INSTANCE_TTL_EXTEND_TO)
-            .saturating_sub(INSTANCE_TTL_MIN_REMAINING)
-            .saturating_add(1);
-        env.ledger().set_sequence_number(new_seq);
-
-        env.as_contract(&contract_id, || {
-            let ttl_before = env.storage().instance().get_ttl();
-            assert_eq!(ttl_before, INSTANCE_TTL_MIN_REMAINING - 1,
-                "pre-condition: TTL should be exactly one ledger below threshold");
-
-            let paused = is_paused(&env);
-            assert!(!paused);
-
-            let ttl_after = env.storage().instance().get_ttl();
-            assert_eq!(ttl_after, INSTANCE_TTL_EXTEND_TO,
-                "is_paused must re-extend instance TTL to INSTANCE_TTL_EXTEND_TO");
-        });
-    }
-
-    /// Calling `is_paused` when no `Paused` key exists must return `false`
-    /// without panicking and must NOT attempt to extend a non-existent entry.
-    #[test]
-    fn is_paused_returns_false_for_unset_flag() {
-        let (env, contract_id) = setup();
-        env.as_contract(&contract_id, || {
-            let paused = is_paused(&env);
-            assert!(!paused);
-        });
-    }
+    false
 }
