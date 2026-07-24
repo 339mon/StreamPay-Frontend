@@ -64,6 +64,13 @@ pub struct Stream {
     pub status: StreamStatus,
     pub paused_at: u64,
     pub total_paused_duration: u64,
+    /// Per-stream fee in basis points `[0, 10_000]`.
+    ///
+    /// Set at creation time. Applied to every [`crate::Contract::withdraw`]
+    /// call: `fee_amount = floor(amount * fee_bps / 10_000)`. If no fee
+    /// collector has been configured, the fee is skipped regardless of this
+    /// value.
+    pub fee_bps: u32,
 }
 
 #[derive(Clone)]
@@ -445,6 +452,7 @@ mod tests {
             status: StreamStatus::Active,
             paused_at: 0,
             total_paused_duration: 0,
+            fee_bps: 0,
         }
     }
 
