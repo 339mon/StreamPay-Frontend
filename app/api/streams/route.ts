@@ -13,7 +13,10 @@ import { checkRateLimit, getClientIdentity, rateLimitResponse } from "@/app/lib/
 import { getLimitForRoute } from "@/app/lib/rate-limit-config";
 import { recordRequest, recordThrottle } from "@/app/lib/rate-limit-metrics";
 import { checkTokenAllowed, normaliseToken } from "@/app/lib/token-allowlist";
-import { validateCreateStreamBody } from "@/app/lib/stream-validation";
+import {
+  validateCreateStreamBody,
+  validateListStreamsQuery,
+} from "@/app/lib/stream-validation";
 import type { Stream } from "@/app/types/openapi";
 
 function errorResponse(code: string, message: string, status: number) {
@@ -51,9 +54,33 @@ export async function GET(request: Request) {
   recordRequest(url.pathname);
 
   const { searchParams } = url;
-  const cursor = searchParams.get("cursor");
-  const status = searchParams.get("status");
-  const limit = Math.min(Number.parseInt(searchParams.get("limit") ?? "20", 10), 100);
+  const rawQuery: Record<string, string> = {};
+  for (const key of ["limit", "status", "cursor"] as const) {
+    const value = searchParams.get(key);
+    if (value !== null) {
+      rawQuery[key] = value;
+    }
+  }
+
+  const { errors: queryErrors, values: query } = validateListStreamsQuery(rawQuery);
+  if (queryErrors.length > 0) {
+    logger.warn("Stream list validation failed", { errors: queryErrors });
+    return NextResponse.json(
+      {
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "One or more query parameters are invalid.",
+          details: queryErrors,
+          request_id: getCorrelationContext()?.request_id,
+        },
+      },
+      { status: 422 },
+    );
+  }
+
+  const cursor = query.cursor ?? null;
+  const status = query.status ?? null;
+  const limit = query.limit ?? 20;
 
   let streams = Array.from(streamRepository.streams.values()).sort((left, right) => {
     const timeCompare = left.createdAt.localeCompare(right.createdAt);
