@@ -1,11 +1,8 @@
-"use client";
-
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { EmptyState } from "../components/EmptyState";
 import { PageError } from "../components/PageError";
 import { StreamRow, type StreamRowData } from "../components/StreamRow";
-import { DensityToggle, type Density, readDensity } from "../components/DensityToggle";
-
+import { TagChips } from "../components/TagChips";
 
 export type StreamsViewState = "empty" | "loading" | "populated" | "error";
 
@@ -32,6 +29,7 @@ export const mockStreams: StreamRowData[] = [
     recipient: "Ada Creative Studio",
     schedule: "Pays every 30 days",
     status: "active",
+    tags: ["design", "vendor"],
   },
   {
     id: "stream-kemi",
@@ -40,6 +38,7 @@ export const mockStreams: StreamRowData[] = [
     recipient: "Kemi Onboarding Support",
     schedule: "Draft stream ready to launch",
     status: "draft",
+    tags: ["onboarding"],
   },
   {
     id: "stream-yusuf",
@@ -48,6 +47,7 @@ export const mockStreams: StreamRowData[] = [
     recipient: "Yusuf QA Partnership",
     schedule: "Ended yesterday with funds available",
     status: "ended",
+    tags: ["qa", "vendor"],
   },
 ];
 
@@ -107,7 +107,17 @@ export function StreamsPageContent({
   errorMessage,
   onRetry,
 }: StreamsPageContentProps) {
-  const [density, setDensity] = useState<Density>(() => readDensity());
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+
+  const tags = useMemo(
+    () => Array.from(new Set(streams.flatMap((stream) => stream.tags ?? []))).sort(),
+    [streams],
+  );
+
+  const visibleStreams = selectedTag
+    ? streams.filter((stream) => stream.tags?.includes(selectedTag))
+    : streams;
+
   const isEmpty = state === "empty" || streams.length === 0;
   const showToggle = state === "populated" && !isEmpty;
   const listClass = density === "compact" ? "stream-list stream-list--compact" : "stream-list";
@@ -159,6 +169,10 @@ export function StreamsPageContent({
           </div>
         </div>
 
+        {state === "populated" && tags.length > 0 && (
+          <TagChips tags={tags} selectedTag={selectedTag} onTagClick={setSelectedTag} />
+        )}
+
         {state === "loading" ? (
           <StreamListSkeleton />
         ) : state === "error" ? (
@@ -177,10 +191,14 @@ export function StreamsPageContent({
             eyebrow={streamListCopy.empty.eyebrow}
             title={streamListCopy.empty.title}
           />
+        ) : visibleStreams.length === 0 ? (
+          <p className="section-heading__description" role="status">
+            No streams match the “{selectedTag}” tag.
+          </p>
         ) : (
-          <section aria-label="Streams list" className={listClass}>
-            {streams.map((stream) => (
-              <StreamRow key={stream.id} stream={stream} density={density} />
+          <section aria-label="Streams list" className="stream-list">
+            {visibleStreams.map((stream) => (
+              <StreamRow key={stream.id} stream={stream} />
             ))}
           </section>
         )}
