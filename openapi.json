@@ -951,6 +951,110 @@
         }
       }
     },
+    "/api/streams/search": {
+      "get": {
+        "operationId": "searchStreams",
+        "summary": "Search payment streams with FTS and filters",
+        "description": "Performs full-text search across stream fields (id, recipient, memo, label, email, senderAddress, partnerId, token) and filters by status, asset, sender, recipient, and creation date bounds.",
+        "tags": ["Streams v1"],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Full-text search query term.",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by stream status (draft, active, paused, ended, withdrawn, cancelled).",
+            "schema": { "type": "string", "enum": ["draft", "active", "paused", "ended", "withdrawn", "cancelled"] }
+          },
+          {
+            "name": "asset",
+            "in": "query",
+            "description": "Filter by asset or token symbol.",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "sender",
+            "in": "query",
+            "description": "Filter by sender address.",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "recipient",
+            "in": "query",
+            "description": "Filter by recipient.",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "ISO-8601 creation date lower bound.",
+            "schema": { "type": "string", "format": "date-time" }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "ISO-8601 creation date upper bound.",
+            "schema": { "type": "string", "format": "date-time" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of results to return (1-200, default 50).",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Pagination offset (default 0).",
+            "schema": { "type": "integer", "minimum": 0, "default": 0 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data", "meta", "links"],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/StreamV1" }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "required": ["total", "limit", "offset", "count", "query"],
+                      "properties": {
+                        "total": { "type": "integer" },
+                        "limit": { "type": "integer" },
+                        "offset": { "type": "integer" },
+                        "count": { "type": "integer" },
+                        "query": { "type": ["string", "null"] }
+                      }
+                    },
+                    "links": {
+                      "type": "object",
+                      "required": ["self"],
+                      "properties": {
+                        "self": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/400" },
+          "429": { "$ref": "#/components/responses/429" },
+          "500": { "$ref": "#/components/responses/500" }
+        }
+      }
+    },
     "/api/streams/{id}": {
       "parameters": [
         {
