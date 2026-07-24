@@ -10,6 +10,7 @@ import {
   buildLimitsConfig,
 } from './lib/bodySize';
 import { touchLastSeenFromRequest } from './lib/lastSeen';
+import { getChaosConfig, applyChaos } from './lib/chaos';
 
 // ---------------------------------------------------------------------------
 // Request body size cap
@@ -118,6 +119,19 @@ function shouldEnforceBodySizeLimit(request: NextRequest | Request): boolean {
   return pathname === '/api/v2/streams' || pathname.startsWith('/api/v2/streams/') || pathname.startsWith('/api/webhooks');
 }
 
+function buildCorsErrorResponse(origin: string | null, requestId: string): NextResponse {
+  return NextResponse.json(
+    {
+      error: {
+        code: 'CORS_ORIGIN_DISALLOWED',
+        message: origin ? `Origin '${origin}' is not allowed.` : 'Origin header is required.',
+        request_id: requestId,
+      },
+    },
+    { status: 403 },
+  );
+}
+
 export async function middleware(request: NextRequest) {
   const fingerprint = await captureRequestFingerprint(request);
   touchLastSeenFromRequest(request);
@@ -128,6 +142,8 @@ export async function middleware(request: NextRequest) {
   if (isCanary) {
     requestHeaders.set(CANARY_HEADER_NAME, 'true');
   }
+
+  const requestId = request.headers.get('x-request-id') ?? `req_${Date.now().toString(36)}`;
 
   // ------------------------------------------------------------------
   // 1. Request body size cap (path-scoped, O(1) — reads Content-Length)
@@ -163,7 +179,7 @@ export async function middleware(request: NextRequest) {
             [REQUEST_FINGERPRINT_HEADER]: fingerprint,
             'X-Chaos-Injected': 'error',
           },
-        }
+        },
       );
     }
   }
@@ -172,12 +188,12 @@ export async function middleware(request: NextRequest) {
   // 2. CORS
   // ------------------------------------------------------------------
   const origin = request.headers.get('origin');
+  const originAllowed = isOriginAllowed(origin, allowedOrigins);
 
-  if (origin) {
-    const originAllowed = isOriginAllowed(origin, allowedOrigins);
-
+  if (request.method === 'OPTIONS') {
     if (!originAllowed) {
-      const response = new NextResponse(null, { status: 204 });
+      const response = buildCorsErrorResponse(origin, requestId);
+      response.headers.set(REQUEST_FINGERPRINT_HEADER, fingerprint);
       setCanaryHeader(response.headers, isCanary);
       return response;
     }
@@ -189,19 +205,15 @@ export async function middleware(request: NextRequest) {
       status: 204,
       headers,
     });
+  }
 
-    response.headers.set('Access-Control-Allow-Origin', origin);
-    response.headers.set('Vary', 'Origin');
+  if (origin && !originAllowed) {
+    const response = buildCorsErrorResponse(origin, requestId);
+    response.headers.set(REQUEST_FINGERPRINT_HEADER, fingerprint);
+    setCanaryHeader(response.headers, isCanary);
     return response;
   }
 
-  // ------------------------------------------------------------------
-  // 3. Request-Id propagation
-  // ------------------------------------------------------------------
-  // Resolve (or generate) the X-Request-Id and stamp it on both the
-  // forwarded request headers and the outgoing response headers so that
-  // every log line and downstream call can be correlated back to the
-  // originating request.
   const response = NextResponse.next({
     request: {
       headers: requestHeaders,
