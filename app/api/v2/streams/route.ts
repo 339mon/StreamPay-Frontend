@@ -22,6 +22,8 @@ import { NextResponse } from "next/server";
 import { db, encodeCursor, decodeCursor, idempotencyToken, getStore } from "@/app/lib/db";
 import { toV2Stream, dbStreamToV1 } from "@/app/lib/api-version";
 import type { Stream } from "@/app/types/openapi";
+import { getClientIdentity } from "@/app/lib/rate-limit";
+import { checkOrgDailyQuota, orgQuotaResponse } from "@/app/lib/org-quota";
 
 function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status });

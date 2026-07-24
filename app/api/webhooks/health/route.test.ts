@@ -2,8 +2,12 @@
  * Tests for GET /api/webhooks/health
  */
 
-import { GET, deriveHealthStatus } from "./route";
-import type { WebhookSubscriptionStats, WebhookDeliveryStats } from "./route";
+import { GET } from "./route";
+import {
+  deriveHealthStatus,
+  type WebhookSubscriptionStats,
+  type WebhookDeliveryStats,
+} from "@/app/lib/webhook-health";
 
 jest.mock("next/server", () => ({
   NextResponse: {

@@ -51,6 +51,11 @@ fn extend_sender_count_ttl(env: &Env, sender: &Address) {
     );
 }
 
+/// Returns the configured per-sender stream limit, or the default (10) if
+/// no limit has been explicitly set via [`set_max_streams_per_sender`].
+///
+/// This is a read-only helper; the limit is cached in instance storage and
+/// extended on every read so it should not archive under normal use.
 pub fn get_max_streams_per_sender(env: &Env) -> u64 {
     let stored: Option<u64> = env
         .storage()
@@ -62,6 +67,9 @@ pub fn get_max_streams_per_sender(env: &Env) -> u64 {
     stored.unwrap_or(DEFAULT_MAX_STREAMS_PER_SENDER)
 }
 
+/// Persists a new per-sender stream limit to instance storage and extends
+/// the instance TTL. After this call, [`get_max_streams_per_sender`] returns
+/// the new value.
 pub fn set_max_streams_per_sender(env: &Env, limit: u64) {
     env.storage()
         .instance()
@@ -69,6 +77,11 @@ pub fn set_max_streams_per_sender(env: &Env, limit: u64) {
     extend_instance_ttl(env);
 }
 
+/// Returns the number of active streams currently attributed to `sender`.
+///
+/// Persisted in a per-sender counter key. Extends the key's TTL on read so
+/// an actively streaming sender's count stays warm. Returns `0` if the
+/// sender has never created a stream.
 pub fn get_sender_stream_count(env: &Env, sender: &Address) -> u64 {
     let count: u64 = env
         .storage()
@@ -81,6 +94,11 @@ pub fn get_sender_stream_count(env: &Env, sender: &Address) -> u64 {
     count
 }
 
+/// Atomically increments the active-stream count for `sender` by one.
+///
+/// Called inside [`create_stream`](crate::Contract::create_stream) after a
+/// new stream is successfully created. Uses saturating arithmetic so an
+/// overflow cannot panic the contract.
 pub fn increment_sender_stream_count(env: &Env, sender: &Address) {
     let count = get_sender_stream_count(env, sender).saturating_add(1);
     env.storage()
@@ -89,6 +107,12 @@ pub fn increment_sender_stream_count(env: &Env, sender: &Address) {
     extend_sender_count_ttl(env, sender);
 }
 
+/// Atomically decrements the active-stream count for `sender` by one.
+///
+/// Called when a stream transitions to a terminal state (`Settled` or
+/// `Cancelled`). Uses saturating subtraction and is a no-op when the count
+/// is already zero, so it is safe to call multiple times for the same
+/// sender.
 pub fn decrement_sender_stream_count(env: &Env, sender: &Address) {
     let count = get_sender_stream_count(env, sender);
     if count > 0 {
@@ -102,6 +126,13 @@ pub fn decrement_sender_stream_count(env: &Env, sender: &Address) {
     }
 }
 
+/// Verifies that `sender` has not exceeded the per-sender stream limit.
+///
+/// Returns `Ok(())` if the sender's active-stream count is strictly below
+/// the limit, or [`Error::StreamLimitExceeded`] otherwise.
+///
+/// Called as a guard inside [`create_stream`](crate::Contract::create_stream)
+/// before any state mutation.
 pub fn check_sender_limit(env: &Env, sender: &Address) -> Result<(), Error> {
     let limit = get_max_streams_per_sender(env);
     let current = get_sender_stream_count(env, sender);

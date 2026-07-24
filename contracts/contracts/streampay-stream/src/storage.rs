@@ -6,7 +6,8 @@
 //! - **Instance storage** holds singletons: `Admin`, `Paused`, the
 //!   stream counter, and the per-token allowlist. These keys live for
 //!   the lifetime of the contract instance and are extended together.
-//! - **Persistent storage** holds per-stream rows keyed by stream id.
+//! - **Persistent storage** holds per-stream rows keyed by stream id,
+//!   and per-stream withdrawer allowlists keyed by stream id.
 //!   These rows are TTL-extended every time the stream is read or
 //!   written so an active stream cannot expire mid-flight.
 //!
@@ -14,8 +15,18 @@
 //! plus a generous recovery buffer; keep them in sync with the
 //! operational runbook.
 
-use soroban_sdk::{contracttype, Address, Env};
+use soroban_sdk::{contracttype, Address, Env, Vec};
 
+/// Lifecycle status of a [`Stream`] stored on-chain.
+///
+/// | Variant     | Description                                                        |
+/// |-------------|--------------------------------------------------------------------|
+/// | `Draft`     | Created but not yet started; no accrual occurs.                    |
+/// | `Active`    | Tokens are vesting linearly from `start_time` to `end_time`.       |
+/// | `Paused`    | Accrual frozen; `end_time` will be extended on resume.             |
+/// | `Settled`   | Fully paid out; terminal state.                                    |
+/// | `Ended`     | Time window elapsed, awaiting settle; transitional.                |
+/// | `Cancelled` | Cancelled by sender before full vesting; terminal state.           |
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[contracttype]
 pub enum StreamStatus {
@@ -27,6 +38,16 @@ pub enum StreamStatus {
     Cancelled,
 }
 
+/// On-chain record for a single payment stream.
+///
+/// Each stream escrows `total_amount` from `sender` and releases it
+/// linearly to `recipient` from `start_time` to `end_time`. The
+/// `released_amount` tracks cumulative withdrawals; when it reaches
+/// `total_amount` the stream transitions to `Settled`.
+///
+/// Paused streams record `pause_time` and `total_paused_duration` so
+/// that the resumption logic can extend `end_time` by the pause length
+/// without over- or under-paying the recipient.
 #[derive(Clone, Debug)]
 #[contracttype]
 pub struct Stream {
@@ -41,18 +62,23 @@ pub struct Stream {
     pub duration: u64,
     pub last_update: u64,
     pub status: StreamStatus,
-    pub pause_time: u64,
+    pub paused_at: u64,
     pub total_paused_duration: u64,
 }
 
 #[derive(Clone)]
 #[contracttype]
-enum DataKey {
+pub(crate) enum DataKey {
     Admin,
     Paused,
     StreamCount,
     Stream(u64),
     TokenAllowed(Address),
+    NextStreamId,
+    /// Per-stream allowlist of addresses authorized to withdraw on behalf of
+    /// the recipient. Stored in persistent storage alongside the stream row
+    /// and TTL-extended together with it.
+    WithdrawerAllowlist(u64),
 }
 
 /// Threshold and absolute target values are expressed in ledger sequences.
@@ -126,6 +152,10 @@ fn extend_token_allowed_ttl(env: &Env, token: &Address) {
 
 fn extend_stream_ttl(env: &Env, stream_id: u64) {
     extend_persistent_ttl(env, &DataKey::Stream(stream_id));
+}
+
+fn extend_withdrawer_allowlist_ttl(env: &Env, stream_id: u64) {
+    extend_persistent_ttl(env, &DataKey::WithdrawerAllowlist(stream_id));
 }
 
 fn extend_admin_key_ttl(env: &Env) {
@@ -290,6 +320,49 @@ pub fn next_stream_id(env: &Env) -> u64 {
     id
 }
 
+/// Returns the current value of the stream-id counter **without** incrementing it.
+///
+/// This is the exclusive upper bound for paginated stream scans: all existing
+/// stream IDs satisfy `id < peek_next_stream_id(env)`.
+///
+/// Unlike [`next_stream_id`] this function is purely read-only: it never
+/// mutates the counter or extends any TTL. It is intended for view functions
+/// that need to enumerate streams without side-effects.
+///
+/// # Returns
+/// - The next stream ID that *would* be assigned to a new stream (i.e. the
+///   current counter value, which is one past the highest allocated ID).
+/// - `1` if no streams have been created yet (counter is unset).
+///
+/// # Errors
+/// This helper does not return errors.
+pub fn peek_next_stream_id(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::StreamCount)
+        .unwrap_or(1u64)
+}
+
+/// **Test-only helper** — sets the stream-id counter to an arbitrary value.
+///
+/// This allows unit tests in `views.rs` to seed the counter without going
+/// through the full `create_stream` flow. It is compiled only in `#[cfg(test)]`
+/// builds and is never available in the production WASM binary.
+///
+/// # Parameters
+/// - `next_id` — The value to write as the next stream ID. Pass `1` to
+///   represent an empty (freshly initialised) contract; pass `N + 1` to
+///   represent a state where `N` streams have been created.
+///
+/// # Errors
+/// This helper does not return errors.
+#[cfg(test)]
+pub fn set_next_stream_id_for_test(env: &Env, next_id: u64) {
+    env.storage()
+        .instance()
+        .set(&DataKey::StreamCount, &next_id);
+}
+
 /// Writes a stream record into persistent storage.
 ///
 /// This helper also extends the TTL for the corresponding per-stream entry.
@@ -326,21 +399,23 @@ pub fn get_stream(env: &Env, stream_id: u64) -> Option<Stream> {
     stream
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::Contract;
-    use soroban_sdk::{
-        testutils::{Address as _, Ledger as _},
-        Env,
-    };
+// ── Withdrawer allowlist storage ─────────────────────────────────────────────
 
-    fn setup() -> (Env, soroban_sdk::Address) {
-        let env = Env::default();
-        env.ledger().set_sequence_number(1_000);
-        let contract_id = env.register(Contract, ());
-        (env, contract_id)
+/// Returns the withdrawer allowlist for a stream.
+///
+/// Returns an empty `Vec` if no allowlist has been set for the stream.
+pub fn get_withdrawer_allowlist(env: &Env, stream_id: u64) -> Vec<Address> {
+    let key = DataKey::WithdrawerAllowlist(stream_id);
+    let list = env
+        .storage()
+        .persistent()
+        .get::<DataKey, Vec<Address>>(&key)
+        .unwrap_or_else(|| Vec::new(env));
+    if !list.is_empty() {
+        extend_withdrawer_allowlist_ttl(env, stream_id);
     }
+    list
+}
 
     fn test_stream(env: &Env) -> Stream {
         Stream {
@@ -355,7 +430,7 @@ mod tests {
             duration: 100,
             last_update: 0,
             status: StreamStatus::Active,
-            pause_time: 0,
+            paused_at: 0,
             total_paused_duration: 0,
         }
     }
@@ -621,6 +696,82 @@ mod tests {
         env.as_contract(&contract_id, || {
             let paused = is_paused(&env);
             assert!(!paused);
+        });
+    }
+
+    // ── peek_next_stream_id / set_next_stream_id_for_test ────────────────────
+
+    /// `peek_next_stream_id` returns `1` when no streams have ever been
+    /// created — same default as `next_stream_id`.
+    #[test]
+    fn peek_next_stream_id_returns_one_when_unset() {
+        let (env, contract_id) = setup();
+        env.as_contract(&contract_id, || {
+            assert_eq!(peek_next_stream_id(&env), 1u64,
+                "unset counter should default to 1");
+        });
+    }
+
+    /// After `next_stream_id` is called once, `peek_next_stream_id` must
+    /// return `2` (the next ID that *would* be assigned).
+    #[test]
+    fn peek_next_stream_id_reflects_incremented_counter() {
+        let (env, contract_id) = setup();
+        env.as_contract(&contract_id, || {
+            let assigned = next_stream_id(&env); // consumes ID 1, counter → 2
+            assert_eq!(assigned, 1u64);
+            assert_eq!(peek_next_stream_id(&env), 2u64,
+                "counter must now be 2 after one allocation");
+        });
+    }
+
+    /// `peek_next_stream_id` must NOT increment the counter — repeated calls
+    /// must return the same value.
+    #[test]
+    fn peek_next_stream_id_is_idempotent() {
+        let (env, contract_id) = setup();
+        env.as_contract(&contract_id, || {
+            let first = peek_next_stream_id(&env);
+            let second = peek_next_stream_id(&env);
+            assert_eq!(first, second,
+                "peek must be idempotent — counter must not change");
+        });
+    }
+
+    /// `set_next_stream_id_for_test` allows tests to seed the counter to any
+    /// arbitrary value; subsequent `peek` and `next_stream_id` calls should
+    /// observe the new value.
+    #[test]
+    fn set_next_stream_id_for_test_seeds_counter() {
+        let (env, contract_id) = setup();
+        env.as_contract(&contract_id, || {
+            set_next_stream_id_for_test(&env, 42);
+            assert_eq!(peek_next_stream_id(&env), 42u64,
+                "peek must return the value written by the test setter");
+
+            // next_stream_id should consume 42 and advance the counter to 43
+            let id = next_stream_id(&env);
+            assert_eq!(id, 42u64);
+            assert_eq!(peek_next_stream_id(&env), 43u64);
+        });
+    }
+
+    /// Setting the counter to `1` effectively resets to the empty-contract
+    /// state; `next_stream_id` should start again from `1`.
+    #[test]
+    fn set_next_stream_id_for_test_can_reset_to_one() {
+        let (env, contract_id) = setup();
+        env.as_contract(&contract_id, || {
+            // Advance the counter to 5
+            for _ in 0..4 {
+                next_stream_id(&env);
+            }
+            assert_eq!(peek_next_stream_id(&env), 5u64);
+
+            // Reset
+            set_next_stream_id_for_test(&env, 1);
+            assert_eq!(peek_next_stream_id(&env), 1u64);
+            assert_eq!(next_stream_id(&env), 1u64);
         });
     }
 }

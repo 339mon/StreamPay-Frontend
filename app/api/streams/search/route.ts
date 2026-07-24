@@ -14,6 +14,7 @@
 
 import { NextResponse } from "next/server";
 import { getStore } from "@/app/lib/db";
+import type { Stream } from "@/app/types/openapi";
 
 function matchesText(value: string | undefined, query: string): boolean {
   if (!value) return false;
@@ -32,28 +33,28 @@ export async function GET(request: Request) {
   const limit = Math.min(Math.max(Number.isFinite(limitParam) ? limitParam : 50, 1), 200);
 
   const { streamRepository } = getStore();
-  let streams = Array.from(streamRepository.getAll?.() ?? []);
+  let streams: Stream[] = Array.from(streamRepository.streams.values());
 
   // Full-text filter
   if (q.trim()) {
     streams = streams.filter(
-      (s) =>
+      (s: any) =>
         matchesText(s.id, q) ||
         matchesText(s.recipient, q) ||
         matchesText(s.memo, q) ||
-        matchesText(s.sender, q),
+        matchesText(s.senderAddress, q),
     );
   }
 
   // Field filters
   if (status) {
-    streams = streams.filter((s) => s.status === status);
+    streams = streams.filter((s: any) => s.status === status);
   }
   if (asset) {
-    streams = streams.filter((s) => s.asset === asset);
+    streams = streams.filter((s: any) => s.asset === asset);
   }
   if (sender) {
-    streams = streams.filter((s) => s.sender === sender);
+    streams = streams.filter((s: any) => s.sender === sender);
   }
   if (from) {
     const fromMs = Date.parse(from);

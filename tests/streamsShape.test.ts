@@ -22,6 +22,17 @@
 import { resetDb } from "@/app/lib/db";
 import { GET as getStreams, POST as createStream } from "@/app/api/streams/route";
 import { resetRateLimitStore, InMemoryRateLimitStore, setRateLimitStore } from "@/app/lib/rate-limit-store";
+import { readFileSync } from "fs";
+import { join } from "path";
+
+// Load the OpenAPI spec for lifecycle path validation (lazy, so parse errors
+// are attributed to the test suite that uses it rather than crashing Jest).
+let _openapiSpec: any = null;
+function openapiSpec(): any {
+  if (_openapiSpec) return _openapiSpec;
+  _openapiSpec = JSON.parse(readFileSync(join(__dirname, "..", "openapi.json"), "utf8"));
+  return _openapiSpec;
+}
 
 // A valid-format Stellar public key used as a test fixture — not a real key.
 const STELLAR_KEY =
@@ -205,6 +216,127 @@ describe("POST /api/streams shape", () => {
     const raw = (await res.json()) as { error: { request_id?: string } };
     raw.error.request_id = "<REQUEST_ID>";
     expect(raw).toMatchSnapshot();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// OpenAPI lifecycle paths — existence and shape validation (issue #898)
+// ---------------------------------------------------------------------------
+
+describe("OpenAPI lifecycle paths (v1)", () => {
+  const lifecyclePaths = [
+    "/api/streams/{id}/start",
+    "/api/streams/{id}/stop",
+    "/api/streams/{id}/pause",
+    "/api/streams/{id}/settle",
+  ];
+
+  it.each(lifecyclePaths)("%s exists in the OpenAPI spec", (path) => {
+    expect(openapiSpec().paths).toHaveProperty(path);
+  });
+
+  it.each(lifecyclePaths)("%s has POST method", (path) => {
+    expect(openapiSpec().paths[path]).toHaveProperty("parameters");
+    expect(openapiSpec().paths[path]).toHaveProperty("post");
+  });
+
+  it.each(lifecyclePaths)("%s POST has operationId and deprecated: true", (path) => {
+    const op = openapiSpec().paths[path].post;
+    expect(op).toHaveProperty("operationId");
+    expect(typeof op.operationId).toBe("string");
+    expect(op.deprecated).toBe(true);
+  });
+
+  it.each(lifecyclePaths)("%s POST has 200 response with examples", (path) => {
+    const responses = openapiSpec().paths[path].post.responses;
+    expect(responses).toHaveProperty("200");
+    const content = responses["200"].content["application/json"];
+    expect(content).toHaveProperty("examples");
+    const examples = content.examples;
+    expect(Object.keys(examples).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it.each(lifecyclePaths)("%s POST has error responses (400, 404, 409, 500)", (path) => {
+    const responses = openapiSpec().paths[path].post.responses;
+    expect(responses).toHaveProperty("400");
+    expect(responses).toHaveProperty("404");
+    expect(responses).toHaveProperty("409");
+    expect(responses).toHaveProperty("500");
+  });
+
+  it.each(lifecyclePaths)("%s has required parameters (id, x-tenant-id)", (path) => {
+    const params = openapiSpec().paths[path].parameters;
+    const paramNames = params.map((p: { name: string }) => p.name);
+    expect(paramNames).toContain("id");
+    expect(paramNames).toContain("x-tenant-id");
+    const idParam = params.find((p: { name: string }) => p.name === "id");
+    expect(idParam.required).toBe(true);
+    const tenantParam = params.find((p: { name: string }) => p.name === "x-tenant-id");
+    expect(tenantParam.required).toBe(true);
+  });
+
+  it("start has draft→active and paused→active examples", () => {
+    const examples = openapiSpec().paths["/api/streams/{id}/start"].post.responses["200"].content["application/json"].examples;
+    expect(examples).toHaveProperty("draft-to-active");
+    expect(examples).toHaveProperty("paused-to-active");
+    expect(examples["draft-to-active"].value.data.status).toBe("active");
+    expect(examples["paused-to-active"].value.data.status).toBe("active");
+  });
+
+  it("stop has active→ended and draft→ended examples", () => {
+    const examples = openapiSpec().paths["/api/streams/{id}/stop"].post.responses["200"].content["application/json"].examples;
+    expect(examples).toHaveProperty("active-to-ended");
+    expect(examples).toHaveProperty("draft-to-ended");
+    expect(examples["active-to-ended"].value.data.status).toBe("ended");
+    expect(examples["draft-to-ended"].value.data.status).toBe("ended");
+  });
+
+  it("pause has active→paused example", () => {
+    const examples = openapiSpec().paths["/api/streams/{id}/pause"].post.responses["200"].content["application/json"].examples;
+    expect(examples).toHaveProperty("active-to-paused");
+    expect(examples["active-to-paused"].value.data.status).toBe("paused");
+  });
+
+  it("settle has active→ended and paused→ended examples", () => {
+    const examples = openapiSpec().paths["/api/streams/{id}/settle"].post.responses["200"].content["application/json"].examples;
+    expect(examples).toHaveProperty("settle-active");
+    expect(examples).toHaveProperty("settle-paused");
+    expect(examples["settle-active"].value.data.status).toBe("ended");
+    expect(examples["settle-paused"].value.data.status).toBe("ended");
+  });
+
+  it("settle has 502 SETTLEMENT_FAILED error response", () => {
+    const responses = openapiSpec().paths["/api/streams/{id}/settle"].post.responses;
+    expect(responses).toHaveProperty("502");
+  });
+
+  it("all lifecycle paths are tagged as Streams v1", () => {
+    for (const path of lifecyclePaths) {
+      const tags = openapiSpec().paths[path].post.tags;
+      expect(tags).toContain("Streams v1");
+    }
+  });
+
+  it("all lifecycle example data fields use v1 camelCase shape", () => {
+    for (const path of lifecyclePaths) {
+      const examples = openapiSpec().paths[path].post.responses["200"].content["application/json"].examples;
+      for (const [, example] of Object.entries(examples) as [string, { value: { data: Record<string, unknown> } }][]) {
+        const { data } = example.value;
+        expect(data).toHaveProperty("id");
+        expect(data).toHaveProperty("recipient");
+        expect(data).toHaveProperty("rate");
+        expect(data).toHaveProperty("schedule");
+        expect(data).toHaveProperty("status");
+        expect(data).toHaveProperty("nextAction");
+        expect(data).toHaveProperty("token");
+        expect(data).toHaveProperty("createdAt");
+        expect(data).toHaveProperty("updatedAt");
+        // v1 shape should never leak v2 field names.
+        expect(data).not.toHaveProperty("created_at");
+        expect(data).not.toHaveProperty("allowed_actions");
+        expect(data).not.toHaveProperty("settlement");
+      }
+    }
   });
 });
 

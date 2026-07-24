@@ -6,8 +6,9 @@ import { StreamProgress } from "./StreamProgress";
 import { MiniBurnDown } from "./MiniBurnDown";
 import { ErrorToast } from "./ErrorToast";
 import { fetchWithIdempotency } from "../../lib/apiClient";
-import { isStreamPayError, formatErrorForDisplay } from "../lib/errors";
-import type { StreamPayError } from "../lib/errors";
+import { isStreamPayError } from "../lib/errors/mapper";
+import { formatErrorForDisplay } from "../lib/errors/handler";
+import type { StreamPayError } from "../lib/errors/types";
 
 export type StreamRowData = {
   id: string;
@@ -24,19 +25,23 @@ export type StreamRowData = {
   startedAt?: string;
   /** ISO-8601 expected end timestamp. Used by StreamProgress fallback. */
   endsAt?: string;
+  /** Freeform labels shown on the row and used by the tag-chip filter. */
+  tags?: string[];
 };
 
 type StreamRowProps = {
   stream: StreamRowData;
+  density?: "cozy" | "compact";
 };
 
-export function StreamRow({ stream }: StreamRowProps) {
+export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<StreamPayError | null>(null);
   const [isIncidentMode] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   // Local notification state for polite screen reader announcements (#219)
   const [srAnnouncement, setSrAnnouncement] = useState("");
+  const [isFocused, setIsFocused] = useState(false);
 
   // Ref hook to preserve active keyboard focus target parameters across button re-renders
   const actionButtonRef = useRef<HTMLButtonElement>(null);
@@ -101,7 +106,7 @@ export function StreamRow({ stream }: StreamRowProps) {
   };
 
   return (
-    <article className="stream-row" aria-labelledby={`${stream.id}-recipient`}>
+    <article className={`stream-row${density === "compact" ? " stream-row--compact" : ""}`} aria-labelledby={`${stream.id}-recipient`}>
       {/* Dynamic polite status messenger announcement node layer for assistive tech */}
       <div className="sr-only" aria-live="polite" role="status">
         {srAnnouncement}
@@ -113,6 +118,15 @@ export function StreamRow({ stream }: StreamRowProps) {
             {stream.recipient}
           </h2>
           <p className="stream-row__schedule">{stream.schedule}</p>
+          {stream.tags && stream.tags.length > 0 && (
+            <ul className="stream-row__tags" aria-label="Tags">
+              {stream.tags.map((tag) => (
+                <li key={tag} className="tag-pill">
+                  {tag}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         <StatusBadge status={stream.status} />
       </div>
@@ -158,12 +172,15 @@ export function StreamRow({ stream }: StreamRowProps) {
         />
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", alignItems: "flex-end" }}>
+      <div className="stream-row__action-wrap">
         <button
           ref={actionButtonRef}
           className={`button button--secondary stream-row__action ${isProcessing ? "button--busy" : ""}`}
           type="button"
           onClick={handleAction}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+          style={isFocused ? { outline: "2px solid var(--accent)", outlineOffset: "2px" } : undefined}
           disabled={isProcessing || isIncidentMode}
           aria-busy={isProcessing}
           aria-live="assertive"
