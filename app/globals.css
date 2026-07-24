@@ -2658,7 +2658,7 @@ a:hover {
   background: rgba(10, 10, 15, 0.96);
   border: 1px solid var(--border);
   border-radius: 0.75rem;
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-soft);
   color: var(--foreground);
   display: grid;
   gap: 0.35rem;
