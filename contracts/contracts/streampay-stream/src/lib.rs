@@ -740,14 +740,7 @@ impl Contract {
 
         storage::set_stream(&env, stream_id, &stream);
 
-        // Emit admin_action event for resume
-        events::admin_action(
-            &env,
-            stream_id,
-            &stream.sender,
-            soroban_sdk::symbol_short!("resume"),
-            now,
-        );
+        events::resumed(&env, stream_id, &stream.sender, stream.end_time, now);
 
         Ok(stream)
     }
