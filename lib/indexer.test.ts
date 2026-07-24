@@ -1,3 +1,4 @@
+import { HorizonIndexer, HorizonEvent, cursorsDb, processedEventsDb } from "./indexer";
 import { Indexer, IndexedEvent, EventFetcher } from "./indexer";
 
 describe("Indexer", () => {
@@ -47,7 +48,6 @@ describe("Indexer", () => {
 
     expect(mockStorage.deleteEventsFromLedger).toHaveBeenCalledWith(1);
     expect(indexer.metrics.reorgsDetected).toBe(1);
-import { HorizonIndexer, HorizonEvent, cursorsDb, processedEventsDb } from './indexer';
 
 describe('HorizonIndexer', () => {
   let indexer: HorizonIndexer;
