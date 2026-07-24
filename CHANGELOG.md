@@ -9,6 +9,9 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
 ## [Unreleased]
 
 ### Added
+- `app/components/PayoutSummary.tsx` — a refined GrantFox payout summary card
+  with tighter typography, spacing, and responsive layout for the campaign
+  surface while preserving dark-mode and accessibility token consistency.
 - `lib/chaos.ts` — fault-injection middleware for chaos tests. Lets test
   suites inject latency, error responses, or request aborts at configurable
   rates (defaults disabled; opt in via `CHAOS_ENABLED=true` or programmatic
