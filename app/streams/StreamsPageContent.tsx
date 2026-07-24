@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { EmptyState } from "../components/EmptyState";
 import { PageError } from "../components/PageError";
 import { StreamRow, type StreamRowData } from "../components/StreamRow";
+import { DensityToggle, type Density, readDensity } from "../components/DensityToggle";
 
 
 export type StreamsViewState = "empty" | "loading" | "populated" | "error";
@@ -106,30 +107,10 @@ export function StreamsPageContent({
   errorMessage,
   onRetry,
 }: StreamsPageContentProps) {
-  type DensityMode = "compact" | "comfortable";
-
-  const DENSITY_STORAGE_KEY = "streampay.density";
-
-  const [density, setDensity] = useState<DensityMode>(() => {
-    if (typeof window === "undefined") return "comfortable";
-
-    try {
-      const value = window.localStorage.getItem(DENSITY_STORAGE_KEY);
-      return value === "compact" || value === "comfortable" ? value : "comfortable";
-    } catch {
-      return "comfortable";
-    }
-  });
-
-  useEffect(() => {
-    // Keep localStorage in sync with state.
-    try {
-      window.localStorage.setItem(DENSITY_STORAGE_KEY, density);
-    } catch {
-      // Ignore storage errors (private mode, blocked storage, etc.)
-    }
-  }, [density]);
+  const [density, setDensity] = useState<Density>(() => readDensity());
   const isEmpty = state === "empty" || streams.length === 0;
+  const showToggle = state === "populated" && !isEmpty;
+  const listClass = density === "compact" ? "stream-list stream-list--compact" : "stream-list";
 
   return (
     <main className="page-shell">
@@ -172,7 +153,10 @@ export function StreamsPageContent({
               Recipient, rate, status, and the primary next action stay visible at a glance.
             </p>
           </div>
-          {state === "populated" && <p className="section-heading__meta">{streamListCopy.populatedCount}</p>}
+          <div className="section-heading__toolbar">
+            {showToggle && <p className="section-heading__meta">{streamListCopy.populatedCount}</p>}
+            {showToggle && <DensityToggle value={density} onChange={setDensity} />}
+          </div>
         </div>
 
         {state === "loading" ? (
@@ -194,7 +178,7 @@ export function StreamsPageContent({
             title={streamListCopy.empty.title}
           />
         ) : (
-          <section aria-label="Streams list" className={`stream-list ${density === "compact" ? "stream-list--compact" : ""}`}>
+          <section aria-label="Streams list" className={listClass}>
             {streams.map((stream) => (
               <StreamRow key={stream.id} stream={stream} density={density} />
             ))}

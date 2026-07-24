@@ -29,13 +29,10 @@ export type StreamRowData = {
 
 type StreamRowProps = {
   stream: StreamRowData;
-  density?: "compact" | "comfortable";
+  density?: "cozy" | "compact";
 };
 
-export function StreamRow({ stream, density = "comfortable" }: StreamRowProps) {
-  // Density is controlled by StreamsPageContent and affects only layout spacing.
-  // Keeping it as a prop avoids extra re-renders beyond StreamRow itself.
-
+export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<StreamPayError | null>(null);
   const [isIncidentMode] = useState(false);
@@ -107,10 +104,7 @@ export function StreamRow({ stream, density = "comfortable" }: StreamRowProps) {
   };
 
   return (
-    <article
-      className={`stream-row ${density === "compact" ? "stream-row--compact" : ""}`}
-      aria-labelledby={`${stream.id}-recipient`}
-    >
+    <article className={`stream-row${density === "compact" ? " stream-row--compact" : ""}`} aria-labelledby={`${stream.id}-recipient`}>
       {/* Dynamic polite status messenger announcement node layer for assistive tech */}
       <div className="sr-only" aria-live="polite" role="status">
         {srAnnouncement}
