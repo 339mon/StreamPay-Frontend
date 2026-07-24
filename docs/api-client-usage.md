@@ -33,6 +33,9 @@ const created = await post<Stream>('/api/v2/streams', {
 - attach `Content-Type: application/json`
 - generate an `Idempotency-Key` per request
 - generate a unique `x-request-id`
+- require a matching `csrf-token` cookie and `x-csrf-token` header for state-changing requests
+
+For browser-based requests, read the `csrf-token` cookie from the response and send it back in the `x-csrf-token` header on subsequent `POST`, `PUT`, `PATCH`, and `DELETE` calls.
 
 ## Timeouts and retries
 

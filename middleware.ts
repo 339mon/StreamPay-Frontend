@@ -9,6 +9,14 @@ import {
   checkRequestBodySize,
   buildLimitsConfig,
 } from './lib/bodySize';
+import {
+  attachCsrfCookie,
+  createCsrfForbiddenResponse,
+  getCsrfCookieValue,
+  getCsrfHeaderValue,
+  isCsrfProtectedMethod,
+  validateCsrfToken,
+} from './lib/csrf';
 
 // ---------------------------------------------------------------------------
 // Request body size cap
@@ -62,7 +70,20 @@ export async function middleware(request: NextRequest) {
   }
 
   // ------------------------------------------------------------------
-  // 2. CORS
+  // 2. CSRF protection for state-changing requests
+  // ------------------------------------------------------------------
+  if (isCsrfProtectedMethod(request.method)) {
+    const cookieToken = getCsrfCookieValue(request);
+    const headerToken = getCsrfHeaderValue(request);
+    if (!validateCsrfToken(cookieToken, headerToken)) {
+      const response = createCsrfForbiddenResponse(request);
+      response.headers.set(REQUEST_FINGERPRINT_HEADER, fingerprint);
+      return response;
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // 3. CORS
   // ------------------------------------------------------------------
   const origin = request.headers.get('origin');
   const originAllowed = isOriginAllowed(origin, allowedOrigins);
@@ -83,6 +104,15 @@ export async function middleware(request: NextRequest) {
       headers: requestHeaders,
     },
   });
+
+  if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') {
+    const csrfResponse = attachCsrfCookie(response, request);
+    if (originAllowed) {
+      csrfResponse.headers.set('Access-Control-Allow-Origin', origin!);
+      csrfResponse.headers.set('Vary', 'Origin');
+    }
+    return csrfResponse;
+  }
 
   if (originAllowed) {
     const headers = response.headers;
