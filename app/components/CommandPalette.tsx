@@ -1,86 +1,323 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, {
+  KeyboardEvent,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
+import { useRouter } from "next/navigation";
+import type { StreamRowData } from "./StreamRow";
 
-export function CommandPalette() {
+interface CommandPaletteProps {
+  streams: StreamRowData[];
+}
+
+function highlightMatch(text: string, query: string) {
+  if (!query) return text;
+  const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi");
+  const parts = text.split(regex);
+  return parts.map((part, i) =>
+    regex.test(part) ? (
+      <span key={i} style={{ color: "var(--accent)", fontWeight: 700 }}>
+        {part}
+      </span>
+    ) : (
+      part
+    )
+  );
+}
+
+export function CommandPalette({ streams }: CommandPaletteProps) {
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const titleId = useId();
+
+  const filtered = query
+    ? streams.filter(
+        (s) =>
+          s.recipient.toLowerCase().includes(query.toLowerCase()) ||
+          s.id.toLowerCase().includes(query.toLowerCase()) ||
+          s.rate.toLowerCase().includes(query.toLowerCase()) ||
+          s.schedule.toLowerCase().includes(query.toLowerCase())
+      )
+    : streams;
+
+  const open = useCallback(() => {
+    setIsOpen(true);
+    setQuery("");
+    setSelectedIndex(0);
+  }, []);
+
+  const close = useCallback(() => {
+    setIsOpen(false);
+    setQuery("");
+  }, []);
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault();
-        setIsOpen((prev) => !prev);
-      }
-      if (e.key === "Escape" && isOpen) {
-        e.preventDefault();
-        setIsOpen(false);
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "k") {
+        event.preventDefault();
+        if (isOpen) {
+          close();
+        } else {
+          open();
+        }
       }
     };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, open, close]);
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedIndex(0);
+      const timer = setTimeout(() => inputRef.current?.focus(), 0);
+      return () => clearTimeout(timer);
+    }
   }, [isOpen]);
 
   useEffect(() => {
-    if (isOpen && inputRef.current) {
-      inputRef.current.focus();
-    } else if (!isOpen) {
-      setQuery("");
-    }
+    setSelectedIndex(0);
+  }, [query]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
   }, [isOpen]);
+
+  const handleInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setSelectedIndex((prev) => (prev + 1) % filtered.length);
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setSelectedIndex((prev) => (prev - 1 + filtered.length) % filtered.length);
+      return;
+    }
+
+    if (event.key === "Enter" && filtered[selectedIndex]) {
+      event.preventDefault();
+      const selected = filtered[selectedIndex];
+      router.push(`/streams/${selected.id}`);
+      close();
+      return;
+    }
+  };
+
+  useEffect(() => {
+    const selectedEl = listRef.current?.children[selectedIndex] as HTMLElement | undefined;
+    selectedEl?.scrollIntoView({ block: "nearest" });
+  }, [selectedIndex]);
 
   if (!isOpen) return null;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-24 bg-black/50 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Command Palette"
-      onClick={() => setIsOpen(false)}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) close();
+      }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        backgroundColor: "rgba(0, 0, 0, 0.7)",
+        backdropFilter: "blur(4px)",
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "center",
+        paddingTop: "10vh",
+        zIndex: 1000,
+      }}
     >
       <div
-        className="w-full max-w-xl bg-white dark:bg-gray-900 shadow-2xl rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800"
-        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        style={{
+          width: "100%",
+          maxWidth: "560px",
+          backgroundColor: "var(--panel-elevated)",
+          border: "1px solid var(--border)",
+          borderRadius: "1rem",
+          boxShadow: "0 25px 50px rgba(0,0,0,0.5)",
+          overflow: "hidden",
+        }}
       >
-        <div className="flex items-center px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-          <svg className="h-5 w-5 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
+        <div style={{ padding: "0.75rem" }}>
           <input
             ref={inputRef}
             type="text"
-            className="flex-1 px-3 py-1 bg-transparent border-none outline-none text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-0"
-            placeholder="Search commands, streams, and more..."
+            role="combobox"
+            aria-expanded="true"
+            aria-controls="command-palette-list"
+            aria-activedescendant={filtered[selectedIndex] ? `cp-option-${selectedIndex}` : undefined}
+            aria-labelledby={titleId}
+            placeholder="Search streams by recipient, ID, rate, or schedule..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            aria-label="Search input"
+            onKeyDown={handleInputKeyDown}
+            style={{
+              width: "100%",
+              padding: "0.75rem 1rem",
+              backgroundColor: "var(--panel)",
+              border: "1px solid var(--border)",
+              borderRadius: "0.75rem",
+              color: "var(--foreground)",
+              fontSize: "1rem",
+              outline: "none",
+              boxSizing: "border-box",
+            }}
+            onFocus={(e) => {
+              e.target.style.borderColor = "var(--accent)";
+              e.target.style.boxShadow = "0 0 0 2px rgba(34, 197, 94, 0.15)";
+            }}
+            onBlur={(e) => {
+              e.target.style.borderColor = "var(--border)";
+              e.target.style.boxShadow = "none";
+            }}
           />
-          <span className="text-xs text-gray-400 dark:text-gray-500 font-medium px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded-md">
-            ESC
+        </div>
+
+        <h2 id={titleId} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0,0,0,0)" }}>
+          Stream search
+        </h2>
+
+        {filtered.length === 0 ? (
+          <p
+            style={{
+              padding: "2rem 1rem",
+              textAlign: "center",
+              color: "var(--muted)",
+              fontSize: "0.875rem",
+            }}
+          >
+            No streams match &ldquo;{query}&rdquo;
+          </p>
+        ) : (
+          <ul
+            ref={listRef}
+            id="command-palette-list"
+            role="listbox"
+            aria-label="Search results"
+            style={{
+              listStyle: "none",
+              margin: 0,
+              padding: "0 0.5rem 0.5rem",
+              maxHeight: "min(60vh, 360px)",
+              overflowY: "auto",
+            }}
+          >
+            {filtered.map((stream, index) => (
+              <li
+                key={stream.id}
+                id={`cp-option-${index}`}
+                role="option"
+                aria-selected={index === selectedIndex}
+                onMouseDown={() => {
+                  router.push(`/streams/${stream.id}`);
+                  close();
+                }}
+                onMouseEnter={() => setSelectedIndex(index)}
+                style={{
+                  padding: "0.75rem",
+                  borderRadius: "0.75rem",
+                  cursor: "pointer",
+                  backgroundColor:
+                    index === selectedIndex ? "var(--accent)" : "transparent",
+                  color:
+                    index === selectedIndex
+                      ? "var(--accent-on)"
+                      : "var(--foreground)",
+                  transition: "background-color 100ms ease",
+                  marginBottom: "0.25rem",
+                }}
+              >
+                <div style={{ fontWeight: 600, marginBottom: "0.125rem" }}>
+                  {highlightMatch(stream.recipient, query)}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "0.75rem",
+                    fontSize: "0.8125rem",
+                    color:
+                      index === selectedIndex
+                        ? "var(--accent-on)"
+                        : "var(--muted-light)",
+                    opacity: index === selectedIndex ? 0.9 : 1,
+                  }}
+                >
+                  <span>{highlightMatch(stream.rate, query)}</span>
+                  <span>{highlightMatch(stream.schedule, query)}</span>
+                  <span
+                    style={{
+                      marginLeft: "auto",
+                      textTransform: "capitalize",
+                    }}
+                  >
+                    {stream.status}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div
+          style={{
+            display: "flex",
+            gap: "1rem",
+            justifyContent: "center",
+            padding: "0.5rem 0.75rem 0.75rem",
+            borderTop: "1px solid var(--border)",
+            fontSize: "0.75rem",
+            color: "var(--muted)",
+          }}
+        >
+          <span>
+            <kbd style={kbdStyle}>&uarr;</kbd> <kbd style={kbdStyle}>&darr;</kbd> navigate
+          </span>
+          <span>
+            <kbd style={kbdStyle}>&crarr;</kbd> select
+          </span>
+          <span>
+            <kbd style={kbdStyle}>esc</kbd> close
           </span>
         </div>
-        {query && (
-          <div className="p-4 text-center text-sm text-gray-500 dark:text-gray-400">
-            No results found for "{query}".
-          </div>
-        )}
-        {!query && (
-          <div className="p-4 text-sm text-gray-500 dark:text-gray-400">
-            <p className="font-semibold mb-2">Suggestions</p>
-            <ul>
-              <li className="py-2 px-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded cursor-pointer transition-colors">
-                Go to Dashboard
-              </li>
-              <li className="py-2 px-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded cursor-pointer transition-colors">
-                Create new Stream
-              </li>
-            </ul>
-          </div>
-        )}
       </div>
     </div>
   );
 }
+
+const kbdStyle: React.CSSProperties = {
+  display: "inline-block",
+  padding: "0.125rem 0.375rem",
+  fontSize: "0.6875rem",
+  fontWeight: 700,
+  lineHeight: 1,
+  color: "var(--muted-light)",
+  backgroundColor: "var(--panel)",
+  border: "1px solid var(--border)",
+  borderRadius: "0.25rem",
+  minWidth: "1.25rem",
+  textAlign: "center",
+};

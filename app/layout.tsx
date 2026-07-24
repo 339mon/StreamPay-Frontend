@@ -3,7 +3,7 @@ import "./globals.css";
 import SplashScreen from "./components/SplashScreen";
 import { WelcomeTour } from "./components/WelcomeTour";
 import { ToastProvider } from "./components/ToastProvider";
-import { AppBottomNav } from "./components/AppBottomNav";
+import { CommandPaletteWrapper } from "./components/CommandPaletteWrapper";
 import { getThemeScript } from "./utils/theme-noflash";
 
 export const metadata: Metadata = {
@@ -27,6 +27,7 @@ export default function RootLayout({
       <body>
         <ToastProvider>
           <SplashScreen />
+          <CommandPaletteWrapper />
           {children}
           <AppBottomNav />
         </ToastProvider>
