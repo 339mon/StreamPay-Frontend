@@ -384,7 +384,7 @@ a:hover {
   margin: 0 auto;
   max-width: 72rem;
   min-height: 100vh;
-  padding: 2rem 1rem 3rem;
+  padding: 2rem 1rem 6rem;
 }
 
 .page-hero {
@@ -1274,6 +1274,119 @@ a:hover {
 
 .settings-layout { max-width: 48rem; }
 .settings-actions { display: flex; justify-content: flex-end; margin-top: 2rem; padding-bottom: 4rem; }
+
+/* ─── App Bottom Navigation (mobile only) ──────────────────────────────────── */
+.bottom-nav {
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  bottom: 0;
+  display: flex;
+  justify-content: space-around;
+  left: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  position: fixed;
+  right: 0;
+  z-index: 90;
+}
+
+.bottom-nav__list {
+  align-items: stretch;
+  display: flex;
+  justify-content: space-around;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+}
+
+.bottom-nav__item {
+  flex: 1;
+  min-width: 0;
+}
+
+.bottom-nav__link {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  justify-content: center;
+  min-height: 3.75rem;
+  padding: 0.5rem 0.25rem;
+  position: relative;
+  text-decoration: none;
+  width: 100%;
+}
+
+.bottom-nav__link:hover,
+.bottom-nav__link:focus-visible {
+  color: var(--foreground);
+  text-decoration: none;
+}
+
+.bottom-nav__link--active {
+  color: var(--accent);
+}
+
+.bottom-nav__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  height: 1.5rem;
+  width: 1.5rem;
+}
+
+.bottom-nav__icon svg {
+  height: 100%;
+  width: 100%;
+}
+
+.bottom-nav__label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+.bottom-nav__badge {
+  align-items: center;
+  background: var(--accent);
+  border-radius: 999px;
+  color: var(--accent-on);
+  display: inline-flex;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  height: 1.125rem;
+  justify-content: center;
+  line-height: 1;
+  min-width: 1.125rem;
+  padding: 0 0.375rem;
+  position: absolute;
+  right: 0.625rem;
+  top: 0.375rem;
+}
+
+.bottom-nav__link:focus-visible .bottom-nav__badge {
+  outline: 2px solid var(--foreground);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bottom-nav__link {
+    transition: none;
+  }
+}
+
+@media (min-width: 48rem) {
+  .bottom-nav {
+    display: none;
+  }
+
+  .page-shell {
+    padding-bottom: 4rem;
+  }
+}
 
 .push-optin {
   background: linear-gradient(135deg, rgba(14, 165, 233, 0.14), rgba(19, 19, 26, 0.96));
