@@ -21,6 +21,8 @@ Linear payment streams on Stellar/Soroban.
 | `get_stream` | No | None | Returns the stream record. |
 | `withdrawable` | No | None | Returns the currently withdrawable amount. |
 | `stream_balance` | No | None | Returns the vested balance at the current time. |
+| `stream_snapshot` | No | None | Captures a `StreamSnapshot` (vested, released, locked, withdrawable, status) at a given ledger timestamp. |
+| `diff_snapshots` | No | None | Computes the field-by-field `SnapshotDiff` delta between two `StreamSnapshot` values from the same stream. |
 | `list_streams` | No | None | Returns a paginated page of all streams ordered by ID. |
 | `list_streams_by_sender` | No | None | Returns a paginated page of streams filtered by sender address. |
 | `list_streams_by_recipient` | No | None | Returns a paginated page of streams filtered by recipient address. |

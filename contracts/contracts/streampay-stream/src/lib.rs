@@ -24,6 +24,7 @@ mod fees;
 mod limits;
 mod multi;
 mod release;
+mod snapshot_diff;
 mod storage;
 mod views;
 pub mod admin;
@@ -33,6 +34,7 @@ pub use error::Error;
 use soroban_sdk::contracttype;
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env};
 pub use multi::{RecipientAllocation, SplitStream};
+pub use snapshot_diff::{SnapshotDiff, StreamSnapshot};
 pub use storage::{Stream, StreamStatus};
 pub(crate) use storage::DataKey;
 
@@ -966,11 +968,66 @@ impl Contract {
         Ok(release::vested_amount(&stream, env.ledger().timestamp()))
     }
 
-    /// Withdraws accrued escrow on behalf of `caller`.
+    /// Captures a point-in-time [`StreamSnapshot`] for `stream_id` at `at_timestamp`.
     ///
-    /// `caller` must be either the stream recipient or an address that has been
-    /// added to the per-stream withdrawer allowlist via [`add_withdrawer`].
-    /// Funds are always transferred to the stream recipient regardless of who
+    /// Evaluates the linear-accrual math at the supplied timestamp, returning
+    /// vested, released, locked, and withdrawable amounts alongside the stream
+    /// status at that moment.
+    ///
+    /// This is a **read-only** entrypoint: it never mutates state and requires
+    /// no authorisation. It is unaffected by the global pause flag.
+    ///
+    /// # Parameters
+    /// - `stream_id`    — Numeric ID of the stream to snapshot.
+    /// - `at_timestamp` — Ledger timestamp at which to evaluate accrual.
+    ///
+    /// # Returns
+    /// A [`StreamSnapshot`] containing all financial fields at `at_timestamp`.
+    ///
+    /// # Errors
+    /// - [`Error::NotFound`] if `stream_id` does not exist.
+    /// - [`Error::Overflow`] if any arithmetic step overflows `i128`.
+    pub fn stream_snapshot(
+        env: Env,
+        stream_id: u64,
+        at_timestamp: u64,
+    ) -> Result<StreamSnapshot, Error> {
+        snapshot_diff::stream_snapshot(&env, stream_id, at_timestamp)
+    }
+
+    /// Computes the delta between two [`StreamSnapshot`]s produced by
+    /// [`Contract::stream_snapshot`].
+    ///
+    /// Both snapshots must reference the same `stream_id`. All `delta_*` fields
+    /// express **`after − before`**: positive values mean growth, negative values
+    /// mean a decrease (e.g. a large withdrawal yields a negative `delta_locked`).
+    ///
+    /// Passing the snapshots in reverse chronological order is allowed; the
+    /// `elapsed_seconds` field is always the absolute difference between the two
+    /// timestamps.
+    ///
+    /// This is a **read-only** entrypoint: it never mutates state and requires
+    /// no authorisation. It is unaffected by the global pause flag.
+    ///
+    /// # Parameters
+    /// - `before` — Snapshot at the earlier point in time.
+    /// - `after`  — Snapshot at the later point in time.
+    ///
+    /// # Returns
+    /// A [`SnapshotDiff`] with field-by-field deltas and elapsed time.
+    ///
+    /// # Errors
+    /// - [`Error::NotFound`] if the two snapshots reference different stream IDs.
+    /// - [`Error::Overflow`] if any arithmetic step overflows.
+    pub fn diff_snapshots(
+        env: Env,
+        before: StreamSnapshot,
+        after: StreamSnapshot,
+    ) -> Result<SnapshotDiff, Error> {
+        snapshot_diff::diff_snapshots(&env, &before, &after)
+    }
+
+    /// Withdraws accrued escrow on behalf of `caller`.
     /// initiates the withdrawal.
     ///
     /// # Errors
