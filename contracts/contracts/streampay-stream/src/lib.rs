@@ -24,6 +24,7 @@ mod limits;
 mod release;
 mod storage;
 mod views;
+pub mod admin;
 
 pub use error::Error;
 use soroban_sdk::contracttype;
@@ -1014,6 +1015,62 @@ impl Contract {
         Ok(())
     }
 
+    // ── Admin nonce ───────────────────────────────────────────────────────────
+
+    /// Returns the current (next-expected) admin nonce.
+    ///
+    /// Call this before crafting an [`Contract::admin_override`] transaction to
+    /// learn which nonce value to supply. The returned value is the nonce that
+    /// **must** be provided in the very next `admin_override` call; any other
+    /// value will be rejected.
+    ///
+    /// This is a read-only call; it never mutates state or requires auth.
+    pub fn get_admin_nonce(env: Env) -> u64 {
+        admin::get_nonce(&env)
+    }
+
+    /// Performs a privileged admin override of a stream's `end_time`, protected
+    /// by a monotonic nonce to prevent replay attacks.
+    ///
+    /// The admin must supply the **current** nonce (obtainable via
+    /// [`Contract::get_admin_nonce`]) as `nonce`. After a successful call the
+    /// stored nonce is incremented so the same `nonce` value cannot be reused.
+    ///
+    /// # Parameters
+    /// - `admin`        — Must be the initialised contract admin.
+    /// - `nonce`        — Current monotonic nonce; consumed on success.
+    /// - `stream_id`    — ID of the stream to override.
+    /// - `new_end_time` — Replacement `end_time` for the stream.
+    ///
+    /// # Returns
+    /// The updated [`Stream`] after applying the override.
+    ///
+    /// # Errors
+    /// - [`Error::NotFound`] if the contract is not initialised or `stream_id`
+    ///   does not exist.
+    /// - [`Error::Unauthorized`] if `admin` is not the stored admin.
+    /// - [`Error::NonceTooLow`] if `nonce` has already been consumed (replay
+    ///   attempt or stale nonce).
+    /// - [`Error::NonceOutOfOrder`] if `nonce` skips ahead of the stored counter.
+    /// - [`Error::InvalidTimeRange`] if `new_end_time <= stream.start_time`.
+    /// - [`Error::InvalidState`] if the stream is in a terminal state.
+    ///
+    /// # Auth
+    /// Requires authorisation from `admin`.
+    ///
+    /// # Security
+    /// The nonce provides a long-lived, cross-ledger replay fence on top of
+    /// Soroban's native per-ledger authorisation mechanism.
+    pub fn admin_override(
+        env: Env,
+        admin: Address,
+        nonce: u64,
+        stream_id: u64,
+        new_end_time: u64,
+    ) -> Result<Stream, Error> {
+        admin::admin_override(&env, &admin, nonce, stream_id, new_end_time)
+    }
+
     // ──────────────────────────────────────────────────────────────────────
     // Read-only paginated enumeration views
     // ──────────────────────────────────────────────────────────────────────
@@ -1223,6 +1280,10 @@ mod coverage_test;
 
 #[cfg(test)]
 mod views_integration_test;
+
+/// Focused tests for admin nonce / replay-prevention (issue #949).
+#[cfg(test)]
+mod admin_nonce_test;
 
 #[cfg(test)]
 mod upgrade_test {
