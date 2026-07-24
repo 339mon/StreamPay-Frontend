@@ -9,13 +9,9 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
 ## [Unreleased]
 
 ### Added
-- `app/streams/new/components/StepIndicator.tsx` — the create-stream wizard's
-  step indicator now exposes a visually-hidden `role="progressbar"` alongside
-  its existing `nav`/`aria-current` step list, with `aria-valuenow` /
-  `aria-valuemin` / `aria-valuemax` reflecting the current step position and
-  an `aria-valuetext` of the form "Step X of Y: &lt;label&gt;" for screen
-  readers (WCAG 2.1 AA). No visible/markup changes for sighted users; no prop
-  changes.
+- `app/components/PayoutSummary.tsx` — a refined GrantFox payout summary card
+  with tighter typography, spacing, and responsive layout for the campaign
+  surface while preserving dark-mode and accessibility token consistency.
 - `lib/chaos.ts` — fault-injection middleware for chaos tests. Lets test
   suites inject latency, error responses, or request aborts at configurable
   rates (defaults disabled; opt in via `CHAOS_ENABLED=true` or programmatic
