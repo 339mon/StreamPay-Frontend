@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import SplashScreen from "./components/SplashScreen";
+import { WelcomeTour } from "./components/WelcomeTour";
 import { ToastProvider } from "./components/ToastProvider";
 import { getThemeScript } from "./utils/theme-noflash";
 
@@ -26,6 +27,7 @@ export default function RootLayout({
         <ToastProvider>
           <SplashScreen />
           {children}
+          <WelcomeTour />
         </ToastProvider>
       </body>
     </html>
