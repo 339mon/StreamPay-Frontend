@@ -1,64 +1,120 @@
-import { webcrypto } from 'crypto';
+import { NextRequest, NextResponse } from 'next/server';
 
 export const CSRF_COOKIE_NAME = 'csrf-token';
 export const CSRF_HEADER_NAME = 'x-csrf-token';
+export const CSRF_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
-/**
- * Generates a cryptographically secure random 32-byte hex token.
- * Safe to run in both Node.js and Next.js Edge Runtime.
- */
-export function generateCsrfToken(): string {
-  const array = new Uint8Array(32);
-  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-    crypto.getRandomValues(array);
-  } else if (typeof webcrypto !== 'undefined' && webcrypto.getRandomValues) {
-    webcrypto.getRandomValues(array);
-  } else {
-    // Fallback in case of environments without webcrypto (mostly tests or old node versions)
-    for (let i = 0; i < array.length; i++) {
-      array[i] = Math.floor(Math.random() * 256);
-    }
+const CSRF_PROTECTED_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+function normalizeToken(token: string | null | undefined): string | null {
+  if (typeof token !== 'string') {
+    return null;
   }
-  return Array.from(array, (dec) => dec.toString(16).padStart(2, '0')).join('');
+
+  const trimmed = token.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
-/**
- * Validates whether a token matches the expected pattern (64-char hex string).
- */
-export function isValidCsrfToken(token: string | null | undefined): boolean {
-  if (!token || typeof token !== 'string') {
+function timingSafeEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.length !== right.length) {
     return false;
   }
-  return /^[a-f0-9]{64}$/.test(token);
-}
 
-/**
- * Standard timing-safe equality check for strings.
- * Loops through the entire length of the string to avoid timing attacks.
- */
-export function timingSafeEqual(a: string, b: string): boolean {
-  if (typeof a !== 'string' || typeof b !== 'string') {
-    return false;
-  }
-  if (a.length !== b.length) {
-    return false;
-  }
   let result = 0;
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  for (let index = 0; index < left.length; index += 1) {
+    result |= left[index] ^ right[index];
   }
+
   return result === 0;
 }
 
-/**
- * Verifies the CSRF cookie token and request header token.
- */
-export function verifyCsrf(
-  cookieToken: string | null | undefined,
-  headerToken: string | null | undefined
-): boolean {
-  if (!isValidCsrfToken(cookieToken) || !isValidCsrfToken(headerToken)) {
+export function isCsrfProtectedMethod(method: string): boolean {
+  return CSRF_PROTECTED_METHODS.has(method.toUpperCase());
+}
+
+export function generateCsrfToken(): string {
+  if (typeof globalThis.crypto?.getRandomValues === 'function') {
+    const bytes = new Uint8Array(32);
+    globalThis.crypto.getRandomValues(bytes);
+    return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
+  }
+
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+export function getCsrfCookieValue(request: NextRequest | Request): string | null {
+  if ('cookies' in request && typeof request.cookies?.get === 'function') {
+    const cookie = request.cookies.get(CSRF_COOKIE_NAME);
+    if (cookie?.value) {
+      return normalizeToken(cookie.value);
+    }
+  }
+
+  const cookieHeader = request.headers.get('cookie');
+  if (!cookieHeader) {
+    return null;
+  }
+
+  const cookiePairs = cookieHeader.split(';');
+  for (const pair of cookiePairs) {
+    const [rawName, ...rawValue] = pair.trim().split('=');
+    if (rawName === CSRF_COOKIE_NAME && rawValue.length > 0) {
+      return normalizeToken(rawValue.join('='));
+    }
+  }
+
+  return null;
+}
+
+export function getCsrfHeaderValue(request: NextRequest | Request): string | null {
+  return normalizeToken(request.headers.get(CSRF_HEADER_NAME));
+}
+
+export function validateCsrfToken(cookieToken: string | null, headerToken: string | null): boolean {
+  const normalizedCookie = normalizeToken(cookieToken);
+  const normalizedHeader = normalizeToken(headerToken);
+
+  if (!normalizedCookie || !normalizedHeader) {
     return false;
   }
-  return timingSafeEqual(cookieToken!, headerToken!);
+
+  try {
+    const cookieBytes = new TextEncoder().encode(normalizedCookie);
+    const headerBytes = new TextEncoder().encode(normalizedHeader);
+    return timingSafeEqual(cookieBytes, headerBytes);
+  } catch {
+    return false;
+  }
+}
+
+export function attachCsrfCookie(response: NextResponse, request: NextRequest | Request): NextResponse {
+  const existingToken = getCsrfCookieValue(request);
+  if (existingToken) {
+    return response;
+  }
+
+  const token = generateCsrfToken();
+  response.cookies.set(CSRF_COOKIE_NAME, token, {
+    path: '/',
+    maxAge: CSRF_COOKIE_MAX_AGE_SECONDS,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: false,
+  });
+
+  return response;
+}
+
+export function createCsrfForbiddenResponse(request: NextRequest | Request): NextResponse {
+  const requestId = request.headers.get('x-request-id') ?? `req_${Date.now().toString(36)}`;
+  return NextResponse.json(
+    {
+      error: {
+        code: 'FORBIDDEN',
+        message: 'CSRF token missing or invalid.',
+        request_id: requestId,
+      },
+    },
+    { status: 403 },
+  );
 }

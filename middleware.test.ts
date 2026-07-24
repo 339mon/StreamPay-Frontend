@@ -1,5 +1,61 @@
 /** @jest-environment node */
 
+describe('CSRF middleware', () => {
+  let middleware: any;
+
+  beforeEach(async () => {
+    jest.resetModules();
+
+    (process.env as any).STELLAR_NETWORK = 'testnet';
+    (process.env as any).JWT_SECRET = 'test-secret-at-least-32-characters-long';
+    (process.env as any).NODE_ENV = 'production';
+    (process.env as any).ALLOWED_ORIGINS = 'https://allowed.example.com';
+
+    const imported = await import('./middleware');
+    middleware = imported.middleware;
+  });
+
+  afterEach(() => {
+    delete (process.env as any).STELLAR_NETWORK;
+    delete (process.env as any).JWT_SECRET;
+    delete (process.env as any).NODE_ENV;
+    delete (process.env as any).ALLOWED_ORIGINS;
+  });
+
+  it('blocks state-changing requests without a matching CSRF token pair', async () => {
+    const request = new Request('https://api.example.com/api/streams', {
+      method: 'POST',
+      headers: {
+        origin: 'https://allowed.example.com',
+        'x-csrf-token': 'csrf-token',
+      },
+    });
+
+    const response = await middleware(request as any);
+
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    expect(body.error.code).toBe('FORBIDDEN');
+    expect(body.error.message).toContain('CSRF token');
+  });
+
+  it('allows state-changing requests when the cookie and header tokens match', async () => {
+    const request = new Request('https://api.example.com/api/streams', {
+      method: 'POST',
+      headers: {
+        origin: 'https://allowed.example.com',
+        'x-csrf-token': 'shared-token',
+        cookie: 'csrf-token=shared-token',
+      },
+    });
+
+    const response = await middleware(request as any);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('access-control-allow-origin')).toBe('https://allowed.example.com');
+  });
+});
+
 describe('CORS middleware', () => {
   let middleware: any;
 

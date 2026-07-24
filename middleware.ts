@@ -11,9 +11,18 @@ import {
   REQUEST_FINGERPRINT_HEADER,
   captureRequestFingerprint,
 } from './lib/fingerprint';
-import { checkRequestBodySize, buildLimitsConfig } from './lib/bodySize';
-import { touchLastSeenFromRequest } from './lib/lastSeen';
-import { applyChaos, getChaosConfig } from './lib/chaos';
+import {
+  checkRequestBodySize,
+  buildLimitsConfig,
+} from './lib/bodySize';
+import {
+  attachCsrfCookie,
+  createCsrfForbiddenResponse,
+  getCsrfCookieValue,
+  getCsrfHeaderValue,
+  isCsrfProtectedMethod,
+  validateCsrfToken,
+} from './lib/csrf';
 
 // ---------------------------------------------------------------------------
 // Request body size cap
@@ -150,37 +159,20 @@ export async function middleware(request: NextRequest) {
   }
 
   // ------------------------------------------------------------------
-  // 1b. Chaos / fault injection (dev & staging only)
+  // 2. CSRF protection for state-changing requests
   // ------------------------------------------------------------------
-  // No-op unless CHAOS_ENABLED=true and NODE_ENV !== production. Injects
-  // random latency and/or a configurable error status to exercise client
-  // retry/timeout paths. OPTIONS preflight is excluded so CORS still works.
-  if (chaosConfig.enabled && request.method !== 'OPTIONS') {
-    const outcome = await applyChaos(chaosConfig);
-    if (outcome.injectedStatus !== undefined) {
-      const chaosResponse = NextResponse.json(
-        {
-          error: {
-            code: 'CHAOS_INJECTED',
-            message: 'Synthetic fault injected by chaos middleware.',
-            request_id: resolveRequestId(request),
-          },
-        },
-        {
-          status: outcome.injectedStatus,
-          headers: {
-            [REQUEST_FINGERPRINT_HEADER]: fingerprint,
-            'X-Chaos-Injected': 'error',
-          },
-        },
-      );
-      setCanaryHeader(chaosResponse.headers, isCanary);
-      return chaosResponse;
+  if (isCsrfProtectedMethod(request.method)) {
+    const cookieToken = getCsrfCookieValue(request);
+    const headerToken = getCsrfHeaderValue(request);
+    if (!validateCsrfToken(cookieToken, headerToken)) {
+      const response = createCsrfForbiddenResponse(request);
+      response.headers.set(REQUEST_FINGERPRINT_HEADER, fingerprint);
+      return response;
     }
   }
 
   // ------------------------------------------------------------------
-  // 2. CORS — reject disallowed origins with structured error envelope
+  // 3. CORS
   // ------------------------------------------------------------------
   const origin = request.headers.get('origin');
   let originAllowed = false;
@@ -240,6 +232,21 @@ export async function middleware(request: NextRequest) {
       headers: requestHeaders,
     },
   });
-  setCanaryHeader(response.headers, isCanary);
+
+  if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') {
+    const csrfResponse = attachCsrfCookie(response, request);
+    if (originAllowed) {
+      csrfResponse.headers.set('Access-Control-Allow-Origin', origin!);
+      csrfResponse.headers.set('Vary', 'Origin');
+    }
+    return csrfResponse;
+  }
+
+  if (originAllowed) {
+    const headers = response.headers;
+    headers.set('Access-Control-Allow-Origin', origin!);
+    headers.set('Vary', 'Origin');
+  }
+
   return response;
 }
