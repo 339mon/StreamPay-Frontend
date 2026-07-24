@@ -11,6 +11,8 @@ import {
 } from './lib/bodySize';
 import { touchLastSeenFromRequest } from './lib/lastSeen';
 import { getChaosConfig, applyChaos } from './lib/chaos';
+import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME, generateCsrfToken, isValidCsrfToken, verifyCsrf } from './lib/csrf';
+
 
 // ---------------------------------------------------------------------------
 // Request body size cap
@@ -119,17 +121,43 @@ function shouldEnforceBodySizeLimit(request: NextRequest | Request): boolean {
   return pathname === '/api/v2/streams' || pathname.startsWith('/api/v2/streams/') || pathname.startsWith('/api/webhooks');
 }
 
-function buildCorsErrorResponse(origin: string | null, requestId: string): NextResponse {
-  return NextResponse.json(
-    {
-      error: {
-        code: 'CORS_ORIGIN_DISALLOWED',
-        message: origin ? `Origin '${origin}' is not allowed.` : 'Origin header is required.',
-        request_id: requestId,
-      },
-    },
-    { status: 403 },
-  );
+function getCookieValue(request: NextRequest | Request, name: string): string | undefined {
+  if ('cookies' in request && request.cookies && typeof request.cookies.get === 'function') {
+    const cookieObj = request.cookies.get(name);
+    if (cookieObj && typeof cookieObj === 'object' && 'value' in cookieObj) {
+      return cookieObj.value;
+    }
+    if (typeof cookieObj === 'string') {
+      return cookieObj;
+    }
+  }
+  const cookieHeader = request.headers.get('cookie');
+  if (!cookieHeader) return undefined;
+  const cookies = cookieHeader.split(';').map(c => c.trim());
+  for (const cookie of cookies) {
+    const [k, v] = cookie.split('=');
+    if (k === name) return v;
+  }
+  return undefined;
+}
+
+function setCookie(response: NextResponse, name: string, value: string) {
+  if (response.cookies && typeof response.cookies.set === 'function') {
+    response.cookies.set(name, value, {
+      path: '/',
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      httpOnly: false,
+    });
+  } else {
+    const cookieOptions = [
+      `${name}=${value}`,
+      'Path=/',
+      'SameSite=Lax',
+      process.env.NODE_ENV === 'production' ? 'Secure' : '',
+    ].filter(Boolean).join('; ');
+    response.headers.append('Set-Cookie', cookieOptions);
+  }
 }
 
 export async function middleware(request: NextRequest) {
@@ -186,24 +214,114 @@ export async function middleware(request: NextRequest) {
   }
 
   // ------------------------------------------------------------------
-  // 2. CORS
+  // 2. CORS — reject disallowed origins with structured error envelope
   // ------------------------------------------------------------------
-  if (origin) {
-    isAllowed = isOriginAllowed(origin, allowedOrigins);
+  const origin = request.headers.get('origin');
+  let originAllowed = false;
 
-    if (!isAllowed) {
+  if (origin) {
+    originAllowed = isOriginAllowed(origin, allowedOrigins);
+
+    if (!originAllowed) {
+      const requestId =
+        (request.headers.get('x-request-id') as string) ??
+        `req_${Date.now().toString(36)}`;
+
+      console.warn(
+        JSON.stringify({
+          type: 'cors.rejection',
+          origin,
+          method: request.method,
+          pathname: request.nextUrl?.pathname ?? '',
+          request_id: requestId,
+        })
+      );
+
+      const errorResponse = NextResponse.json(
+        {
+          error: {
+            code: 'CORS_ORIGIN_DISALLOWED',
+            message: `Origin '${origin}' is not allowed.`,
+            request_id: requestId,
+          },
+        },
+        { status: 403 }
+      );
+      errorResponse.headers.set(REQUEST_FINGERPRINT_HEADER, fingerprint);
+      errorResponse.headers.set('Vary', 'Origin');
+      setCanaryHeader(errorResponse.headers, isCanary);
+      return errorResponse;
+    }
+
+    // Origin is allowed
+    if (request.method === 'OPTIONS') {
+      const response = new NextResponse(null, {
+        status: 204,
+        headers: buildCorsHeaders(origin),
+      });
+      setCanaryHeader(response.headers, isCanary);
+      return response;
+    }
+  } else {
+    // No origin header — no CORS processing needed
+    if (request.method === 'OPTIONS') {
       const response = new NextResponse(null, { status: 204 });
       setCanaryHeader(response.headers, isCanary);
       return response;
     }
+  }
 
-    const headers = buildCorsHeaders(origin!);
-    setCanaryHeader(headers, isCanary);
+  // ------------------------------------------------------------------
+  // 2b. CSRF Protection — double-submit token check for state-changing routes
+  // ------------------------------------------------------------------
+  const requestPathname = 'nextUrl' in request && request.nextUrl?.pathname
+    ? request.nextUrl.pathname
+    : new URL(request.url).pathname;
 
-    return new NextResponse(null, {
-      status: 204,
-      headers,
-    });
+  const isWebhook = requestPathname === '/api/webhooks' || requestPathname.startsWith('/api/webhooks/');
+  const STATE_CHANGING_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
+  const isStateChanging = STATE_CHANGING_METHODS.includes(request.method);
+
+  if (!isWebhook) {
+    if (isStateChanging) {
+      const cookieToken = getCookieValue(request, CSRF_COOKIE_NAME);
+      const headerToken = request.headers.get(CSRF_HEADER_NAME);
+
+      if (!verifyCsrf(cookieToken, headerToken)) {
+        const requestId =
+          (request.headers.get('x-request-id') as string) ??
+          `req_${Date.now().toString(36)}`;
+
+        console.warn(
+          JSON.stringify({
+            type: 'csrf.rejection',
+            method: request.method,
+            pathname: requestPathname,
+            request_id: requestId,
+            has_cookie: !!cookieToken,
+            has_header: !!headerToken,
+          })
+        );
+
+        const errorResponse = NextResponse.json(
+          {
+            error: {
+              code: 'CSRF_TOKEN_INVALID',
+              message: 'CSRF token validation failed.',
+              request_id: requestId,
+            },
+          },
+          { status: 403 }
+        );
+        errorResponse.headers.set(REQUEST_FINGERPRINT_HEADER, fingerprint);
+        setCanaryHeader(errorResponse.headers, isCanary);
+        if (originAllowed) {
+          errorResponse.headers.set('Access-Control-Allow-Origin', origin!);
+          errorResponse.headers.set('Vary', 'Origin');
+        }
+        return errorResponse;
+      }
+    }
   }
 
   const response = NextResponse.next({
@@ -214,10 +332,18 @@ export async function middleware(request: NextRequest) {
 
   setCanaryHeader(response.headers, isCanary);
 
-  if (isAllowed) {
-    const headers = response.headers;
-    headers.set('Access-Control-Allow-Origin', origin!);
-    headers.set('Vary', 'Origin');
+  if (originAllowed) {
+    response.headers.set('Access-Control-Allow-Origin', origin!);
+    response.headers.set('Vary', 'Origin');
+  }
+
+  // Set CSRF cookie for safe methods or if we need to initialize it
+  if (!isWebhook && !isStateChanging) {
+    const cookieToken = getCookieValue(request, CSRF_COOKIE_NAME);
+    if (!isValidCsrfToken(cookieToken)) {
+      const newCsrfToken = generateCsrfToken();
+      setCookie(response, CSRF_COOKIE_NAME, newCsrfToken);
+    }
   }
 
   return response;
