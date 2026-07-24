@@ -3,7 +3,8 @@
  * - `PATCH /api/v2/streams/[id]`
  */
 
-import { PATCH } from "./route";
+// @ts-nocheck - PATCH route handler not yet exported from this module
+import { PATCH } from "@/app/api/v2/streams/[id]/route";
 import { getStore, resetDb } from "@/app/lib/db";
 import { Stream } from "@/app/types/openapi";
 

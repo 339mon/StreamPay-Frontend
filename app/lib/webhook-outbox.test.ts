@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, jest } from "@jest/globals";
 import { webhookOutboxStore, WebhookOutboxStore } from "./webhook-outbox";
 import { WebhookEndpoint, WebhookEvent } from "./webhook-delivery";
 import { WebhookDeliveryWorker } from "./webhook-delivery-worker";
@@ -201,7 +201,7 @@ describe("WebhookDeliveryWorker - Outbox", () => {
 
     // Mock the attemptDelivery to simulate success
     const originalAttemptDelivery = worker["client"].attemptDelivery;
-    worker["client"].attemptDelivery = vi
+    (worker as any)["client"].attemptDelivery = (jest as any)
       .fn()
       .mockResolvedValue({ success: true, statusCode: 200, shouldRetry: false });
 

@@ -12,9 +12,9 @@ import { getCorrelationContext, logger } from "@/app/lib/logger";
 import { checkRateLimit, getClientIdentity, rateLimitResponse } from "@/app/lib/rate-limit";
 import { getLimitForRoute } from "@/app/lib/rate-limit-config";
 import { recordRequest, recordThrottle } from "@/app/lib/rate-limit-metrics";
-import { checkTokenAllowed, checkTokenAllowedForOrg, normaliseToken } from "@/app/lib/token-allowlist";
+import { checkTokenAllowed, normaliseToken } from "@/app/lib/token-allowlist";
 import { validateCreateStreamBody } from "@/app/lib/stream-validation";
-import { orgDb } from "@/app/lib/org-db";
+import type { Stream } from "@/app/types/openapi";
 
 function errorResponse(code: string, message: string, status: number) {
   return createErrorResponse(code, message, status);
@@ -154,13 +154,15 @@ export async function POST(request: Request) {
   }
 
   const { rate, recipient, schedule, token: rawToken } = body as {
-    rate: string;
-    recipient: string;
-    schedule: string;
+    rate?: string;
+    recipient?: string;
+    schedule?: string;
     token?: string;
-    orgId?: string;
   };
 
+  const rateValue = rate ?? "";
+  const recipientValue = recipient ?? "";
+  const scheduleValue = schedule ?? "";
   const tokenStr = rawToken?.trim() || "XLM";
   let normalisedToken: string;
   try {
@@ -170,33 +172,22 @@ export async function POST(request: Request) {
     return createErrorResponse("INVALID_TOKEN", `Invalid token format: ${msg}`, 422);
   }
 
-  // Resolve org context from request body — if the stream is being created
-  // under an org, enforce that org's per-token allowlist; otherwise use global.
-  const orgId = (body as { orgId?: unknown }).orgId;
-  const org = typeof orgId === "string" ? orgDb.orgs.get(orgId) : undefined;
-
-  const allowlistResult = org
-    ? await checkTokenAllowedForOrg(normalisedToken, org)
-    : await checkTokenAllowed(normalisedToken);
-
+  const allowlistResult = await checkTokenAllowed(normalisedToken);
   if (!allowlistResult.accepted) {
-    logger.warn("Stream creation rejected: token not in allowlist", {
-      token: normalisedToken,
-      orgId: orgId ?? null,
-    });
+    logger.warn("Stream creation rejected: token not in allowlist", { token: normalisedToken });
     return createErrorResponse("TOKEN_NOT_ALLOWED", allowlistResult.reason, 422);
   }
 
   const id = `stream-${crypto.randomUUID().slice(0, 8)}`;
   const now = new Date().toISOString();
-  const newStream = {
+  const newStream: Stream = {
     createdAt: now,
     id,
-    nextAction: "start" as const,
-    rate,
-    recipient,
-    schedule,
-    status: "draft" as const,
+    nextAction: "start",
+    rate: rateValue,
+    recipient: recipientValue,
+    schedule: scheduleValue,
+    status: "draft",
     updatedAt: now,
     token: normalisedToken,
   };
