@@ -15,7 +15,10 @@ declare namespace NodeJS {
     SERVICE_NAME?: string;
     /** Node runtime mode. */
     NODE_ENV?: string;
+    
     /** Token presented by internal services for service-to-service auth. */
+    /** Token presented by internal services for service-to-service auth. */
+
     INTERNAL_AUTH_TOKEN?: string;
     /** Comma-separated CORS allowlist for public API routes. */
     ALLOWED_ORIGINS?: string;

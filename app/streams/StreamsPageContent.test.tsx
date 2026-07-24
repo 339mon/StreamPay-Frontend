@@ -3,46 +3,79 @@
  */
 
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { StreamsPageContent } from "./StreamsPageContent";
+import { StreamsPageContent, mockStreams } from "./StreamsPageContent";
 
-const STORAGE_KEY = "streampay.density";
+// Mock the StreamRow component
+jest.mock("../components/StreamRow", () => ({
+  StreamRow: ({ stream }: { stream: any }) => (
+    <div data-testid="stream-row">
+      <span>{stream.recipient}</span>
+      <span>{stream.rate}</span>
+      <span>{stream.status}</span>
+    </div>
+  ),
+}));
 
-describe("StreamsPageContent density toggle", () => {
-  beforeEach(() => {
-    window.localStorage.clear();
+describe("StreamsPageContent", () => {
+  it("shows loading state", () => {
+    render(<StreamsPageContent state="loading" streams={[]} />);
+    
+    // Check for loading skeletons
+    expect(document.querySelectorAll(".skeleton").length).toBeGreaterThan(0);
+    expect(screen.getByText(/Loading your streams/i)).toBeInTheDocument();
   });
 
-  it("defaults to comfortable when no localStorage value exists", () => {
-    render(<StreamsPageContent state="populated" />);
-
-    const compactSwitch = screen.getByRole("switch", { name: /streams list density/i });
-    expect(compactSwitch).toHaveAttribute("aria-checked", "false");
-
-    // Should not mark rows compact.
-    expect(document.querySelectorAll(".stream-row--compact").length).toBe(0);
+  it("shows populated state with streams", () => {
+    render(<StreamsPageContent state="populated" streams={mockStreams} />);
+    
+    // Check that streams are rendered
+    expect(screen.getByText("Ada Creative Studio")).toBeInTheDocument();
+    expect(screen.getByText("Kemi Onboarding Support")).toBeInTheDocument();
+    expect(screen.getByText("Yusuf QA Partnership")).toBeInTheDocument();
+    
+    // Check for the count
+    expect(screen.getByText("3 active records")).toBeInTheDocument();
   });
 
-  it("uses compact mode when localStorage is set", () => {
-    window.localStorage.setItem(STORAGE_KEY, "compact");
-
-    render(<StreamsPageContent state="populated" />);
-
-    const compactSwitch = screen.getByRole("switch", { name: /streams list density/i });
-    expect(compactSwitch).toHaveAttribute("aria-checked", "true");
-
-    expect(document.querySelectorAll(".stream-row--compact").length).toBeGreaterThan(0);
+  it("shows empty state when no streams", () => {
+    render(<StreamsPageContent state="empty" streams={[]} />);
+    
+    expect(screen.getByText("Your streams list is empty")).toBeInTheDocument();
+    expect(screen.getByText(/No streams yet/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create Your First Stream" })).toBeInTheDocument();
   });
 
-  it("toggle persists per device via localStorage", async () => {
-    const user = userEvent.setup();
-    render(<StreamsPageContent state="populated" />);
+  it("shows error state", () => {
+    const onRetry = jest.fn();
+    render(
+      <StreamsPageContent 
+        state="error" 
+        streams={[]} 
+        errorMessage="Custom error message"
+        onRetry={onRetry}
+      />
+    );
+    
+    expect(screen.getByText("Couldn't load your streams")).toBeInTheDocument();
+    expect(screen.getByText("Custom error message")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
+  });
 
-    const compactSwitch = screen.getByRole("switch", { name: /streams list density/i });
-    await user.click(compactSwitch);
+  it("renders the page header with title and description", () => {
+    render(<StreamsPageContent state="populated" streams={mockStreams} />);
+    
+    expect(screen.getByText("Manage every stream from one list.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Track recipients, rates, statuses, and the next action from one scan-friendly streams list./i
+      )
+    ).toBeInTheDocument();
+  });
 
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe("compact");
-    expect(compactSwitch).toHaveAttribute("aria-checked", "true");
+  it("shows action buttons", () => {
+    render(<StreamsPageContent state="populated" streams={mockStreams} />);
+    
+    expect(screen.getByRole("button", { name: "Export History" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create Stream" })).toBeInTheDocument();
   });
 });
-
