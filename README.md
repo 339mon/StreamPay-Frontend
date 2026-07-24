@@ -256,7 +256,10 @@ streampay-frontend/
 │   ├── layout.tsx
 │   ├── page.tsx
 │   ├── page.test.tsx
-│   └── globals.css
+│   ├── globals.css
+│   └── help/
+│       ├── page.tsx        ← Help & FAQ page (RSC)
+│       └── page.test.tsx
 ├── next.config.ts
 ├── tsconfig.json
 ├── jest.config.js
@@ -356,8 +359,8 @@ Quick links to the long-form docs under [docs/](docs/):
 - [Network security](docs/network-security.md)
 - [Privacy](docs/PRIVACY.md)
 - [Reconciliation runbook](docs/reconciliation-runbook.md)
-
-See also [CONTRIBUTING.md](CONTRIBUTING.md) and
+- [Initial render performance](docs/performance-initial-render.md)
+- [Help & FAQ page](/help) — in-app support page at `app/help/page.tsx`
 [SECURITY.md](SECURITY.md) in the repository root.
 
 ## Troubleshooting
@@ -383,6 +386,37 @@ and the runbooks under [docs/runbooks/](docs/runbooks).
 ## License
 
 MIT
+
+## Onboarding tour
+
+New users see a 5-step `WelcomeTour` modal the first time they land on the home page. The tour covers:
+
+1. What StreamPay is and how streaming payments work.
+2. Connecting a Stellar wallet via the challenge/signature flow.
+3. Creating a payment stream (recipient, amount, dates).
+4. Tracking streams — statuses, vested balance, next action.
+5. Withdrawing vested funds and understanding cancellation.
+
+**Implementation**
+
+| File | Role |
+|------|------|
+| `app/components/WelcomeTour.tsx` | Multi-step modal component. Exports `WelcomeTour`, `TOUR_STEPS`, and `WELCOME_TOUR_KEY`. |
+| `app/components/OnboardingManager.tsx` | Client component mounted in `app/page.tsx`. Shows the tour on first visit, then a plain banner on subsequent visits until both are dismissed. |
+| `app/globals.css` | `.welcome-tour-overlay`, `.welcome-tour`, `.welcome-tour__*` classes. |
+
+**Behaviour**
+
+- **First visit** — the tour modal appears. Clicking "Get started" (last step) or "Skip tour" dismisses it and writes `streampay:welcome-tour-dismissed` to `localStorage`. The plain banner is also suppressed after the tour is seen.
+- **Subsequent visits (tour seen, banner not dismissed)** — the plain banner is shown.
+- **All dismissed** — nothing is rendered.
+- Pressing **Escape** closes the tour. **ArrowRight / ArrowDown** advance, **ArrowLeft / ArrowUp** go back. Clicking a dot jumps to that step. Clicking the backdrop dismisses.
+
+**Testing**
+
+```bash
+npx jest app/components/WelcomeTour.test.tsx app/components/OnboardingManager.test.tsx
+```
 
 ## Smoke tests
 

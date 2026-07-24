@@ -47,6 +47,10 @@ pub enum Error {
     SelfStream = 12,
     /// 13: Contract has already been initialised.
     AlreadyInitialized = 13,
-    /// 14: Recipient does not have a trustline for the token.
-    RecipientTrustlineMissing = 14,
+    /// 14: Provided admin nonce is lower than the stored counter (stale / replayed).
+    NonceTooLow = 14,
+    /// 15: Provided admin nonce is higher than the stored counter (out-of-order gap).
+    NonceOutOfOrder = 15,
+    /// 16: Recipient does not have a trustline for the token.
+    RecipientTrustlineMissing = 16,
 }

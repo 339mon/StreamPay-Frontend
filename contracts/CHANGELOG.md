@@ -13,6 +13,21 @@ and must never be reused — see the module rustdoc for details.
 ## [Unreleased]
 
 ### Added
+- **Admin nonce / replay prevention** (`#949`).
+  - New entrypoint `get_admin_nonce() → u64` — read-only query for the
+    next expected nonce value.
+  - New entrypoint `admin_override(admin, nonce, stream_id, new_end_time) → Stream`
+    — privileged override of a stream's `end_time`, guarded by a
+    monotonic nonce that prevents replay attacks.
+  - New error codes: `NonceTooLow = 14`, `NonceOutOfOrder = 15`.
+  - New error code: `RecipientTrustlineMissing = 16` (was already
+    referenced in `lib.rs`; now formally declared in `error.rs`).
+  - New module `src/admin.rs` containing the nonce storage key,
+    `consume_nonce`, and the `admin_override` implementation.
+  - New test module `src/admin_nonce_test.rs` with 14 focused tests
+    covering replay prevention, out-of-order nonces, auth failures,
+    terminal-state guards, and time-range validation.
+  - See `contracts/ADMIN_NONCE.md` for design rationale and usage.
 - **Paginated stream enumeration views** (GrantFox FWC26). Six read-only
   entrypoints for off-chain consumers (indexers, frontends, analytics):
   - `list_streams(start_after, limit)` — all streams, ordered by ID.
