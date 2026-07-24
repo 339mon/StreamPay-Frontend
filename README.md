@@ -288,6 +288,14 @@ Wallet-based auth uses a challenge/verify flow:
 | `POST` | `/api/webhooks/dlq` | — | Receive DLQ webhook events |
 | `GET` | `/api/webhooks/deliveries` | — | List delivery attempts |
 | `POST` | `/api/debug/kms-sign` | — | Sign payload via KMS (non-prod only) |
+| `POST` | `/api/internal/reconciliation` | HMAC | Trigger full or scoped reconciliation |
+| `POST` | `/api/internal/reconciliation/nightly` | HMAC | Run the nightly reconciliation job |
+| `GET` | `/api/internal/reconciliation/diff/:id` | HMAC | Per-stream DB vs on-chain diff |
+
+> **Internal routes** (`/api/internal/*`) require HMAC-signed service-to-service headers.
+> Callers must be in the `allowedServices` list (`ops-automation`, `reconciliation-worker`).
+> Any auth failure returns `404` to conceal the route from unauthenticated scanners.
+> See [docs/internal-service-auth.md](docs/internal-service-auth.md) for the signing scheme.
 
 ### Error envelope
 
