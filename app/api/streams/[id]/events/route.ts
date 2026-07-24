@@ -161,20 +161,58 @@ export async function GET(
     walletAddress: actor.walletAddress,
   });
 
-  const stream_response = new ReadableStream({
+  const streamResponse = new ReadableStream({
     start(controller) {
+      let isClosed = false;
+      let pingInterval: ReturnType<typeof setInterval> | undefined;
+      let cleanup: (() => void) | undefined;
+
+      const onAbort = () => cleanup?.();
+
+      cleanup = () => {
+        if (isClosed) {
+          return;
+        }
+
+        isClosed = true;
+
+        if (pingInterval) {
+          clearInterval(pingInterval);
+          pingInterval = undefined;
+        }
+
+        eventBus.off(`stream:updated:${streamId}`, onStreamUpdated);
+        eventBus.off(`settle:finished:${streamId}`, onSettleFinished);
+        request.signal.removeEventListener("abort", onAbort);
+
+        try {
+          controller.close();
+        } catch (e) {
+          // Stream might already be closed
+        }
+
+        logger.info("SSE connection closed", {
+          actorId: actor.actorId,
+          streamId,
+          tenant,
+        });
+      };
+
       // Keep-alive ping interval (every 30 seconds)
-      const pingInterval = setInterval(() => {
+      pingInterval = setInterval(() => {
         try {
           controller.enqueue(encoder.encode(": keep-alive\n\n"));
         } catch (e) {
-          // Stream closed, cleanup
-          clearInterval(pingInterval);
+          cleanup();
         }
       }, 30000);
 
       // Event handlers for stream updates
       const onStreamUpdated = (data: unknown) => {
+        if (isClosed) {
+          return;
+        }
+
         try {
           controller.enqueue(encoder.encode(`event: stream:updated\ndata: ${JSON.stringify(data)}\n\n`));
           logger.debug("SSE: stream:updated event sent", {
@@ -192,6 +230,10 @@ export async function GET(
       };
 
       const onSettleFinished = (data: unknown) => {
+        if (isClosed) {
+          return;
+        }
+
         try {
           controller.enqueue(encoder.encode(`event: settle:finished\ndata: ${JSON.stringify(data)}\n\n`));
           logger.debug("SSE: settle:finished event sent", {
@@ -212,27 +254,11 @@ export async function GET(
       eventBus.on(`stream:updated:${streamId}`, onStreamUpdated);
       eventBus.on(`settle:finished:${streamId}`, onSettleFinished);
 
-      const cleanup = () => {
-        clearInterval(pingInterval);
-        eventBus.off(`stream:updated:${streamId}`, onStreamUpdated);
-        eventBus.off(`settle:finished:${streamId}`, onSettleFinished);
-        try {
-          controller.close();
-        } catch (e) {
-          // Stream might already be closed
-        }
-        logger.info("SSE connection closed", {
-          actorId: actor.actorId,
-          streamId,
-          tenant,
-        });
-      };
-
       // Handle stream termination on client disconnect
-      request.signal.addEventListener("abort", cleanup);
+      request.signal.addEventListener("abort", onAbort, { once: true });
     },
     cancel() {
-      // Handled via abort signal
+      cleanup?.();
       logger.info("SSE connection cancelled", {
         streamId,
         actorId: actor.actorId,
@@ -240,7 +266,7 @@ export async function GET(
     }
   });
 
-  return new Response(stream_response, {
+  return new Response(streamResponse, {
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
