@@ -9,19 +9,10 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
 ## [Unreleased]
 
 ### Added
-- **Contract — paginated stream enumeration views** (GrantFox FWC26). Six
-  read-only Soroban entrypoints for off-chain consumers (indexers, frontends,
-  analytics). All views use cursor-based pagination (`start_after` + `limit`,
-  capped at `MAX_PAGE_SIZE = 100`), require no auth, and are unaffected by
-  the global pause flag. See
-  [`contracts/contracts/streampay-stream/README.md`](contracts/contracts/streampay-stream/README.md)
-  for the full API reference and pagination usage examples.
-  - `list_streams(start_after, limit)` — all streams, ordered by ID.
-  - `list_streams_by_sender(sender, start_after, limit)`
-  - `list_streams_by_recipient(recipient, start_after, limit)`
-  - `list_streams_by_status(status, start_after, limit)`
-  - `list_streams_recipient_status(recipient, status, start_after, limit)`
-  - `list_streams_sender_status(sender, status, start_after, limit)`
+- **Address book** (`/contacts`) — client-side Stellar address book with labels,
+  federation address resolution, search/filter, and full CRUD via modals.
+  Persisted to `localStorage` under `streampay_contacts`. See
+  [docs/address-book.md](docs/address-book.md) for the complete reference.
 - `lib/chaos.ts` — fault-injection middleware for chaos tests. Lets test
   suites inject latency, error responses, or request aborts at configurable
   rates (defaults disabled; opt in via `CHAOS_ENABLED=true` or programmatic

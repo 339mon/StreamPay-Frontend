@@ -2381,6 +2381,48 @@ a:hover {
   transform: translateX(4px);
 }
 
+/* ─── Contact Row ────────────────────────────────────────────────────────── */
+/* Grid layout for wider viewports; stacks vertically on mobile via the
+   media query below.  Uses CSS class so responsive overrides work (inline
+   styles would win over media queries). */
+.contact-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1rem;
+  align-items: center;
+}
+
+/* ─── Contact Row Actions ────────────────────────────────────────────────── */
+/* On narrow viewports action buttons stack below the contact info for
+   better readability and larger tap targets (WCAG 2.1 AA min 44x44 px). */
+.contact-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+@media (max-width: 35rem) {
+  .contact-row {
+    grid-template-columns: 1fr;
+  }
+
+  .contact-row__actions {
+    justify-content: flex-end;
+    width: 100%;
+  }
+
+  .contact-row__actions .button {
+    flex: 1 1 auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-card {
+    transition: none;
+  }
+}
+
 .activity-info {
   display: flex;
   flex-direction: column;
