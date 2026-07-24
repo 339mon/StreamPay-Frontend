@@ -1,7 +1,8 @@
-﻿"use client";
+"use client";
 
 import { useState, useRef } from "react";
-import { StatusBadge, type StreamStatus } from "./StatusBadge";
+import type { StreamStatus } from "@/app/types/openapi";
+import { StatusBadge } from "./StatusBadge";
 import { StreamProgress } from "./StreamProgress";
 import { MiniBurnDown } from "./MiniBurnDown";
 import { RecipientAvatar } from "./RecipientAvatar";
@@ -59,7 +60,9 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
 
   const handleAction = async () => {
     if (isIncidentMode) {
-      setErrorMsg("On-chain operations are temporarily paused during incident mode.");
+      setErrorMsg(
+        "On-chain operations are temporarily paused during incident mode.",
+      );
       return;
     }
 
@@ -69,7 +72,7 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
 
     try {
       const actionRoute = stream.nextAction.toLowerCase();
-      
+
       await fetchWithIdempotency(`/api/streams/${stream.id}/${actionRoute}`, {
         method: "POST",
         headers: {
@@ -88,7 +91,6 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
       setTimeout(() => {
         actionButtonRef.current?.focus();
       }, 0);
-
     } catch (err: unknown) {
       const streamError = isStreamPayError(err) ? err : null;
       const display = streamError
@@ -100,14 +102,32 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
       }
 
       setError(streamError);
-      setSrAnnouncement(`Stream action failed: ${display.message || "Unknown error occurred"}.`);
+      setSrAnnouncement(
+        `Stream action failed: ${display.message || "Unknown error occurred"}.`,
+      );
     } finally {
       setIsProcessing(false);
     }
   };
 
   return (
-    <article className={`stream-row${density === "compact" ? " stream-row--compact" : ""}`} aria-labelledby={`${stream.id}-recipient`}>
+    <article
+      className={[
+        "stream-row",
+        `stream-row--${stream.status}`,
+        density === "compact" ? "stream-row--compact" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-status={stream.status}
+      aria-labelledby={`${stream.id}-recipient`}
+    >
+      {/* Decorative color-blind safe pattern overlay. Purely visual so it
+          is hidden from assistive technology — state is already conveyed via
+          the StatusBadge (glyph + label) and the StreamProgress (label +
+          percentage). */}
+      <div className="stream-row__pattern" aria-hidden="true" />
+
       {/* Dynamic polite status messenger announcement node layer for assistive tech */}
       <div className="sr-only" aria-live="polite" role="status">
         {srAnnouncement}
@@ -129,7 +149,11 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
       <div className="stream-row__meta">
         <div>
           <dt>Rate</dt>
-          <dd className={stream.status === "active" ? "stream-row__accrued--animated" : ""}>
+          <dd
+            className={
+              stream.status === "active" ? "stream-row__accrued--animated" : ""
+            }
+          >
             {stream.rate}
           </dd>
         </div>
@@ -145,7 +169,9 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
           stream.status !== "draft" && (
             <div>
               <dt>Burn-down</dt>
-              <dd className={`stream-row__burndown stream-row__burndown--${stream.status}`}>
+              <dd
+                className={`stream-row__burndown stream-row__burndown--${stream.status}`}
+              >
                 <MiniBurnDown
                   totalAmount={stream.totalAmount}
                   accruedAmount={stream.accruedAmount}
@@ -175,7 +201,11 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
           onClick={handleAction}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
-          style={isFocused ? { outline: "2px solid var(--accent)", outlineOffset: "2px" } : undefined}
+          style={
+            isFocused
+              ? { outline: "2px solid var(--accent)", outlineOffset: "2px" }
+              : undefined
+          }
           disabled={isProcessing || isIncidentMode}
           aria-busy={isProcessing}
           aria-live="assertive"
@@ -189,9 +219,13 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
             <span>{stream.nextAction}</span>
           )}
         </button>
-        {errorMsg && <p className="detail-incident-warning" role="alert">{errorMsg}</p>}
+        {errorMsg && (
+          <p className="detail-incident-warning" role="alert">
+            {errorMsg}
+          </p>
+        )}
       </div>
-      
+
       {error && (
         <ErrorToast
           error={error}
