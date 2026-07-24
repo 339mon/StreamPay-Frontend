@@ -13,6 +13,13 @@ const streamListCopy = {
     eyebrow: "Streams",
     title: "Your streams list is empty",
   },
+  filtered: {
+    actionLabel: "Clear filters",
+    description:
+      "No streams match your current filters. Try clearing one filter or widening your search to bring more streams back into view.",
+    eyebrow: "Streams",
+    title: "No streams match your current filters",
+  },
   heading: "Streams",
   loadingLabel: "Loading streams",
   populatedCount: "3 active records",
@@ -53,6 +60,10 @@ type StreamsPageContentProps = {
   errorMessage?: string;
   /** Called when the user presses "Try again" in the error panel. */
   onRetry?: () => void;
+  /** Switches the empty-state copy to the filtered-results variant when the current list is empty. */
+  emptyStateVariant?: "default" | "filtered";
+  /** Optional callback for the filtered empty state CTA. */
+  onClearFilters?: () => void;
 };
 
 function StreamListSkeleton() {
@@ -101,8 +112,11 @@ export function StreamsPageContent({
   streams = mockStreams,
   errorMessage,
   onRetry,
+  emptyStateVariant = "default",
+  onClearFilters,
 }: StreamsPageContentProps) {
   const isEmpty = state === "empty" || streams.length === 0;
+  const isFilteredEmpty = emptyStateVariant === "filtered" && streams.length === 0 && state !== "empty";
 
   return (
     <main className="page-shell">
@@ -148,10 +162,11 @@ export function StreamsPageContent({
           />
         ) : isEmpty ? (
           <EmptyState
-            actionLabel={streamListCopy.empty.actionLabel}
-            description={streamListCopy.empty.description}
-            eyebrow={streamListCopy.empty.eyebrow}
-            title={streamListCopy.empty.title}
+            actionLabel={isFilteredEmpty ? streamListCopy.filtered.actionLabel : streamListCopy.empty.actionLabel}
+            description={isFilteredEmpty ? streamListCopy.filtered.description : streamListCopy.empty.description}
+            eyebrow={isFilteredEmpty ? streamListCopy.filtered.eyebrow : streamListCopy.empty.eyebrow}
+            title={isFilteredEmpty ? streamListCopy.filtered.title : streamListCopy.empty.title}
+            onAction={isFilteredEmpty ? onClearFilters : undefined}
           />
         ) : (
           <section aria-label="Streams list" className="stream-list">

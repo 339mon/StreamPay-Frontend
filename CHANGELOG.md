@@ -42,6 +42,11 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
   observations are written to the append-only audit log with correlation IDs,
   and privileged stream audit events now include `requestFingerprint` metadata.
 
+### Changed
+- The streams list now surfaces a distinct filtered-results empty state when the
+  current view has no matches, with clearer guidance to clear filters and return
+  to the broader streams list.
+
 ### Fixed
 - `GET /api/orgs/:orgId/members` and `POST /api/orgs/:orgId/members` now return
   `404 ORG_NOT_FOUND` when the organization does not exist, instead of an
