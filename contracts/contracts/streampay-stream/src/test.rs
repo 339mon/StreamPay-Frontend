@@ -1670,3 +1670,115 @@ fn claim_drip_returns_withdrawable_amount() {
     let drip_after_withdraw = client.claim_drip(&id);
     assert_eq!(drip_after_withdraw, Ok(300));
 }
+
+#[test]
+fn init_with_token_allowlist_for_org_sets_admin_unpauses_and_allowlists() {
+    let data = setup_init();
+    let client = contract_client(&data.env);
+
+    let org = Address::generate(&data.env);
+
+    client.init_with_token_allowlist_for_org(
+        &data.admin,
+        &to_sdk_vec(&data.env, &data.tokens),
+        &org,
+        &to_sdk_vec(&data.env, &data.tokens),
+    );
+
+    // Admin path: `set_paused` succeeds, proving `admin` is stored.
+    client.set_paused(&data.admin, &false);
+
+    // Global allowlist: every token is allowed.
+    let mut i = 0;
+    while i < data.tokens.len() {
+        let token = data.tokens[i].clone();
+        let _id = client.create_stream(
+            &data.sender,
+            &data.recipient,
+            &token,
+            &100i128,
+            &1_100u64,
+            &1_200u64,
+        );
+        i += 1;
+    }
+
+    // Per-org allowlist: every token is allowed for the org.
+    let mut i = 0;
+    while i < data.tokens.len() {
+        let token = data.tokens[i].clone();
+        let _id = client.create_stream_for_org(
+            &org,
+            &data.sender,
+            &data.recipient,
+            &token,
+            &100i128,
+            &1_100u64,
+            &1_200u64,
+        );
+        i += 1;
+    }
+}
+
+#[test]
+fn init_with_token_allowlist_for_org_twice_returns_already_initialized() {
+    let data = setup_init();
+    let client = contract_client(&data.env);
+
+    let org = Address::generate(&data.env);
+
+    client.init_with_token_allowlist_for_org(
+        &data.admin,
+        &to_sdk_vec(&data.env, &data.tokens),
+        &org,
+        &to_sdk_vec(&data.env, &data.tokens),
+    );
+
+    let result = client.try_init_with_token_allowlist_for_org(
+        &data.admin,
+        &to_sdk_vec(&data.env, &data.tokens),
+        &org,
+        &to_sdk_vec(&data.env, &data.tokens),
+    );
+
+    let err = result.expect_err("second init should fail");
+    assert_eq!(err, Ok(Error::AlreadyInitialized));
+}
+
+#[test]
+fn init_with_token_allowlist_for_org_emits_no_events() {
+    let data = setup_init();
+    let client = contract_client(&data.env);
+
+    let org = Address::generate(&data.env);
+
+    client.init_with_token_allowlist_for_org(
+        &data.admin,
+        &to_sdk_vec(&data.env, &data.tokens),
+        &org,
+        &to_sdk_vec(&data.env, &data.tokens),
+    );
+
+    let events = data.env.events().all();
+    assert!(
+        events.is_empty(),
+        "init_with_token_allowlist_for_org should emit zero events, got: {events:?}",
+    );
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Auth, InvalidAction)")]
+fn init_with_token_allowlist_for_org_unauthorized_caller_fails() {
+    let data = setup_init();
+    let client = contract_client(&data.env);
+    let impostor = Address::generate(&data.env);
+    let org = Address::generate(&data.env);
+
+    data.env.mock_auths(&[]);
+    client.init_with_token_allowlist_for_org(
+        &impostor,
+        &to_sdk_vec(&data.env, &data.tokens),
+        &org,
+        &to_sdk_vec(&data.env, &data.tokens),
+    );
+}

@@ -163,6 +163,56 @@ impl Contract {
         Ok(())
     }
 
+    /// Atomic initialisation + global + per-org token allowlist.
+    ///
+    /// Performs the work of `initialize`, configures the global allowlist,
+    /// and configures a per-org allowlist for the given `org`, all within
+    /// a single transaction.
+    ///
+    /// Use this from deployment scripts to atomically set up the contract
+    /// with both global and per-org configurations.
+    ///
+    /// # Arguments
+    ///
+    /// * `admin` - The privileged address authorised to call admin entrypoints.
+    /// * `tokens` - The list of token contract addresses to register in the global allowlist.
+    /// * `org` - The organisation to configure a per-org allowlist for.
+    /// * `org_tokens` - The list of token contract addresses to allow for `org`.
+    ///
+    /// # Errors
+    ///
+    /// - `Error::AlreadyInitialized` if the contract has already been initialised.
+    ///
+    /// # Auth
+    ///
+    /// Requires authorisation from `admin`.
+    pub fn init_with_token_allowlist_for_org(
+        env: Env,
+        admin: Address,
+        tokens: soroban_sdk::Vec<Address>,
+        org: Address,
+        org_tokens: soroban_sdk::Vec<Address>,
+    ) -> Result<(), Error> {
+        if storage::has_admin(&env) {
+            return Err(Error::AlreadyInitialized);
+        }
+
+        admin.require_auth();
+
+        storage::set_admin(&env, &admin);
+        storage::set_paused(&env, false);
+
+        for token in tokens.iter() {
+            storage::set_token_allowed(&env, &token, true);
+        }
+
+        for token in org_tokens.iter() {
+            allowlist::set_org_token_allowed(&env, &org, &token, true);
+        }
+
+        Ok(())
+    }
+
     /// Sets the global emergency pause flag.
     ///
     /// When `paused` is `true`, `create_stream`, `start_stream`, and `withdraw`
