@@ -13,6 +13,34 @@ and must never be reused — see the module rustdoc for details.
 ## [Unreleased]
 
 ### Added
+- **Snapshot diff** (GrantFox FWC26). Two new read-only entrypoints for
+  computing point-in-time financial state and the delta between two observations:
+  - `stream_snapshot(stream_id, at_timestamp)` — captures `vested_amount`,
+    `released_amount`, `locked_amount`, `withdrawable_amount`, and `status`
+    at any caller-supplied ledger timestamp. Returns a `StreamSnapshot`.
+  - `diff_snapshots(before, after)` — computes the field-by-field delta
+    (`delta_vested`, `delta_released`, `delta_locked`, `delta_withdrawable`,
+    `elapsed_seconds`, `status_before`, `status_after`) between two snapshots.
+    Returns a `SnapshotDiff`.
+
+  Both entrypoints are purely read-only, require no auth, and are unaffected
+  by the global pause flag. Cross-stream diffs (mismatched `stream_id`) return
+  `Error::NotFound`. Reversed-order timestamps are accepted; `elapsed_seconds`
+  is always the absolute difference between the two timestamps.
+
+  New public types exported from the crate root:
+  - `StreamSnapshot` — `stream_id`, `timestamp`, `vested_amount`,
+    `released_amount`, `locked_amount`, `withdrawable_amount`, `status`.
+  - `SnapshotDiff` — `stream_id`, `from_timestamp`, `to_timestamp`,
+    `delta_vested`, `delta_released`, `delta_locked`, `delta_withdrawable`,
+    `elapsed_seconds`, `status_before`, `status_after`.
+
+  Sixteen focused unit tests in `snapshot_diff.rs` covering: Draft/Active/
+  Paused/Settled/Cancelled streams, partial releases, paused-duration
+  exclusion, at/before start time, large amounts (near `i128::MAX/4`),
+  zero timestamps, reversed-order diffs, mismatched stream IDs, status
+  transitions, and zero-delta same-snapshot diffs.
+
 - **Admin nonce / replay prevention** (`#949`).
   - New entrypoint `get_admin_nonce() → u64` — read-only query for the
     next expected nonce value.
