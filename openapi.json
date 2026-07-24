@@ -1230,7 +1230,7 @@
         }
       }
     },
-    "/api/streams/{id}/webhooks/test": {
+    "/api/streams/{id}/start": {
       "parameters": [
         {
           "name": "id",
@@ -1238,121 +1238,70 @@
           "required": true,
           "description": "Stream identifier.",
           "schema": { "type": "string", "example": "stream-abc12345" }
+        },
+        {
+          "name": "x-tenant-id",
+          "in": "header",
+          "required": true,
+          "description": "Tenant context for multi-tenant isolation. Must be a non-empty string.",
+          "schema": { "type": "string", "example": "tenant-org-xyz" }
+        },
+        {
+          "name": "Idempotency-Key",
+          "in": "header",
+          "required": false,
+          "description": "Client-generated key (UUID recommended) to make the request idempotent.",
+          "schema": { "type": "string", "example": "f47ac10b-58cc-4372-a567-0e02b2c3d479" }
         }
       ],
       "post": {
-        "operationId": "testStreamWebhook",
-        "summary": "Trigger a synthetic webhook test event",
-        "description": "Dispatches a synthetic webhook event for the given stream so subscribers can verify their endpoint configuration.\n\nWhen `endpoint_url` is supplied the event is dispatched through the standard HMAC-signed delivery pipeline. Without `endpoint_url` a preview payload is returned (no delivery).\n\nThe `synthetic: true` flag in the payload distinguishes test events from real lifecycle events.",
-        "tags": ["Webhooks"],
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "event_type": {
-                    "type": "string",
-                    "description": "Synthetic event type. Defaults to `stream.test`.",
-                    "enum": [
-                      "stream.test",
-                      "stream.created",
-                      "stream.updated",
-                      "stream.paused",
-                      "stream.resumed",
-                      "stream.stopped",
-                      "stream.cancelled",
-                      "stream.settled"
-                    ],
-                    "default": "stream.test"
-                  },
-                  "endpoint_url": {
-                    "type": "string",
-                    "format": "uri",
-                    "description": "HTTP(S) URL to dispatch the synthetic webhook to. Omit for a preview-only response.",
-                    "example": "https://example.com/webhooks"
-                  }
-                }
-              },
-              "examples": {
-                "preview": {
-                  "summary": "Preview payload (no dispatch)",
-                  "value": {}
-                },
-                "dispatch-custom": {
-                  "summary": "Dispatch with custom event type",
-                  "value": {
-                    "event_type": "stream.paused",
-                    "endpoint_url": "https://example.com/webhooks"
-                  }
-                }
-              }
-            }
-          }
-        },
+        "operationId": "startStream",
+        "summary": "Start a payment stream (v1, deprecated)",
+        "description": "Transitions a stream from `draft` (or `paused`) to `active`, initiating payment disbursements. **Deprecated** — use `POST /api/v2/streams/{id}/start` instead.",
+        "deprecated": true,
+        "tags": ["Streams v1"],
         "responses": {
-          "202": {
-            "description": "Synthetic webhook event dispatched (or previewed).",
+          "200": {
+            "description": "Stream started or resumed successfully.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "required": ["data"],
                   "properties": {
-                    "data": {
-                      "type": "object",
-                      "required": [
-                        "delivery_id",
-                        "stream_id",
-                        "event_type",
-                        "dispatched_at",
-                        "synthetic"
-                      ],
-                      "properties": {
-                        "delivery_id": {
-                          "type": "string",
-                          "description": "Unique delivery identifier.",
-                          "example": "wh_test_01HZ9ABCDEF"
-                        },
-                        "stream_id": {
-                          "type": "string",
-                          "example": "stream-abc12345"
-                        },
-                        "event_type": {
-                          "type": "string",
-                          "example": "stream.test"
-                        },
-                        "dispatched_at": {
-                          "type": "string",
-                          "format": "date-time"
-                        },
-                        "synthetic": {
-                          "type": "boolean",
-                          "description": "Always `true` for test events.",
-                          "example": true
-                        },
-                        "request_id": {
-                          "type": "string",
-                          "example": "req_01HZ9ABCDEF"
-                        },
-                        "data": {
-                          "type": "object",
-                          "description": "Synthetic event data.",
-                          "properties": {
-                            "stream_id": { "type": "string" },
-                            "status": { "type": "string" }
-                          }
-                        },
-                        "delivery": {
-                          "type": "object",
-                          "description": "Present only when `endpoint_url` was supplied.",
-                          "properties": {
-                            "success": { "type": "boolean" },
-                            "status_code": { "type": "integer" },
-                            "error": { "type": "string" }
-                          }
-                        }
+                    "data": { "$ref": "#/components/schemas/StreamV1" }
+                  }
+                },
+                "examples": {
+                  "draft-to-active": {
+                    "summary": "Draft stream started, now active",
+                    "value": {
+                      "data": {
+                        "id": "stream-abc12345",
+                        "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                        "rate": "120",
+                        "schedule": "month",
+                        "status": "active",
+                        "nextAction": "pause",
+                        "token": "XLM",
+                        "createdAt": "2024-01-15T10:00:00.000Z",
+                        "updatedAt": "2024-01-15T10:05:00.000Z"
+                      }
+                    }
+                  },
+                  "paused-to-active": {
+                    "summary": "Paused stream resumed, now active again",
+                    "value": {
+                      "data": {
+                        "id": "stream-def67890",
+                        "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                        "rate": "50",
+                        "schedule": "week",
+                        "status": "active",
+                        "nextAction": "pause",
+                        "token": "XLM",
+                        "createdAt": "2024-01-10T08:00:00.000Z",
+                        "updatedAt": "2024-01-16T09:20:00.000Z"
                       }
                     }
                   }
@@ -1361,18 +1310,33 @@
             }
           },
           "400": {
-            "description": "Invalid event_type, malformed JSON, or invalid endpoint_url.",
+            "description": "Missing or empty `x-tenant-id` header.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "example": {
+                  "error": {
+                    "code": "MISSING_TENANT",
+                    "message": "Tenant ID header is required",
+                    "request_id": "req_01HZ9ABCDEF"
+                  }
+                }
               }
             }
           },
-          "404": {
-            "description": "Stream not found.",
+          "404": { "$ref": "#/components/responses/404" },
+          "409": {
+            "description": "Conflict — stream is not in `draft` or `paused` status.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "example": {
+                  "error": {
+                    "code": "INVALID_STREAM_STATE",
+                    "message": "Cannot start a stream that is not in draft or paused status.",
+                    "request_id": "req_01HZ9ABCDEF"
+                  }
+                }
               }
             }
           },
@@ -1380,11 +1344,404 @@
             "description": "Rate limit exceeded.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMIT_EXCEEDED",
+                    "message": "Too many requests. Retry after 30 seconds.",
+                    "request_id": "req_01HZ9ABCDEF"
+                  }
+                }
               }
             }
           },
           "500": { "$ref": "#/components/responses/500" }
+        }
+      }
+    },
+    "/api/streams/{id}/stop": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "Stream identifier.",
+          "schema": { "type": "string", "example": "stream-abc12345" }
+        },
+        {
+          "name": "x-tenant-id",
+          "in": "header",
+          "required": true,
+          "description": "Tenant context for multi-tenant isolation. Must be a non-empty string.",
+          "schema": { "type": "string", "example": "tenant-org-xyz" }
+        },
+        {
+          "name": "Idempotency-Key",
+          "in": "header",
+          "required": false,
+          "description": "Client-generated key (UUID recommended) to make the request idempotent.",
+          "schema": { "type": "string", "example": "f47ac10b-58cc-4372-a567-0e02b2c3d479" }
+        }
+      ],
+      "post": {
+        "operationId": "stopStream",
+        "summary": "Stop a payment stream (v1, deprecated)",
+        "description": "Permanently stops a stream, transitioning it to `ended` status. Valid from `active` or `draft` states. This action is irreversible. **Deprecated** — use `POST /api/v2/streams/{id}/stop` instead.",
+        "deprecated": true,
+        "tags": ["Streams v1"],
+        "responses": {
+          "200": {
+            "description": "Stream stopped successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/StreamV1" }
+                  }
+                },
+                "examples": {
+                  "active-to-ended": {
+                    "summary": "Active stream stopped, now ended",
+                    "value": {
+                      "data": {
+                        "id": "stream-abc12345",
+                        "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                        "rate": "120",
+                        "schedule": "month",
+                        "status": "ended",
+                        "nextAction": "withdraw",
+                        "token": "XLM",
+                        "createdAt": "2024-01-15T10:00:00.000Z",
+                        "updatedAt": "2024-01-16T12:00:00.000Z"
+                      }
+                    }
+                  },
+                  "draft-to-ended": {
+                    "summary": "Draft stream cancelled, now ended",
+                    "value": {
+                      "data": {
+                        "id": "stream-ghi11223",
+                        "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                        "rate": "200",
+                        "schedule": "month",
+                        "status": "ended",
+                        "nextAction": "withdraw",
+                        "token": "USDC",
+                        "createdAt": "2024-01-18T14:00:00.000Z",
+                        "updatedAt": "2024-01-18T14:05:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or empty `x-tenant-id` header.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "example": {
+                  "error": {
+                    "code": "MISSING_TENANT",
+                    "message": "Tenant ID header is required",
+                    "request_id": "req_01HZ9ABCDEF"
+                  }
+                }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/404" },
+          "409": {
+            "description": "Conflict — stream is not in `active` or `draft` status.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "example": {
+                  "error": {
+                    "code": "INVALID_STREAM_STATE",
+                    "message": "Only active or draft streams can be stopped.",
+                    "request_id": "req_01HZ9ABCDEF"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMIT_EXCEEDED",
+                    "message": "Too many requests. Retry after 30 seconds.",
+                    "request_id": "req_01HZ9ABCDEF"
+                  }
+                }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/500" }
+        }
+      }
+    },
+    "/api/streams/{id}/pause": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "Stream identifier.",
+          "schema": { "type": "string", "example": "stream-abc12345" }
+        },
+        {
+          "name": "x-tenant-id",
+          "in": "header",
+          "required": true,
+          "description": "Tenant context for multi-tenant isolation. Must be a non-empty string.",
+          "schema": { "type": "string", "example": "tenant-org-xyz" }
+        },
+        {
+          "name": "Idempotency-Key",
+          "in": "header",
+          "required": false,
+          "description": "Client-generated key (UUID recommended) to make the request idempotent.",
+          "schema": { "type": "string", "example": "f47ac10b-58cc-4372-a567-0e02b2c3d479" }
+        }
+      ],
+      "post": {
+        "operationId": "pauseStream",
+        "summary": "Pause a payment stream (v1, deprecated)",
+        "description": "Temporarily suspends an active stream, transitioning it to `paused` status. Payments are halted and `pausedAt` is recorded until the stream is resumed. Only valid when the stream is `active`. **Deprecated** — use `POST /api/v2/streams/{id}/pause` instead.",
+        "deprecated": true,
+        "tags": ["Streams v1"],
+        "responses": {
+          "200": {
+            "description": "Stream paused successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/StreamV1" }
+                  }
+                },
+                "examples": {
+                  "active-to-paused": {
+                    "summary": "Active stream paused, payments halted",
+                    "value": {
+                      "data": {
+                        "id": "stream-abc12345",
+                        "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                        "rate": "120",
+                        "schedule": "month",
+                        "status": "paused",
+                        "nextAction": "stop",
+                        "token": "XLM",
+                        "createdAt": "2024-01-15T10:00:00.000Z",
+                        "updatedAt": "2024-01-16T11:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or empty `x-tenant-id` header.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "example": {
+                  "error": {
+                    "code": "MISSING_TENANT",
+                    "message": "Tenant ID header is required",
+                    "request_id": "req_01HZ9ABCDEF"
+                  }
+                }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/404" },
+          "409": {
+            "description": "Conflict — stream is not in `active` status.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "example": {
+                  "error": {
+                    "code": "INVALID_STREAM_STATE",
+                    "message": "Cannot pause a stream that is not active.",
+                    "request_id": "req_01HZ9ABCDEF"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMIT_EXCEEDED",
+                    "message": "Too many requests. Retry after 30 seconds.",
+                    "request_id": "req_01HZ9ABCDEF"
+                  }
+                }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/500" }
+        }
+      }
+    },
+    "/api/streams/{id}/settle": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "Stream identifier.",
+          "schema": { "type": "string", "example": "stream-abc12345" }
+        },
+        {
+          "name": "x-tenant-id",
+          "in": "header",
+          "required": true,
+          "description": "Tenant context for multi-tenant isolation. Must be a non-empty string.",
+          "schema": { "type": "string", "example": "tenant-org-xyz" }
+        },
+        {
+          "name": "Idempotency-Key",
+          "in": "header",
+          "required": false,
+          "description": "Client-generated key (UUID recommended) to make the request idempotent.",
+          "schema": { "type": "string", "example": "f47ac10b-58cc-4372-a567-0e02b2c3d479" }
+        }
+      ],
+      "post": {
+        "operationId": "settleStream",
+        "summary": "Settle a payment stream (v1, deprecated)",
+        "description": "Finalises the stream on Stellar/Soroban, transitioning it to `ended` and recording the settlement transaction. Only valid when the stream is `active` or `paused`. **Deprecated** — use `POST /api/v2/streams/{id}/settle` instead.",
+        "deprecated": true,
+        "tags": ["Streams v1"],
+        "responses": {
+          "200": {
+            "description": "Stream settled successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/StreamV1" }
+                  }
+                },
+                "examples": {
+                  "settle-active": {
+                    "summary": "Active stream settled, now ended with settlement info",
+                    "value": {
+                      "data": {
+                        "id": "stream-abc12345",
+                        "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                        "rate": "120",
+                        "schedule": "month",
+                        "status": "ended",
+                        "nextAction": "withdraw",
+                        "token": "XLM",
+                        "createdAt": "2024-01-15T10:00:00.000Z",
+                        "updatedAt": "2024-02-01T12:00:00.000Z"
+                      }
+                    }
+                  },
+                  "settle-paused": {
+                    "summary": "Paused stream settled, now ended with settlement info",
+                    "value": {
+                      "data": {
+                        "id": "stream-def67890",
+                        "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                        "rate": "50",
+                        "schedule": "week",
+                        "status": "ended",
+                        "nextAction": "withdraw",
+                        "token": "XLM",
+                        "createdAt": "2024-01-10T08:00:00.000Z",
+                        "updatedAt": "2024-01-20T14:30:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or empty `x-tenant-id` header.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "example": {
+                  "error": {
+                    "code": "MISSING_TENANT",
+                    "message": "Tenant ID header is required",
+                    "request_id": "req_01HZ9ABCDEF"
+                  }
+                }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/404" },
+          "409": {
+            "description": "Conflict — stream is not in `active` or `paused` status.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "example": {
+                  "error": {
+                    "code": "INVALID_STREAM_STATE",
+                    "message": "Only active or paused streams can be settled.",
+                    "request_id": "req_01HZ9ABCDEF"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMIT_EXCEEDED",
+                    "message": "Too many requests. Retry after 30 seconds.",
+                    "request_id": "req_01HZ9ABCDEF"
+                  }
+                }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/500" },
+          "502": {
+            "description": "Settlement failed — Stellar/Soroban transaction could not be completed.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "example": {
+                  "error": {
+                    "code": "SETTLEMENT_FAILED",
+                    "message": "Failed to settle stream on Stellar/Soroban",
+                    "request_id": "req_01HZ9ABCDEF"
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
