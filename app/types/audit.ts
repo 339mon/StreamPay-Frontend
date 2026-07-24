@@ -71,3 +71,17 @@ export interface AuditPurgeResult {
   purgedIds: string[];
   retainedEntries: number;
 }
+
+export interface DeepArchiveEntry {
+  entry: AuditEntry;
+  archivedAt: string;
+}
+
+export interface DeepArchiveResult {
+  archivedCount: number;
+  archivedEntryIds: string[];
+  chainIntactBefore: boolean;
+  chainIntactAfter: boolean;
+  cutoffTimestamp: string;
+  archivedAt: string;
+}
