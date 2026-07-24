@@ -16,6 +16,10 @@
  *   do not just announce a raw percentage.
  * - State is NOT conveyed by color alone — the percentage label is always
  *   visible alongside the bar.
+ * - The track is keyboard-focusable (tabIndex 0) so keyboard-only users can
+ *   reach it in tab order and hear its current value; a visible focus-visible
+ *   outline (see `app/styles/focus.css`) marks it while focused via keyboard,
+ *   and stays hidden for mouse/touch interaction.
  *
  * ## Amounts
  * Accepts raw i128-compatible bigint or number values. No decimal conversion
@@ -190,6 +194,7 @@ export function StreamProgress({
       {/* Track */}
       <div
         role="progressbar"
+        tabIndex={0}
         aria-valuenow={Math.round(percent)}
         aria-valuemin={0}
         aria-valuemax={100}
