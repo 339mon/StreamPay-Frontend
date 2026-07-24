@@ -48,7 +48,35 @@ const data = await get<Page>('/api/exports/large.csv', {}, {
 Retries only fire on errors the normaliser marks as retryable
 (network errors, 408, 429, 502, 503, 504). 4xx client errors short-
 circuit immediately.
+## Notification preferences
 
+The authenticated notification preferences endpoint is available at
+`/api/notifications/preferences`.
+
+```ts
+import { get, put } from '@/lib/apiClient';
+
+const { preferences } = await get<{ preferences: NotificationPreferences }>(
+  '/api/notifications/preferences',
+);
+
+await put('/api/notifications/preferences', {
+  email: false,
+  inApp: true,
+  webhook: false,
+  events: {
+    streamCreated: true,
+    streamCompleted: true,
+    streamCancelled: false,
+    paymentFailed: true,
+    lowBalance: false,
+  },
+});
+```
+
+The response envelope is `{ preferences: ... }` and the request body
+accepts only boolean values for the top-level channels and nested event
+flags.
 ## Error handling
 
 All thrown values are `StreamPayError` objects with `code`, `message`,
