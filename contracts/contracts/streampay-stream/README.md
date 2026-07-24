@@ -64,6 +64,38 @@ View functions:
 - Never mutate state or extend TTLs (reads use `peek_next_stream_id` which is side-effect-free).
 - Are bounded by `MAX_PAGE_SIZE = 100` to prevent excessive resource use.
 
+## Lifecycle events
+
+All state-changing entrypoints emit a structured Soroban contract event
+**after** the successful mutation and any token transfer. Failed calls emit
+no events.
+
+Every stream-level event uses a two-topic layout:
+
+```
+topic[0] = Symbol("stream")
+topic[1] = Symbol("<event_name>")
+data     = vec-encoded payload fields
+```
+
+| Event | Emitted by | Payload fields |
+|-------|-----------|----------------|
+| `created`   | `create_stream`       | `stream_id`, `sender`, `recipient`, `token`, `total_amount`, `timestamp` |
+| `started`   | `start_stream`        | `stream_id`, `start_time`, `end_time`, `timestamp` |
+| `paused`    | `pause`               | `stream_id`, `sender`, `pause_time`, `timestamp` |
+| `resumed`   | `resume`              | `stream_id`, `sender`, `end_time`, `timestamp` |
+| `withdrawn` | `withdraw`            | `stream_id`, `recipient`, `amount`, `timestamp` |
+| `settled`   | `withdraw` (full) or `settle` | `stream_id`, `recipient`, `total_amount`, `timestamp` |
+| `cancelled` | `cancel_stream`       | `stream_id`, `cancelled_by`, `returned_amount`, `released_amount`, `timestamp` |
+| `amended`   | `amend_stream`        | `stream_id`, `amended_by`, `new_rate_per_second`, `new_end_time`, `timestamp` |
+| `upgraded`  | `upgrade`             | `new_wasm_hash` (topics: `"StreamPay"/"upgraded"`) |
+
+When a `withdraw` fully drains the stream it emits two events in order:
+`withdrawn` then `settled`.
+
+Admin utility events (`set_pause`, `set_admin`, `set_token`) use
+`symbol_short!` two-tuples — see `src/events.rs` for the exact encoding.
+
 ## Development
 
 ```bash

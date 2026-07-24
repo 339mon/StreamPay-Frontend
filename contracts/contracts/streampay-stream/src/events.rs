@@ -181,9 +181,7 @@ pub fn settled(env: &Env, stream_id: u64, recipient: &Address, total_amount: i12
     .publish(env);
 }
 
-/// Publishes a [`StreamPaused`] event.
-#[allow(dead_code)]
-pub fn paused(env: &Env, stream_id: u64, sender: &Address, paused_at: u64, timestamp: u64) {
+pub fn paused(env: &Env, stream_id: u64, sender: &Address, pause_time: u64, timestamp: u64) {
     StreamPaused {
         stream_id,
         sender: sender.clone(),
@@ -193,8 +191,6 @@ pub fn paused(env: &Env, stream_id: u64, sender: &Address, paused_at: u64, times
     .publish(env);
 }
 
-/// Publishes a [`StreamResumed`] event.
-#[allow(dead_code)]
 pub fn resumed(env: &Env, stream_id: u64, sender: &Address, end_time: u64, timestamp: u64) {
     StreamResumed {
         stream_id,
