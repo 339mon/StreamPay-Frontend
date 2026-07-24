@@ -534,13 +534,8 @@ mod tests {
         env.as_contract(&contract_id, || {
             let (_sender_a, _sender_b, recipient) = setup_test_streams(&env);
 
-            let page = list_streams_by_recipient_and_status(
-                &env,
-                &recipient,
-                StreamStatus::Paused,
-                None,
-                10,
-            );
+        let page =
+            list_streams_by_recipient_and_status(&env, &recipient, StreamStatus::Paused, None, 10);
 
             // Streams 3, 4 are Paused
             assert_eq!(page.streams.len(), 2);
@@ -556,8 +551,8 @@ mod tests {
         env.as_contract(&contract_id, || {
             let (sender_a, _sender_b, _recipient) = setup_test_streams(&env);
 
-            let page =
-                list_streams_by_sender_and_status(&env, &sender_a, StreamStatus::Active, None, 10);
+        let page =
+            list_streams_by_sender_and_status(&env, &sender_a, StreamStatus::Active, None, 10);
 
             // sender_a has odd IDs (1, 3, 5); only 1 is Active
             assert_eq!(page.streams.len(), 1);
