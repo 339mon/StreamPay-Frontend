@@ -28,7 +28,7 @@ export async function GET(request: Request) {
   let oldestStuckAt: string | null = null;
 
   for (const s of streams) {
-    const status = (s.status as string) ?? "unknown";
+    const status: string = s.status ?? "unknown";
     counts[status] = (counts[status] ?? 0) + 1;
 
     if (status === "errored" || status === "stuck") {

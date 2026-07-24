@@ -6,8 +6,9 @@ import { StreamProgress } from "./StreamProgress";
 import { MiniBurnDown } from "./MiniBurnDown";
 import { ErrorToast } from "./ErrorToast";
 import { fetchWithIdempotency } from "../../lib/apiClient";
-import { isStreamPayError, formatErrorForDisplay } from "../lib/errors";
-import type { StreamPayError } from "../lib/errors";
+import { isStreamPayError } from "../lib/errors/mapper";
+import { formatErrorForDisplay } from "../lib/errors/handler";
+import type { StreamPayError } from "../lib/errors/types";
 
 export type StreamRowData = {
   id: string;

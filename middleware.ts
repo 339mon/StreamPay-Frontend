@@ -10,7 +10,7 @@ import {
   buildLimitsConfig,
 } from './lib/bodySize';
 import { touchLastSeenFromRequest } from './lib/lastSeen';
-import { applyChaos, getChaosConfig } from './lib/chaos';
+import { getChaosConfig, applyChaos } from './lib/chaos';
 
 // ---------------------------------------------------------------------------
 // Request body size cap
@@ -143,7 +143,8 @@ export async function middleware(request: NextRequest) {
     requestHeaders.set(CANARY_HEADER_NAME, 'true');
   }
 
-  const requestId = request.headers.get('x-request-id') ?? `req_${Date.now().toString(36)}`;
+  const origin = request.headers.get('origin');
+  let isAllowed = false;
 
   // ------------------------------------------------------------------
   // 1. Request body size cap (path-scoped, O(1) — reads Content-Length)
@@ -187,15 +188,11 @@ export async function middleware(request: NextRequest) {
   // ------------------------------------------------------------------
   // 2. CORS
   // ------------------------------------------------------------------
-  const origin = request.headers.get('origin');
-  let originAllowed = false;
-
   if (origin) {
-    originAllowed = isOriginAllowed(origin, allowedOrigins);
+    isAllowed = isOriginAllowed(origin, allowedOrigins);
 
-    if (!originAllowed) {
-      const response = buildCorsErrorResponse(origin, requestId);
-      response.headers.set(REQUEST_FINGERPRINT_HEADER, fingerprint);
+    if (!isAllowed) {
+      const response = new NextResponse(null, { status: 204 });
       setCanaryHeader(response.headers, isCanary);
       return response;
     }
@@ -217,7 +214,7 @@ export async function middleware(request: NextRequest) {
 
   setCanaryHeader(response.headers, isCanary);
 
-  if (originAllowed) {
+  if (isAllowed) {
     const headers = response.headers;
     headers.set('Access-Control-Allow-Origin', origin!);
     headers.set('Vary', 'Origin');

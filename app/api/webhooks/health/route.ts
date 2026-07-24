@@ -1,41 +1,18 @@
 import { NextResponse } from "next/server";
 import { errorResponse, ErrorCode } from "@/app/lib/errors/server";
+import {
+  deriveHealthStatus,
+  type WebhookSubscriptionStats,
+  type WebhookDeliveryStats,
+  type WebhookHealthResponse,
+} from "@/app/lib/webhook-health";
 
 /**
  * GET /api/webhooks/health
  *
  * Returns the health status of the webhook delivery system along with
  * per-subscription delivery statistics.
- *
- * Response shape:
- * ```json
- * {
- *   "status": "ok",
- *   "checked_at": "2024-01-01T00:00:00.000Z",
- *   "subscriptions": {
- *     "total": 0,
- *     "active": 0,
- *     "degraded": 0,
- *     "disabled": 0
- *   },
- *   "delivery_stats": {
- *     "total": 0,
- *     "delivered": 0,
- *     "failed": 0,
- *     "pending": 0,
- *     "dlq": 0,
- *     "success_rate_pct": 100
- *   }
- * }
- * ```
  */
-
-import {
-  deriveHealthStatus,
-  type WebhookSubscriptionStats,
-  type WebhookDeliveryStats,
-  type WebhookHealthResponse,
-} from "./utils";
 
 export async function GET() {
   try {

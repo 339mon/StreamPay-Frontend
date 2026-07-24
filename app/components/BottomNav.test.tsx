@@ -2,10 +2,10 @@
  * @jest-environment jsdom
  */
 
-import { render } from "@testing-library/react";
-const { screen } = require("@testing-library/react") as any;
+import { render, screen } from "@testing-library/react";
 import { usePathname } from "next/navigation";
-import { BottomNav, type BottomNavItem } from "./BottomNav";
+import { BottomNav } from "./BottomNav";
+import type { BottomNavItem } from "./BottomNav";
 
 const items: BottomNavItem[] = [
   { href: "/streams", label: "Streams", badgeCount: 3 },
