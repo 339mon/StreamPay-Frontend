@@ -33,7 +33,10 @@ If server persistence is later added for push subscriptions or fallback preferen
 - `app/settings/page.tsx`
 - `app/streams/[id]/page.tsx`
 - `app/streams/[id]/StreamDetailClient.tsx`
+- `app/streams/StreamsPageContent.tsx`
 - `app/onboarding/page.tsx`
+
+The streams empty state now uses a more guided first-time layout with clearer next steps and a stronger call to action for new users.
 
 ## Verification
 

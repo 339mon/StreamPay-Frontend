@@ -9,11 +9,10 @@ const streamListCopy = {
   description:
     "Track recipients, rates, statuses, and the next action from one scan-friendly streams list.",
   empty: {
-    actionLabel: "Create Your First Stream",
-    description:
-      "No streams yet. Create one to start paying collaborators and vendors on a steady schedule.",
-    eyebrow: "Streams",
-    title: "Your streams list is empty",
+    actionLabel: "Create your first stream",
+    description: "Get started with a single payout flow. Define a recipient, cadence, and amount in minutes.",
+    eyebrow: "First-time setup",
+    title: "Start your first stream",
   },
   heading: "Streams",
   loadingLabel: "Loading streams",
@@ -144,27 +143,25 @@ export function StreamsPageContent({
           )}
         </div>
 
-        <StateTriad
-          state={viewState}
-          loading={{
-            message: "Loading your streams...",
-            count: 4,
-          }}
-          empty={{
-            eyebrow: streamListCopy.empty.eyebrow,
-            title: streamListCopy.empty.title,
-            description: streamListCopy.empty.description,
-            actionLabel: streamListCopy.empty.actionLabel,
-            onAction: handleCreateStream,
-          }}
-          error={{
-            heading: "Couldn't load your streams",
-            message:
-              errorMessage ??
-              "There was a problem fetching your streams. Check your connection and try again.",
-            onRetry: onRetry || onRetryAction,
-          }}
-        >
+        {state === "loading" ? (
+          <StreamListSkeleton />
+        ) : isEmpty ? (
+          <EmptyState
+            actionLabel={streamListCopy.empty.actionLabel}
+            description={streamListCopy.empty.description}
+            eyebrow={streamListCopy.empty.eyebrow}
+            title={streamListCopy.empty.title}
+          >
+            <div className="empty-state__supporting">
+              <p className="empty-state__supporting-title">What you&apos;ll set up</p>
+              <ul className="empty-state__supporting-list">
+                <li>Choose a collaborator or vendor to pay.</li>
+                <li>Set a recurring cadence and payout amount.</li>
+                <li>Review the schedule before you launch it.</li>
+              </ul>
+            </div>
+          </EmptyState>
+        ) : (
           <section aria-label="Streams list" className="stream-list">
             {visibleStreams.map((stream) => (
               <StreamRow key={stream.id} stream={stream} />

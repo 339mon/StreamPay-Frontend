@@ -17,8 +17,11 @@ describe("StreamsPageContent", () => {
   it("renders the empty state", () => {
     render(<StreamsPageContent state="empty" streams={[]} />);
 
-    expect(screen.getByRole("heading", { name: /your streams list is empty/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /start your first stream/i })).toBeInTheDocument();
+    expect(screen.getByText(/define a recipient, cadence, and amount in minutes/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /create your first stream/i })).toBeInTheDocument();
+    expect(screen.getByText(/what you'll set up/i)).toBeInTheDocument();
+    expect(screen.getByText(/choose a collaborator or vendor to pay/i)).toBeInTheDocument();
   });
 
   it("renders the loading skeleton state", () => {

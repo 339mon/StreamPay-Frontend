@@ -22,4 +22,19 @@ describe("EmptyState", () => {
     expect(screen.getByText(/please connect your wallet to continue/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /create stream/i })).toBeInTheDocument();
   });
+
+  it("renders supporting content when provided", () => {
+    render(
+      <EmptyState
+        actionLabel="Create stream"
+        eyebrow="Streams"
+        title="No data available"
+        description="Please connect your wallet to continue."
+      >
+        <div>Helpful next steps</div>
+      </EmptyState>,
+    );
+
+    expect(screen.getByText(/helpful next steps/i)).toBeInTheDocument();
+  });
 });
