@@ -81,6 +81,14 @@ impl Contract {
         admin.require_auth();
         storage::set_admin(&env, &admin);
         storage::set_paused(&env, false);
+        // Emit a deprecated-entrypoint event so indexers and off-chain tooling
+        // can detect legacy initialisation calls.
+        events::deprecated_entrypoint(
+            &env,
+            &admin,
+            soroban_sdk::symbol_short!("initialize"),
+            env.ledger().timestamp(),
+        );
         Ok(())
     }
 

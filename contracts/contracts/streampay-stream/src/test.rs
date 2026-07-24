@@ -104,6 +104,21 @@ fn draft_stream_accrues_nothing_until_started() {
 }
 
 #[test]
+fn initialize_emits_deprecated_entrypoint_event() {
+    let data = setup_init();
+    let client = contract_client(&data.env);
+
+    client.initialize(&data.admin);
+
+    let events = data.env.events().all();
+    assert!(!events.is_empty(), "initialize should emit a deprecated event");
+
+    let (_, topics, _) = events.last().unwrap();
+    assert_eq!(topics.len(), 2, "Event should have 2 topics");
+    assert_eq!(topics[1], symbol_short!("deprecated_entrypoint"));
+}
+
+#[test]
 fn initialize_twice_returns_invalid_state() {
     let data = setup_init();
     let client = contract_client(&data.env);
