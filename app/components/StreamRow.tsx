@@ -1,9 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useState, useRef } from "react";
 import { StatusBadge, type StreamStatus } from "./StatusBadge";
 import { StreamProgress } from "./StreamProgress";
 import { MiniBurnDown } from "./MiniBurnDown";
+import { RecipientAvatar } from "./RecipientAvatar";
 import { ErrorToast } from "./ErrorToast";
 import { fetchWithIdempotency } from "../../lib/apiClient";
 import { isStreamPayError, formatErrorForDisplay } from "../lib/errors";
@@ -108,11 +109,14 @@ export function StreamRow({ stream }: StreamRowProps) {
       </div>
 
       <div className="stream-row__primary">
-        <div>
-          <h2 className="stream-row__recipient" id={`${stream.id}-recipient`}>
-            {stream.recipient}
-          </h2>
-          <p className="stream-row__schedule">{stream.schedule}</p>
+        <div className="stream-row__identity">
+          <RecipientAvatar recipient={stream.recipient} />
+          <div>
+            <h2 className="stream-row__recipient" id={`${stream.id}-recipient`}>
+              {stream.recipient}
+            </h2>
+            <p className="stream-row__schedule">{stream.schedule}</p>
+          </div>
         </div>
         <StatusBadge status={stream.status} />
       </div>
