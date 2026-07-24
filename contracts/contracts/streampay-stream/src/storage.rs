@@ -299,6 +299,22 @@ pub fn next_stream_id(env: &Env) -> u64 {
 ///
 /// # Errors
 /// This helper does not return errors.
+/// Returns the next stream id without incrementing the counter.
+///
+/// Used by paginated views to determine the upper bound for iteration.
+pub fn peek_next_stream_id(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::StreamCount)
+        .unwrap_or(1u64)
+}
+
+/// Sets the next stream id (test-only helper for pagination tests).
+#[cfg(test)]
+pub fn set_next_stream_id_for_test(env: &Env, id: u64) {
+    env.storage().instance().set(&DataKey::StreamCount, &id);
+}
+
 pub fn set_stream(env: &Env, stream_id: u64, stream: &Stream) {
     env.storage()
         .persistent()
