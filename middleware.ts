@@ -5,11 +5,9 @@ import {
   REQUEST_FINGERPRINT_HEADER,
   captureRequestFingerprint,
 } from './lib/fingerprint';
-import {
-  checkRequestBodySize,
-  buildLimitsConfig,
-} from './lib/bodySize';
+import { checkRequestBodySize, buildLimitsConfig } from './lib/bodySize';
 import { touchLastSeenFromRequest } from './lib/lastSeen';
+import { applyChaos, getChaosConfig } from './lib/chaos';
 
 // ---------------------------------------------------------------------------
 // Request body size cap
@@ -115,7 +113,7 @@ function shouldEnforceBodySizeLimit(request: NextRequest | Request): boolean {
     ? request.nextUrl.pathname
     : new URL(request.url).pathname;
 
-  return pathname === '/api/v2/streams' || pathname.startsWith('/api/v2/streams/') || pathname.startsWith('/api/webhooks');
+  return pathname.startsWith('/api/');
 }
 
 export async function middleware(request: NextRequest) {
@@ -172,26 +170,55 @@ export async function middleware(request: NextRequest) {
   // 2. CORS
   // ------------------------------------------------------------------
   const origin = request.headers.get('origin');
+  let originAllowed = false;
 
   if (origin) {
-    const originAllowed = isOriginAllowed(origin, allowedOrigins);
+    originAllowed = isOriginAllowed(origin, allowedOrigins);
 
     if (!originAllowed) {
-      const response = new NextResponse(null, { status: 204 });
-      setCanaryHeader(response.headers, isCanary);
-      return response;
+      const requestId =
+        request.headers.get('x-request-id') ??
+        `req_${Date.now().toString(36)}`;
+
+      console.warn(
+        JSON.stringify({
+          type: 'cors.rejection',
+          origin,
+          method: request.method,
+          pathname: request.nextUrl?.pathname ?? '',
+          request_id: requestId,
+        })
+      );
+
+      const errorResponse = NextResponse.json(
+        {
+          error: {
+            code: 'CORS_ORIGIN_DISALLOWED',
+            message: `Origin '${origin}' is not allowed.`,
+            request_id: requestId,
+          },
+        },
+        { status: 403 }
+      );
+      errorResponse.headers.set(REQUEST_FINGERPRINT_HEADER, fingerprint);
+      errorResponse.headers.set('Vary', 'Origin');
+      setCanaryHeader(errorResponse.headers, isCanary);
+      return errorResponse;
     }
 
-    const headers = buildCorsHeaders(origin!);
-    setCanaryHeader(headers, isCanary);
+    if (request.method === 'OPTIONS') {
+      const headers = buildCorsHeaders(origin);
+      setCanaryHeader(headers, isCanary);
+      return new NextResponse(null, {
+        status: 204,
+        headers,
+      });
+    }
+  }
 
-    return new NextResponse(null, {
-      status: 204,
-      headers,
-    });
-
-    response.headers.set('Access-Control-Allow-Origin', origin);
-    response.headers.set('Vary', 'Origin');
+  if (request.method === 'OPTIONS' && !origin) {
+    const response = new NextResponse(null, { status: 204 });
+    setCanaryHeader(response.headers, isCanary);
     return response;
   }
 

@@ -23,16 +23,32 @@ Before taking action, manually verify the stream state using a block explorer or
 ## 4. Remediation Steps
 ### A. If DB is behind (Index Lag)
 1. Trigger a manual backfill for the affected stream using the `backfill-indexer.ts` script.
-2. Wait 5 minutes and run the reconciliation job again.
+2. Wait 5 minutes and run the on-demand reconciliation CLI to check if it's resolved:
+   ```bash
+   npm run recon:cli -- --stream-id <streamId>
+   ```
 
 ### B. If DB is ahead (Double Credit/Phantom Sync)
 1. **Freeze the Stream**: If the UI allows it, pause the stream to prevent further withdrawals.
 2. **Investigate Logs**: Search for the `correlation_id` of the last settlement transaction for that stream.
 3. **Manual Fix**: If the mismatch is confirmed and intentional (e.g., manual adjustment needed), update the DB record to match the on-chain truth.
+4. **Verify**: Run the on-demand reconciliation CLI to ensure the mismatch is resolved:
+   ```bash
+   npm run recon:cli -- --stream-id <streamId>
+   ```
 
 ### C. If On-Chain is inconsistent
 1. This indicates a potential smart contract bug or a deep chain reorganization (rare on Stellar).
 2. Escalated to the Blockchain Engineering team immediately.
+
+### D. On-Demand CLI Tool Reference
+You can run ad-hoc reconciliation for a single stream at any time using:
+```bash
+npm run recon:cli -- --stream-id <streamId> [--tolerance <n>] [--dry-run]
+```
+- `--tolerance <n>` allows overriding the mismatch tolerance for balance drift rounding.
+- `--dry-run` performs the check and outputs the JSON report/mismatches without updating the stream's status in the database.
+- The command exits with `0` on success, or `1` if a mismatch or error is found. Output logs are JSON-formatted with a correlation `request_id`.
 
 ## 5. Prevention
 - Review recent changes to `lib/indexer.ts` or the smart contract logic.
