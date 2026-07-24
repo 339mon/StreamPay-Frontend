@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import SplashScreen from "./components/SplashScreen";
 import { ToastProvider } from "./components/ToastProvider";
+import { AppBottomNav } from "./components/AppBottomNav";
 import { getThemeScript } from "./utils/theme-noflash";
 
 export const metadata: Metadata = {
@@ -26,6 +27,7 @@ export default function RootLayout({
         <ToastProvider>
           <SplashScreen />
           {children}
+          <AppBottomNav />
         </ToastProvider>
       </body>
     </html>
