@@ -32,7 +32,7 @@ export async function GET(request: Request) {
   const limit = Math.min(Math.max(Number.isFinite(limitParam) ? limitParam : 50, 1), 200);
 
   const { streamRepository } = getStore();
-  let streams = Array.from(streamRepository.getAll?.() ?? []);
+  let streams = Array.from(streamRepository.streams.values());
 
   // Full-text filter
   if (q.trim()) {
@@ -41,7 +41,7 @@ export async function GET(request: Request) {
         matchesText(s.id, q) ||
         matchesText(s.recipient, q) ||
         matchesText(s.memo, q) ||
-        matchesText(s.sender, q),
+        matchesText(s.senderAddress, q),
     );
   }
 
@@ -50,10 +50,10 @@ export async function GET(request: Request) {
     streams = streams.filter((s) => s.status === status);
   }
   if (asset) {
-    streams = streams.filter((s) => s.asset === asset);
+    streams = streams.filter((s) => s.token === asset);
   }
   if (sender) {
-    streams = streams.filter((s) => s.sender === sender);
+    streams = streams.filter((s) => s.senderAddress === sender);
   }
   if (from) {
     const fromMs = Date.parse(from);
