@@ -62,7 +62,7 @@ pub struct Stream {
     pub duration: u64,
     pub last_update: u64,
     pub status: StreamStatus,
-    pub pause_time: u64,
+    pub paused_at: u64,
     pub total_paused_duration: u64,
 }
 
@@ -417,23 +417,21 @@ pub fn get_withdrawer_allowlist(env: &Env, stream_id: u64) -> Vec<Address> {
     list
 }
 
-/// Adds `withdrawer` to the per-stream allowlist if not already present.
-///
-/// The allowlist is stored in persistent storage alongside the stream row
-/// and shares the same TTL extension policy.
-pub fn add_withdrawer(env: &Env, stream_id: u64, withdrawer: &Address) {
-    let key = DataKey::WithdrawerAllowlist(stream_id);
-    let mut list: Vec<Address> = env
-        .storage()
-        .persistent()
-        .get::<DataKey, Vec<Address>>(&key)
-        .unwrap_or_else(|| Vec::new(env));
-
-    // Idempotent: do not add duplicates.
-    for existing in list.iter() {
-        if existing == *withdrawer {
-            extend_withdrawer_allowlist_ttl(env, stream_id);
-            return;
+    fn test_stream(env: &Env) -> Stream {
+        Stream {
+            id: 1,
+            sender: soroban_sdk::Address::generate(env),
+            recipient: soroban_sdk::Address::generate(env),
+            token: soroban_sdk::Address::generate(env),
+            total_amount: 1_000,
+            released_amount: 0,
+            start_time: 0,
+            end_time: 100,
+            duration: 100,
+            last_update: 0,
+            status: StreamStatus::Active,
+            paused_at: 0,
+            total_paused_duration: 0,
         }
     }
 

@@ -50,7 +50,7 @@ fn make_stream(
         duration: end_time.saturating_sub(start_time),
         last_update: start_time,
         status: StreamStatus::Active,
-        pause_time: 0,
+        paused_at: 0,
         total_paused_duration: 0,
     }
 }

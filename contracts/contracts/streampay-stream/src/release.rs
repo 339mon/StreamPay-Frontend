@@ -28,9 +28,9 @@ pub fn vested_amount(stream: &Stream, now: u64) -> Result<i128, Error> {
     // Clamp now to [start_time, end_time]
     let mut effective_now = max(stream.start_time, min(now, stream.end_time));
 
-    // If currently paused, accrual stopped at pause_time
+    // If currently paused, accrual stopped at paused_at
     if stream.status == StreamStatus::Paused {
-        effective_now = min(effective_now, stream.pause_time);
+        effective_now = min(effective_now, stream.paused_at);
     }
 
     // Compute elapsed time since start, excluding paused time
@@ -97,7 +97,7 @@ mod tests {
             duration: end_time - start_time,
             last_update: start_time,
             status: StreamStatus::Active,
-            pause_time: 0,
+            paused_at: 0,
             total_paused_duration: 0,
         }
     }

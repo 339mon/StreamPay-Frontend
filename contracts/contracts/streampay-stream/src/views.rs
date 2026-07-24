@@ -408,7 +408,7 @@ mod tests {
                     6 => StreamStatus::Draft,
                     _ => StreamStatus::Active,
                 },
-                pause_time: 0,
+                paused_at: 0,
                 total_paused_duration: 0,
             };
             storage::set_stream(env, i, &stream);
@@ -565,26 +565,26 @@ mod tests {
             let recipient = Address::generate(&env);
             let token = Address::generate(&env);
 
-            // Create streams 1, 2, 4, 5 (skip 3)
-            for i in &[1u64, 2, 4, 5] {
-                let stream = Stream {
-                    id: *i,
-                    sender: sender.clone(),
-                    recipient: recipient.clone(),
-                    token: token.clone(),
-                    total_amount: 1000,
-                    released_amount: 0,
-                    start_time: 1000,
-                    end_time: 2000,
-                    duration: 1000,
-                    last_update: 1000,
-                    status: StreamStatus::Active,
-                    pause_time: 0,
-                    total_paused_duration: 0,
-                };
-                storage::set_stream(&env, *i, &stream);
-            }
-            storage::set_next_stream_id_for_test(&env, 6);
+        // Create streams 1, 2, 4, 5 (skip 3)
+        for i in &[1u64, 2, 4, 5] {
+            let stream = Stream {
+                id: *i,
+                sender: sender.clone(),
+                recipient: recipient.clone(),
+                token: token.clone(),
+                total_amount: 1000,
+                released_amount: 0,
+                start_time: 1000,
+                end_time: 2000,
+                duration: 1000,
+                last_update: 1000,
+                status: StreamStatus::Active,
+                paused_at: 0,
+                total_paused_duration: 0,
+            };
+            storage::set_stream(&env, *i, &stream);
+        }
+        storage::set_next_stream_id_for_test(&env, 6);
 
             let page = list_streams(&env, None, 10);
             // Should return 4 streams (1, 2, 4, 5), skipping the gap at 3

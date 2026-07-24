@@ -425,7 +425,7 @@ impl Contract {
             duration,
             last_update: start_time,
             status: StreamStatus::Active,
-            pause_time: 0,
+            paused_at: 0,
             total_paused_duration: 0,
         };
 
@@ -803,7 +803,7 @@ impl Contract {
     /// Pauses an active stream, freezing accrual while preserving vested funds.
     ///
     /// Only the stream sender may call this. On pause, status is set to Paused
-    /// and `pause_time` is recorded. Vested amount remains withdrawable but does
+    /// and `paused_at` is recorded. Vested amount remains withdrawable but does
     /// not increase while paused.
     ///
     /// # Errors
@@ -819,13 +819,13 @@ impl Contract {
         }
 
         let now = env.ledger().timestamp();
-
+        stream.paused_at = now;
         stream.last_update = now;
         stream.status = StreamStatus::Paused;
 
         storage::set_stream(&env, stream_id, &stream);
 
-        events::paused(&env, stream_id, &stream.sender, stream.pause_time, now);
+        events::paused(&env, stream_id, &stream.sender, stream.paused_at, now);
 
         Ok(stream)
     }
@@ -855,7 +855,7 @@ impl Contract {
 
         let now = env.ledger().timestamp();
         let paused_duration = now
-            .checked_sub(stream.pause_time)
+            .checked_sub(stream.paused_at)
             .ok_or(Error::InvalidTimeRange)?;
 
         // Track total paused duration for accrual calculations
@@ -872,7 +872,7 @@ impl Contract {
 
         stream.last_update = now;
         stream.status = StreamStatus::Active;
-        stream.pause_time = 0;
+        stream.paused_at = 0;
 
         storage::set_stream(&env, stream_id, &stream);
 

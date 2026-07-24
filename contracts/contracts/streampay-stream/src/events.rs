@@ -65,7 +65,7 @@ pub struct StreamSettled {
 pub struct StreamPaused {
     pub stream_id: u64,
     pub sender: Address,
-    pub pause_time: u64,
+    pub paused_at: u64,
     pub timestamp: u64,
 }
 
@@ -183,11 +183,11 @@ pub fn settled(env: &Env, stream_id: u64, recipient: &Address, total_amount: i12
 
 /// Publishes a [`StreamPaused`] event.
 #[allow(dead_code)]
-pub fn paused(env: &Env, stream_id: u64, sender: &Address, pause_time: u64, timestamp: u64) {
+pub fn paused(env: &Env, stream_id: u64, sender: &Address, paused_at: u64, timestamp: u64) {
     StreamPaused {
         stream_id,
         sender: sender.clone(),
-        pause_time,
+        paused_at,
         timestamp,
     }
     .publish(env);
