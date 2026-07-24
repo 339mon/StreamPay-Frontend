@@ -30,6 +30,9 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
   (gzip/brotli for all responses).
 
 ### Added
+- `app/settings/notifications/page.tsx` — dedicated GrantFox FWC26
+  notifications page exposing per-category in-app/email toggles with a
+  focused save flow and responsive, accessible settings layout.
 - `app/components/PayoutSummary.tsx` — a refined GrantFox payout summary card
   with tighter typography, spacing, and responsive layout for the campaign
   surface while preserving dark-mode and accessibility token consistency.
