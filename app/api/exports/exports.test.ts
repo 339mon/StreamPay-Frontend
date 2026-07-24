@@ -1,5 +1,11 @@
 import jwt from "jsonwebtoken";
 import { db, resetDb } from "@/app/lib/db";
+import { checkRateLimit } from "@/app/lib/rate-limit";
+import {
+  getRateLimitStore,
+  InMemoryRateLimitStore,
+  resetRateLimitStore,
+} from "@/app/lib/rate-limit-store";
 import { POST as createExport } from "./route";
 import { GET as getExport } from "./[id]/route";
 
@@ -19,9 +25,17 @@ function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+afterEach(() => {
+  const store = getRateLimitStore();
+  if (store instanceof InMemoryRateLimitStore) {
+    store.destroy();
+  }
+});
+
 describe("Exports API — authentication and scoping", () => {
   beforeEach(() => {
     resetDb();
+    resetRateLimitStore();
   });
 
   // ── POST /api/exports ──────────────────────────────────────────────────────
@@ -282,5 +296,83 @@ describe("Exports API — authentication and scoping", () => {
       // Only 1 stream row (not 2)
       expect(statusJson.data.rows).toBe(1);
     });
+  });
+});
+
+// ── POST /api/exports rate limiting ────────────────────────────────────────
+
+describe("POST /api/exports rate limiting", () => {
+  beforeEach(() => {
+    resetDb();
+    resetRateLimitStore();
+  });
+
+  it("returns 429 with Retry-After after 5 exports in a minute for one user", async () => {
+    const token = makeToken("GOWNER1");
+
+    for (let i = 0; i < 5; i++) {
+      const res = await createExport(authRequest("http://localhost/api/exports", token));
+      expect(res.status).toBe(201);
+    }
+
+    const limited = await createExport(authRequest("http://localhost/api/exports", token));
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("Retry-After")).toBeTruthy();
+    const json = await limited.json();
+    expect(json.error.code).toBe("rate_limit_exceeded");
+    expect(typeof json.error.request_id).toBe("string");
+  });
+
+  it("tracks the limit per user, not globally", async () => {
+    const tokenA = makeToken("GOWNER1");
+    const tokenB = makeToken("GOWNER2");
+
+    for (let i = 0; i < 5; i++) {
+      const res = await createExport(authRequest("http://localhost/api/exports", tokenA));
+      expect(res.status).toBe(201);
+    }
+
+    const limitedA = await createExport(authRequest("http://localhost/api/exports", tokenA));
+    expect(limitedA.status).toBe(429);
+
+    const freshB = await createExport(authRequest("http://localhost/api/exports", tokenB));
+    expect(freshB.status).toBe(201);
+  });
+
+  it("does not let a forged token consume a victim's budget", async () => {
+    const forged = [
+      Buffer.from(JSON.stringify({ alg: "none" })).toString("base64url"),
+      Buffer.from(JSON.stringify({ sub: "GOWNER1" })).toString("base64url"),
+      "forged",
+    ].join(".");
+
+    for (let i = 0; i < 6; i++) {
+      const res = await createExport(authRequest("http://localhost/api/exports", forged));
+      expect(res.status).toBe(401);
+    }
+
+    const token = makeToken("GOWNER1");
+    for (let i = 0; i < 5; i++) {
+      const res = await createExport(authRequest("http://localhost/api/exports", token));
+      expect(res.status).toBe(201);
+    }
+  });
+
+  it("does not drain the export bucket from other limit tiers", async () => {
+    const token = makeToken("GOWNER1");
+
+    for (let i = 0; i < 5; i++) {
+      const res = await createExport(authRequest("http://localhost/api/exports", token));
+      expect(res.status).toBe(201);
+    }
+    const limited = await createExport(authRequest("http://localhost/api/exports", token));
+    expect(limited.status).toBe(429);
+
+    const readCheck = await checkRateLimit(
+      { type: "wallet", value: "GOWNER1", displayValue: "GOWNER1" },
+      "read",
+    );
+    expect(readCheck.allowed).toBe(true);
+    expect(readCheck.remaining).toBe(59);
   });
 });

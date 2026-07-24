@@ -54,6 +54,12 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
   and the middleware dispatch surface.
 
 ### Security
+- Per-user rate limit on `POST /api/exports`: 5 requests/min per
+  authenticated wallet, checked after JWT verification so forged tokens
+  cannot spend a victim's budget, returning the standard `429` envelope with
+  `Retry-After`. Rate-limit buckets are now keyed per limit tier
+  (read/write/export), so throttling one endpoint class can no longer drain
+  a user's allowance for another.
 - Wallet auth IP rate limiting on `GET|POST /api/auth/wallet` now returns the
   canonical `{ error: { code, message, request_id } }` envelope on 429, echoes
   `x-request-id`, and emits structured `wallet_ip_rate_limit_exceeded` logs
