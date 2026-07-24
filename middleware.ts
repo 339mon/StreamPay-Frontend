@@ -11,10 +11,7 @@ import {
   REQUEST_FINGERPRINT_HEADER,
   captureRequestFingerprint,
 } from './lib/fingerprint';
-import {
-  checkRequestBodySize,
-  buildLimitsConfig,
-} from './lib/bodySize';
+import { checkRequestBodySize, buildLimitsConfig } from './lib/bodySize';
 import { touchLastSeenFromRequest } from './lib/lastSeen';
 import { applyChaos, getChaosConfig } from './lib/chaos';
 
@@ -125,43 +122,7 @@ function resolveRequestId(request: NextRequest): string {
   return `req_${Date.now().toString(36)}_${Math.random().toString(16).slice(2, 10)}`;
 }
 
-function getCookieValue(request: NextRequest | Request, name: string): string | undefined {
-  if ('cookies' in request && request.cookies && typeof request.cookies.get === 'function') {
-    const cookieObj = request.cookies.get(name);
-    if (cookieObj && typeof cookieObj === 'object' && 'value' in cookieObj) {
-      return cookieObj.value;
-    }
-    if (typeof cookieObj === 'string') {
-      return cookieObj;
-    }
-  }
-  const cookieHeader = request.headers.get('cookie');
-  if (!cookieHeader) return undefined;
-  const cookies = cookieHeader.split(';').map(c => c.trim());
-  for (const cookie of cookies) {
-    const [k, v] = cookie.split('=');
-    if (k === name) return v;
-  }
-  return undefined;
-}
-
-function setCookie(response: NextResponse, name: string, value: string) {
-  if (response.cookies && typeof response.cookies.set === 'function') {
-    response.cookies.set(name, value, {
-      path: '/',
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      httpOnly: false,
-    });
-  } else {
-    const cookieOptions = [
-      `${name}=${value}`,
-      'Path=/',
-      'SameSite=Lax',
-      process.env.NODE_ENV === 'production' ? 'Secure' : '',
-    ].filter(Boolean).join('; ');
-    response.headers.append('Set-Cookie', cookieOptions);
-  }
+  return pathname.startsWith('/api/');
 }
 
 export async function middleware(request: NextRequest) {
@@ -228,7 +189,9 @@ export async function middleware(request: NextRequest) {
     originAllowed = isOriginAllowed(origin, allowedOrigins);
 
     if (!originAllowed) {
-      const requestId = resolveRequestId(request);
+      const requestId =
+        request.headers.get('x-request-id') ??
+        `req_${Date.now().toString(36)}`;
 
       console.warn(
         JSON.stringify({
@@ -256,7 +219,6 @@ export async function middleware(request: NextRequest) {
       return errorResponse;
     }
 
-    // Origin is allowed
     if (request.method === 'OPTIONS') {
       const headers = buildCorsHeaders(origin);
       setCanaryHeader(headers, isCanary);
@@ -265,21 +227,9 @@ export async function middleware(request: NextRequest) {
         headers,
       });
     }
-
-    const response = NextResponse.next({
-      request: {
-        headers: requestHeaders,
-      },
-    });
-
-    response.headers.set('Access-Control-Allow-Origin', origin);
-    response.headers.set('Vary', 'Origin');
-    setCanaryHeader(response.headers, isCanary);
-    return response;
   }
 
-  // No origin header — no CORS processing needed
-  if (request.method === 'OPTIONS') {
+  if (request.method === 'OPTIONS' && !origin) {
     const response = new NextResponse(null, { status: 204 });
     setCanaryHeader(response.headers, isCanary);
     return response;

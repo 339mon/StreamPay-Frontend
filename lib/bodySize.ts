@@ -99,7 +99,7 @@ export function getBodySizeLimit(
   limits: { default: number; webhook: number }
 ): number | null {
   if (isWebhookPath(pathname)) return limits.webhook;
-  if (isStreamPath(pathname)) return limits.default;
+  if (pathname.startsWith('/api/')) return limits.default;
   return null;
 }
 
