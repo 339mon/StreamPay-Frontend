@@ -17,6 +17,16 @@
 
 use soroban_sdk::{contracttype, Address, Env, Vec};
 
+/// Lifecycle status of a [`Stream`] stored on-chain.
+///
+/// | Variant     | Description                                                        |
+/// |-------------|--------------------------------------------------------------------|
+/// | `Draft`     | Created but not yet started; no accrual occurs.                    |
+/// | `Active`    | Tokens are vesting linearly from `start_time` to `end_time`.       |
+/// | `Paused`    | Accrual frozen; `end_time` will be extended on resume.             |
+/// | `Settled`   | Fully paid out; terminal state.                                    |
+/// | `Ended`     | Time window elapsed, awaiting settle; transitional.                |
+/// | `Cancelled` | Cancelled by sender before full vesting; terminal state.           |
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[contracttype]
 pub enum StreamStatus {
@@ -28,6 +38,16 @@ pub enum StreamStatus {
     Cancelled,
 }
 
+/// On-chain record for a single payment stream.
+///
+/// Each stream escrows `total_amount` from `sender` and releases it
+/// linearly to `recipient` from `start_time` to `end_time`. The
+/// `released_amount` tracks cumulative withdrawals; when it reaches
+/// `total_amount` the stream transitions to `Settled`.
+///
+/// Paused streams record `pause_time` and `total_paused_duration` so
+/// that the resumption logic can extend `end_time` by the pause length
+/// without over- or under-paying the recipient.
 #[derive(Clone, Debug)]
 #[contracttype]
 pub struct Stream {

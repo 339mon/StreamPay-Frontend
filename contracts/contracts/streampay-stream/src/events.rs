@@ -8,6 +8,10 @@
 
 use soroban_sdk::{contractevent, Address, BytesN, Env, Symbol};
 
+/// Emitted when a new stream is created (topic: `"stream"`, sub-topic: `"created"`).
+///
+/// Contains the stream's ID, sender, recipient, token address, total amount, and
+/// the ledger timestamp at creation.
 #[contractevent(topics = ["stream", "created"], data_format = "vec")]
 pub struct StreamCreated {
     pub stream_id: u64,
@@ -18,6 +22,10 @@ pub struct StreamCreated {
     pub timestamp: u64,
 }
 
+/// Emitted when a draft stream is started (topic: `"stream"`, sub-topic: `"started"`).
+///
+/// Records the stream ID, the computed start and end time, and the ledger
+/// timestamp of activation.
 #[contractevent(topics = ["stream", "started"], data_format = "vec")]
 pub struct StreamStarted {
     pub stream_id: u64,
@@ -26,6 +34,9 @@ pub struct StreamStarted {
     pub timestamp: u64,
 }
 
+/// Emitted when tokens are withdrawn from a stream (topic: `"stream"`, sub-topic: `"withdrawn"`).
+///
+/// Contains the stream ID, recipient, amount withdrawn, and the ledger timestamp.
 #[contractevent(topics = ["stream", "withdrawn"], data_format = "vec")]
 pub struct StreamWithdrawn {
     pub stream_id: u64,
@@ -34,6 +45,10 @@ pub struct StreamWithdrawn {
     pub timestamp: u64,
 }
 
+/// Emitted when a stream is fully settled (topic: `"stream"`, sub-topic: `"settled"`).
+///
+/// Contains the stream ID, recipient, total amount of the stream, and the
+/// ledger timestamp of settlement.
 #[contractevent(topics = ["stream", "settled"], data_format = "vec")]
 pub struct StreamSettled {
     pub stream_id: u64,
@@ -42,6 +57,10 @@ pub struct StreamSettled {
     pub timestamp: u64,
 }
 
+/// Emitted when an active stream is paused (topic: `"stream"`, sub-topic: `"paused"`).
+///
+/// Contains the stream ID, the sender who paused it, the pause time, and the
+/// ledger timestamp.
 #[contractevent(topics = ["stream", "paused"], data_format = "vec")]
 pub struct StreamPaused {
     pub stream_id: u64,
@@ -50,6 +69,10 @@ pub struct StreamPaused {
     pub timestamp: u64,
 }
 
+/// Emitted when a paused stream is resumed (topic: `"stream"`, sub-topic: `"resumed"`).
+///
+/// Contains the stream ID, the sender who resumed it, the extended end time,
+/// and the ledger timestamp.
 #[contractevent(topics = ["stream", "resumed"], data_format = "vec")]
 pub struct StreamResumed {
     pub stream_id: u64,
@@ -58,6 +81,10 @@ pub struct StreamResumed {
     pub timestamp: u64,
 }
 
+/// Emitted when a stream is cancelled (topic: `"stream"`, sub-topic: `"cancelled"`).
+///
+/// Contains the stream ID, who cancelled it, the amount returned to the
+/// sender, the amount released to the recipient, and the ledger timestamp.
 #[contractevent(topics = ["stream", "cancelled"], data_format = "vec")]
 pub struct StreamCancelled {
     pub stream_id: u64,
@@ -67,6 +94,10 @@ pub struct StreamCancelled {
     pub timestamp: u64,
 }
 
+/// Emitted when a stream is amended (topic: `"stream"`, sub-topic: `"amended"`).
+///
+/// Contains the stream ID, who amended it, the new rate per second, the new
+/// end time, and the ledger timestamp.
 #[contractevent(topics = ["stream", "amended"], data_format = "vec")]
 pub struct StreamAmended {
     pub stream_id: u64,
@@ -76,11 +107,18 @@ pub struct StreamAmended {
     pub timestamp: u64,
 }
 
+/// Emitted when the contract is upgraded (topic: `"StreamPay"`, sub-topic: `"upgraded"`).
+///
+/// Contains the new WASM hash of the upgraded contract code.
 #[contractevent(topics = ["StreamPay", "upgraded"], data_format = "single-value")]
 pub struct ContractUpgraded {
     pub new_wasm_hash: BytesN<32>,
 }
 
+/// Emitted for administrative actions on a stream (topic: `"stream"`, sub-topic: `"adminact"`).
+///
+/// Contains the stream ID, the admin address, a short action symbol, and the
+/// ledger timestamp.
 #[contractevent(topics = ["stream", "adminact"], data_format = "vec")]
 pub struct AdminAction {
     pub stream_id: u64,
@@ -89,6 +127,7 @@ pub struct AdminAction {
     pub timestamp: u64,
 }
 
+/// Publishes a [`StreamCreated`] event.
 pub fn created(
     env: &Env,
     stream_id: u64,
@@ -109,6 +148,7 @@ pub fn created(
     .publish(env);
 }
 
+/// Publishes a [`StreamStarted`] event.
 pub fn started(env: &Env, stream_id: u64, start_time: u64, end_time: u64, timestamp: u64) {
     StreamStarted {
         stream_id,
@@ -119,6 +159,7 @@ pub fn started(env: &Env, stream_id: u64, start_time: u64, end_time: u64, timest
     .publish(env);
 }
 
+/// Publishes a [`StreamWithdrawn`] event.
 pub fn withdrawn(env: &Env, stream_id: u64, recipient: &Address, amount: i128, timestamp: u64) {
     StreamWithdrawn {
         stream_id,
@@ -129,6 +170,7 @@ pub fn withdrawn(env: &Env, stream_id: u64, recipient: &Address, amount: i128, t
     .publish(env);
 }
 
+/// Publishes a [`StreamSettled`] event.
 pub fn settled(env: &Env, stream_id: u64, recipient: &Address, total_amount: i128, timestamp: u64) {
     StreamSettled {
         stream_id,
@@ -139,6 +181,7 @@ pub fn settled(env: &Env, stream_id: u64, recipient: &Address, total_amount: i12
     .publish(env);
 }
 
+/// Publishes a [`StreamPaused`] event.
 #[allow(dead_code)]
 pub fn paused(env: &Env, stream_id: u64, sender: &Address, pause_time: u64, timestamp: u64) {
     StreamPaused {
@@ -150,6 +193,7 @@ pub fn paused(env: &Env, stream_id: u64, sender: &Address, pause_time: u64, time
     .publish(env);
 }
 
+/// Publishes a [`StreamResumed`] event.
 #[allow(dead_code)]
 pub fn resumed(env: &Env, stream_id: u64, sender: &Address, end_time: u64, timestamp: u64) {
     StreamResumed {
@@ -161,10 +205,12 @@ pub fn resumed(env: &Env, stream_id: u64, sender: &Address, end_time: u64, times
     .publish(env);
 }
 
+/// Publishes a [`ContractUpgraded`] event.
 pub fn upgraded(env: &Env, new_wasm_hash: BytesN<32>) {
     ContractUpgraded { new_wasm_hash }.publish(env);
 }
 
+/// Publishes a [`StreamCancelled`] event.
 pub fn cancelled(
     env: &Env,
     stream_id: u64,
@@ -183,6 +229,7 @@ pub fn cancelled(
     .publish(env);
 }
 
+/// Publishes a [`StreamAmended`] event.
 pub fn amended(
     env: &Env,
     stream_id: u64,
@@ -201,6 +248,7 @@ pub fn amended(
     .publish(env);
 }
 
+/// Publishes an [`AdminAction`] event.
 pub fn admin_action(env: &Env, stream_id: u64, admin: &Address, action: Symbol, timestamp: u64) {
     AdminAction {
         stream_id,
