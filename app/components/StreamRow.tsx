@@ -42,6 +42,7 @@ export function StreamRow({ stream, density = "comfortable" }: StreamRowProps) {
   const [errorMsg, setErrorMsg] = useState("");
   // Local notification state for polite screen reader announcements (#219)
   const [srAnnouncement, setSrAnnouncement] = useState("");
+  const [isFocused, setIsFocused] = useState(false);
 
   // Ref hook to preserve active keyboard focus target parameters across button re-renders
   const actionButtonRef = useRef<HTMLButtonElement>(null);
@@ -172,6 +173,9 @@ export function StreamRow({ stream, density = "comfortable" }: StreamRowProps) {
           className={`button button--secondary stream-row__action ${isProcessing ? "button--busy" : ""}`}
           type="button"
           onClick={handleAction}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+          style={isFocused ? { outline: "2px solid var(--accent)", outlineOffset: "2px" } : undefined}
           disabled={isProcessing || isIncidentMode}
           aria-busy={isProcessing}
           aria-live="assertive"
