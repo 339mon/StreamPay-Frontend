@@ -1,9 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useState, useRef } from "react";
 import { StatusBadge, type StreamStatus } from "./StatusBadge";
 import { StreamProgress } from "./StreamProgress";
 import { MiniBurnDown } from "./MiniBurnDown";
+import { RecipientAvatar } from "./RecipientAvatar";
 import { ErrorToast } from "./ErrorToast";
 import { fetchWithIdempotency } from "../../lib/apiClient";
 import { isStreamPayError } from "../lib/errors/mapper";
@@ -113,20 +114,14 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
       </div>
 
       <div className="stream-row__primary">
-        <div>
-          <h2 className="stream-row__recipient" id={`${stream.id}-recipient`}>
-            {stream.recipient}
-          </h2>
-          <p className="stream-row__schedule">{stream.schedule}</p>
-          {stream.tags && stream.tags.length > 0 && (
-            <ul className="stream-row__tags" aria-label="Tags">
-              {stream.tags.map((tag) => (
-                <li key={tag} className="tag-pill">
-                  {tag}
-                </li>
-              ))}
-            </ul>
-          )}
+        <div className="stream-row__identity">
+          <RecipientAvatar recipient={stream.recipient} />
+          <div>
+            <h2 className="stream-row__recipient" id={`${stream.id}-recipient`}>
+              {stream.recipient}
+            </h2>
+            <p className="stream-row__schedule">{stream.schedule}</p>
+          </div>
         </div>
         <StatusBadge status={stream.status} />
       </div>
