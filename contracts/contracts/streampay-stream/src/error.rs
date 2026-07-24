@@ -47,6 +47,6 @@ pub enum Error {
     SelfStream = 12,
     /// 13: Contract has already been initialised.
     AlreadyInitialized = 13,
-    /// 14: `fee_bps` value exceeds `MAX_FEE_BPS` (10 000).
-    InvalidFeeBps = 14,
+    /// 14: Recipient does not have a trustline for the token.
+    RecipientTrustlineMissing = 14,
 }

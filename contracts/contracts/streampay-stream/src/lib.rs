@@ -22,7 +22,7 @@ mod error;
 mod events;
 mod fees;
 mod limits;
-mod instrument;
+mod multi;
 mod release;
 mod storage;
 mod withdrawer;
@@ -30,6 +30,7 @@ mod withdrawer;
 pub use error::Error;
 use soroban_sdk::contracttype;
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env};
+pub use multi::{RecipientAllocation, SplitStream};
 pub use storage::{Stream, StreamStatus};
 pub(crate) use storage::DataKey;
 
@@ -1629,6 +1630,132 @@ impl Contract {
         limit: u64,
     ) -> views::StreamPage {
         views::list_streams_by_recipient_and_status(&env, &recipient, status, start_after, limit)
+    }
+
+    // ── Multi-recipient split streams ────────────────────────────────────────
+
+    /// Creates a split stream that distributes tokens across multiple
+    /// recipients proportionally by weight.
+    ///
+    /// The `total_amount` is transferred from `sender` to the contract
+    /// immediately. Each recipient receives `total_vested * weight / total_weight`
+    /// as tokens vest linearly over the stream duration.
+    ///
+    /// # Parameters
+    /// - `sender`       — Address funding the stream.
+    /// - `token`        — Stellar asset contract address.
+    /// - `total_amount` — Total tokens (base units) to lock in escrow. Must be > 0.
+    /// - `start_time`   — Ledger timestamp when vesting begins.
+    /// - `end_time`     — Ledger timestamp when vesting ends.
+    /// - `recipients`   — Recipient addresses (must match `weights` in length).
+    /// - `weights`      — Proportional weights for each recipient (all > 0).
+    ///
+    /// # Returns
+    /// The numeric ID of the newly created split stream.
+    ///
+    /// # Errors
+    /// - [`Error::ContractPaused`] if the global pause flag is set.
+    /// - [`Error::InvalidAmount`] if `total_amount <= 0`, `recipients` has < 2
+    ///   entries, or lengths of `recipients` and `weights` differ.
+    /// - [`Error::SelfStream`] if any recipient equals `sender`.
+    /// - [`Error::TokenNotAllowed`] if the token has been blocked.
+    /// - [`Error::InvalidTimeRange`] if `end_time <= start_time` or
+    ///   `start_time < now`.
+    ///
+    /// # Auth
+    /// Requires authorisation from `sender`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_split_stream(
+        env: Env,
+        sender: Address,
+        token: Address,
+        total_amount: i128,
+        start_time: u64,
+        end_time: u64,
+        recipients: soroban_sdk::Vec<Address>,
+        weights: soroban_sdk::Vec<u64>,
+    ) -> Result<u64, Error> {
+        multi::create_split_stream(env, sender, token, total_amount, start_time, end_time, recipients, weights)
+    }
+
+    /// Withdraws accrued tokens from a split stream for a specific recipient.
+    ///
+    /// The recipient must be one of the stream's allocated recipients.
+    /// The `amount` must not exceed the recipient's currently withdrawable
+    /// balance.
+    ///
+    /// # Parameters
+    /// - `stream_id` — Numeric ID of the split stream.
+    /// - `recipient` — The recipient withdrawing (must match an allocation).
+    /// - `amount`    — Token amount (base units) to withdraw. Must be > 0.
+    ///
+    /// # Returns
+    /// The `amount` withdrawn on success.
+    ///
+    /// # Errors
+    /// - [`Error::ContractPaused`] if the global pause flag is set.
+    /// - [`Error::NotFound`] if `stream_id` does not exist.
+    /// - [`Error::AlreadySettled`] if the stream is already settled.
+    /// - [`Error::InvalidState`] if the stream is not `Active` or `Paused`,
+    ///   or the `recipient` is not in the allocation list.
+    /// - [`Error::OverWithdraw`] if `amount` exceeds the withdrawable balance.
+    ///
+    /// # Auth
+    /// Requires authorisation from `recipient`.
+    pub fn withdraw_split(
+        env: Env,
+        stream_id: u64,
+        recipient: Address,
+        amount: i128,
+    ) -> Result<i128, Error> {
+        multi::withdraw_split(env, stream_id, recipient, amount)
+    }
+
+    /// Cancels a split stream, distributing vested-but-unreleased amounts to
+    /// each recipient and returning unvested funds to the sender.
+    ///
+    /// # Parameters
+    /// - `stream_id` — Numeric ID of the split stream to cancel.
+    ///
+    /// # Returns
+    /// The final [`SplitStream`] record after cancellation.
+    ///
+    /// # Errors
+    /// - [`Error::NotFound`] if `stream_id` does not exist.
+    /// - [`Error::Unauthorized`] if caller is not the stream sender.
+    /// - [`Error::InvalidState`] if the stream is already settled or cancelled.
+    ///
+    /// # Auth
+    /// Requires authorisation from the stream's `sender`.
+    pub fn cancel_split_stream(env: Env, stream_id: u64) -> Result<SplitStream, Error> {
+        multi::cancel_split_stream(env, stream_id)
+    }
+
+    /// Returns the stored split stream record for `stream_id`.
+    ///
+    /// This is a read-only call and is never blocked by the pause flag.
+    pub fn get_split_stream(env: Env, stream_id: u64) -> Result<SplitStream, Error> {
+        multi::get_split_stream(env, stream_id)
+    }
+
+    /// Returns the withdrawable balance for a specific recipient in a split
+    /// stream.
+    ///
+    /// This is a read-only call and is never blocked by the pause flag.
+    ///
+    /// # Errors
+    /// - [`Error::NotFound`] if `stream_id` does not exist or `recipient`
+    ///   is not in the allocation list.
+    pub fn split_withdrawable(env: Env, stream_id: u64, recipient: Address) -> Result<i128, Error> {
+        multi::split_withdrawable(env, stream_id, recipient)
+    }
+
+    /// Returns the total vested amount for a split stream at the current
+    /// ledger timestamp.
+    ///
+    /// This is a read-only call and is never blocked by the pause flag.
+    pub fn split_stream_balance(env: Env, stream_id: u64) -> Result<i128, Error> {
+        multi::split_stream_balance(env, stream_id)
     }
 
     /// Returns a paginated list of streams filtered by sender and status.
