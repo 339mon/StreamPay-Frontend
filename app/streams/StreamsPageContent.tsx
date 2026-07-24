@@ -1,23 +1,35 @@
-import { useState, useEffect } from "react";
+"use client";
+
+import { useMemo, useState } from "react";
 import { StateTriad } from "../components/StateTriad";
 import { StreamRow, type StreamRowData } from "../components/StreamRow";
+import { Skeleton } from "../components/Skeleton";
 import type { StateTriadState } from "../components/StateTriad";
 
 export type StreamsViewState = "loading" | "populated" | "empty" | "error";
+
+export type DensityMode = "comfortable" | "compact";
 
 const streamListCopy = {
   description:
     "Track recipients, rates, statuses, and the next action from one scan-friendly streams list.",
   empty: {
     actionLabel: "Create your first stream",
-    description: "Get started with a single payout flow. Define a recipient, cadence, and amount in minutes.",
+    description:
+      "Get started with a single payout flow. Define a recipient, cadence, and amount in minutes.",
     eyebrow: "First-time setup",
     title: "Start your first stream",
-  },
+    guidanceSteps: [
+      "Choose a collaborator or vendor to pay.",
+      "Set a recurring cadence and payout amount.",
+      "Review the schedule before you launch it.",
+    ],
+  } as const,
   heading: "Streams",
-  loadingLabel: "Loading streams",
-  populatedCount: "3 active records",
+  loadingLabel: "Loading your streams…",
+  populatedCount: (n: number) => `${n} active record${n === 1 ? "" : "s"}`,
   primaryCta: "Create Stream",
+  exportCta: "Export History",
 } as const;
 
 export const mockStreams: StreamRowData[] = [
@@ -51,39 +63,86 @@ export const mockStreams: StreamRowData[] = [
 ];
 
 type StreamsPageContentProps = {
+  /** Initial page-level state (overrides auto-detection). */
   state?: StreamsViewState;
+  /** List of streams to render (when state==='populated' or auto-empty). */
   streams?: StreamRowData[];
+  /** Error headline copy (when state==='error'). */
   errorMessage?: string;
+  /** Handler bound to the error-state "Try again" button and top-level CTAs. */
   onRetry?: () => void;
+  /** Handler invoked when "Create Stream" CTA / EmptyState action is pressed. */
   onRetryAction?: () => void;
+  /** Starting density for the StreamRow list. Defaults to `"comfortable"`. */
+  initialDensity?: DensityMode;
 };
 
+/**
+ * Placeholder skeleton rendered during the `loading` state.
+ *
+ * Produces 3 stacked "ghost rows" whose layout mirrors a populated StreamRow,
+ * so the perceived page height is stable before data arrives. Uses the
+ * standard `<Skeleton>` component so shimmer + color tokens stay consistent.
+ *
+ * Label above the rows carries `role="status"` so it's announced politely
+ * rather than interrupting assistive tech.
+ */
+function StreamListSkeleton({ count = 3 }: { count?: number }) {
+  return (
+    <div role="status" aria-live="polite" className="stream-list-loading">
+      <p className="skeleton-heading-label">Loading your streams…</p>
+      <div className="stream-list" aria-hidden="true">
+        {Array.from({ length: count }).map((_, i) => (
+          <article
+            key={i}
+            className="stream-row stream-row--skeleton"
+            style={{ animationDelay: `${i * 80}ms` }}
+          >
+            <div className="stream-row__meta">
+              <Skeleton variant="title" width="45%" className="stream-row__skeleton-title" />
+              <Skeleton variant="text" width="30%" />
+            </div>
+            <div className="stream-row__indicators">
+              <Skeleton variant="badge" width="4.25rem" height="1.5rem" />
+              <Skeleton variant="button" width="5.5rem" height="2rem" />
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function StreamsPageContent({
-  state = "populated",
+  state,
   streams = mockStreams,
-  errorMessage,
+  errorMessage = "There was a problem fetching your streams. Check your connection and try again.",
   onRetry,
   onRetryAction,
+  initialDensity = "comfortable",
 }: StreamsPageContentProps) {
-  const [viewState, setViewState] = useState<StateTriadState>("loading");
+  const [density, setDensity] = useState<DensityMode>(initialDensity);
 
-  useEffect(() => {
-    // Map the prop state to StateTriad state
-    if (state === "loading") {
-      setViewState("loading");
-    } else if (state === "error") {
-      setViewState("error");
-    } else if (state === "empty" || streams.length === 0) {
-      setViewState("empty");
-    } else {
-      setViewState("success");
-    }
-  }, [state, streams]);
+  /**
+   * Derive the StateTriad internal state:
+   * - If a `state` prop was explicitly passed, trust it (allows test harness +
+   *   storybook overrides).
+   * - Otherwise auto-detect from `streams.length` (empty → "empty", else "success").
+   *
+   * The `loading` and `error` branches can only be entered via the explicit
+   * `state` prop because we can't reliably guess them from data alone.
+   */
+  const viewState: StateTriadState = useMemo(() => {
+    if (state === "loading") return "loading";
+    if (state === "error") return "error";
+    if (state === "empty" || streams.length === 0) return "empty";
+    return "success";
+  }, [state, streams.length]);
 
-  const handleCreateStream = () => {
-    // Navigate to create stream or open modal
-    console.log("Create stream clicked");
-    // window.location.href = "/streams/new";
+  const populatedCount = streamListCopy.populatedCount(streams.length);
+
+  const primaryOnClick = () => {
+    if (onRetryAction) onRetryAction();
   };
 
   return (
@@ -91,80 +150,89 @@ export function StreamsPageContent({
       <section className="page-hero">
         <div>
           <p className="page-hero__eyebrow">{streamListCopy.heading}</p>
-          <h1 className="page-hero__title">
-            Manage every stream from one list.
-          </h1>
+          <h1 className="page-hero__title">Manage every stream from one list.</h1>
           <p className="page-hero__description">{streamListCopy.description}</p>
         </div>
-        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: "0.75rem",
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
           <button className="button button--secondary" type="button">
-            Export History
+            {streamListCopy.exportCta}
           </button>
           <div className="density-toggle" aria-label="Streams list density">
             <span className="density-toggle__label">Density</span>
             <button
               type="button"
-              className={`density-toggle__switch ${density === "compact" ? "density-toggle__switch--compact" : ""}`}
+              className={`density-toggle__switch ${
+                density === "compact" ? "density-toggle__switch--compact" : ""
+              }`}
               role="switch"
               aria-checked={density === "compact"}
-              onClick={() => setDensity((d) => (d === "compact" ? "comfortable" : "compact"))}
+              onClick={() =>
+                setDensity((d) => (d === "compact" ? "comfortable" : "compact"))
+              }
             >
               <span className="density-toggle__thumb" aria-hidden="true" />
-              <span className="sr-only">{density === "compact" ? "Compact density" : "Comfortable density"}</span>
+              <span className="sr-only">
+                {density === "compact" ? "Compact density" : "Comfortable density"}
+              </span>
             </button>
           </div>
-          <button className="button button--primary" type="button">
+          <button className="button button--primary" type="button" onClick={primaryOnClick}>
             {streamListCopy.primaryCta}
           </button>
         </div>
       </section>
 
-      <section
-        className="stream-layout"
-        aria-labelledby="streams-overview-title"
-      >
+      <section className="stream-layout" aria-labelledby="streams-overview-title">
         <div className="section-heading">
           <div>
-            <h2
-              className="section-heading__title"
-              id="streams-overview-title"
-            >
+            <h2 className="section-heading__title" id="streams-overview-title">
               Streams overview
             </h2>
             <p className="section-heading__description">
-              Recipient, rate, status, and the primary next action stay visible
-              at a glance.
+              Recipient, rate, status, and the primary next action stay visible at
+              a glance.
             </p>
           </div>
-          {viewState === "success" && (
-            <p className="section-heading__meta">
-              {streamListCopy.populatedCount}
-            </p>
-          )}
+          {viewState === "success" ? (
+            <p className="section-heading__meta">{populatedCount}</p>
+          ) : null}
         </div>
 
-        {state === "loading" ? (
-          <StreamListSkeleton />
-        ) : isEmpty ? (
-          <EmptyState
-            actionLabel={streamListCopy.empty.actionLabel}
-            description={streamListCopy.empty.description}
-            eyebrow={streamListCopy.empty.eyebrow}
-            title={streamListCopy.empty.title}
-          >
-            <div className="empty-state__supporting">
-              <p className="empty-state__supporting-title">What you&apos;ll set up</p>
-              <ul className="empty-state__supporting-list">
-                <li>Choose a collaborator or vendor to pay.</li>
-                <li>Set a recurring cadence and payout amount.</li>
-                <li>Review the schedule before you launch it.</li>
-              </ul>
-            </div>
-          </EmptyState>
-        ) : (
+        <StateTriad
+          state={viewState}
+          loading={{
+            message: streamListCopy.loadingLabel,
+            count: 3,
+            renderSkeleton: () => <StreamListSkeleton count={3} />,
+          }}
+          empty={{
+            eyebrow: streamListCopy.empty.eyebrow,
+            title: streamListCopy.empty.title,
+            description: streamListCopy.empty.description,
+            actionLabel: streamListCopy.empty.actionLabel,
+            onAction: onRetryAction ?? onRetry,
+            guidanceSteps: [...streamListCopy.empty.guidanceSteps],
+          }}
+          error={{
+            heading: "Couldn't load your streams",
+            message: errorMessage,
+            onRetry: onRetry ?? onRetryAction,
+          }}
+        >
           <section aria-label="Streams list" className="stream-list">
-            {visibleStreams.map((stream) => (
-              <StreamRow key={stream.id} stream={stream} />
+            {streams.map((stream) => (
+              <StreamRow
+                key={stream.id}
+                stream={stream}
+                density={density === "compact" ? "compact" : undefined}
+              />
             ))}
           </section>
         </StateTriad>
@@ -172,3 +240,9 @@ export function StreamsPageContent({
     </main>
   );
 }
+
+/*
+ * Forward reference for convenience: callers importing this file can also
+ * import the skeleton rendering for Storybook / design-QA previews.
+ */
+export { StreamListSkeleton };
