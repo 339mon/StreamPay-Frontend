@@ -320,6 +320,49 @@ pub fn next_stream_id(env: &Env) -> u64 {
     id
 }
 
+/// Returns the current value of the stream-id counter **without** incrementing it.
+///
+/// This is the exclusive upper bound for paginated stream scans: all existing
+/// stream IDs satisfy `id < peek_next_stream_id(env)`.
+///
+/// Unlike [`next_stream_id`] this function is purely read-only: it never
+/// mutates the counter or extends any TTL. It is intended for view functions
+/// that need to enumerate streams without side-effects.
+///
+/// # Returns
+/// - The next stream ID that *would* be assigned to a new stream (i.e. the
+///   current counter value, which is one past the highest allocated ID).
+/// - `1` if no streams have been created yet (counter is unset).
+///
+/// # Errors
+/// This helper does not return errors.
+pub fn peek_next_stream_id(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::StreamCount)
+        .unwrap_or(1u64)
+}
+
+/// **Test-only helper** — sets the stream-id counter to an arbitrary value.
+///
+/// This allows unit tests in `views.rs` to seed the counter without going
+/// through the full `create_stream` flow. It is compiled only in `#[cfg(test)]`
+/// builds and is never available in the production WASM binary.
+///
+/// # Parameters
+/// - `next_id` — The value to write as the next stream ID. Pass `1` to
+///   represent an empty (freshly initialised) contract; pass `N + 1` to
+///   represent a state where `N` streams have been created.
+///
+/// # Errors
+/// This helper does not return errors.
+#[cfg(test)]
+pub fn set_next_stream_id_for_test(env: &Env, next_id: u64) {
+    env.storage()
+        .instance()
+        .set(&DataKey::StreamCount, &next_id);
+}
+
 /// Writes a stream record into persistent storage.
 ///
 /// This helper also extends the TTL for the corresponding per-stream entry.
@@ -394,43 +437,343 @@ pub fn add_withdrawer(env: &Env, stream_id: u64, withdrawer: &Address) {
         }
     }
 
-    list.push_back(withdrawer.clone());
-    env.storage().persistent().set(&key, &list);
-    extend_withdrawer_allowlist_ttl(env, stream_id);
-}
+    // ── constant sanity ──────────────────────────────────────────────────────
 
-/// Removes `withdrawer` from the per-stream allowlist.
-///
-/// This is a no-op if `withdrawer` is not currently in the allowlist.
-pub fn remove_withdrawer(env: &Env, stream_id: u64, withdrawer: &Address) {
-    let key = DataKey::WithdrawerAllowlist(stream_id);
-    let list: Vec<Address> = match env
-        .storage()
-        .persistent()
-        .get::<DataKey, Vec<Address>>(&key)
-    {
-        Some(l) => l,
-        None => return,
-    };
-
-    let mut new_list: Vec<Address> = Vec::new(env);
-    for existing in list.iter() {
-        if existing != *withdrawer {
-            new_list.push_back(existing);
-        }
+    /// The bumped TTL constants must be strictly larger than the previous
+    /// values that shipped before this PR.
+    #[test]
+    fn ttl_constants_are_greater_than_previous_values() {
+        // Stream: was 120_960 threshold, 483_840 extend_to
+        assert!(STREAM_TTL_MIN_REMAINING > 120_960);
+        assert!(STREAM_TTL_EXTEND_TO > 483_840);
+        // Instance: was 43_200 threshold, 120_960 extend_to
+        assert!(INSTANCE_TTL_MIN_REMAINING > 43_200);
+        assert!(INSTANCE_TTL_EXTEND_TO > 120_960);
+        // Token constants: new in this PR, just verify non-zero
+        assert!(TOKEN_TTL_MIN_REMAINING > 0);
+        assert!(TOKEN_TTL_EXTEND_TO >= TOKEN_TTL_MIN_REMAINING);
     }
 
-    env.storage().persistent().set(&key, &new_list);
-    extend_withdrawer_allowlist_ttl(env, stream_id);
-}
-
-/// Returns `true` if `caller` is present in the per-stream withdrawer allowlist.
-pub fn is_withdrawer_allowed(env: &Env, stream_id: u64, caller: &Address) -> bool {
-    let list = get_withdrawer_allowlist(env, stream_id);
-    for existing in list.iter() {
-        if existing == *caller {
-            return true;
-        }
+    /// Extend-to must always be larger than min-remaining for every storage tier.
+    #[test]
+    fn extend_to_is_larger_than_min_remaining_for_all_tiers() {
+        assert!(STREAM_TTL_EXTEND_TO > STREAM_TTL_MIN_REMAINING);
+        assert!(INSTANCE_TTL_EXTEND_TO > INSTANCE_TTL_MIN_REMAINING);
+        assert!(TOKEN_TTL_EXTEND_TO > TOKEN_TTL_MIN_REMAINING);
     }
-    false
+
+    // ── stream TTL ───────────────────────────────────────────────────────────
+
+    /// `set_stream` must write the entry and immediately extend its TTL to
+    /// exactly `STREAM_TTL_EXTEND_TO` ledgers from the current sequence.
+    #[test]
+    fn set_stream_extends_ttl_to_extend_to() {
+        let (env, contract_id) = setup();
+        env.as_contract(&contract_id, || {
+            let s = test_stream(&env);
+            set_stream(&env, 1, &s);
+            let ttl = env.storage().persistent().get_ttl(&DataKey::Stream(1));
+            assert_eq!(ttl, STREAM_TTL_EXTEND_TO);
+        });
+    }
+
+    /// When the remaining TTL of a stream entry drops just below
+    /// `STREAM_TTL_MIN_REMAINING`, `get_stream` must re-extend it to
+    /// `STREAM_TTL_EXTEND_TO`.
+    #[test]
+    fn get_stream_re_extends_ttl_when_below_threshold() {
+        let (env, contract_id) = setup();
+
+        env.as_contract(&contract_id, || {
+            set_stream(&env, 1, &test_stream(&env));
+        });
+
+        // Advance to the ledger where the remaining TTL is MIN_REMAINING - 1.
+        // At initial sequence 1_000 the entry expires at 1_000 + STREAM_TTL_EXTEND_TO.
+        // After advancing to 1_000 + STREAM_TTL_EXTEND_TO - STREAM_TTL_MIN_REMAINING + 1
+        // the remaining TTL = STREAM_TTL_MIN_REMAINING - 1 (one below threshold).
+        let new_seq = 1_000u32
+            .saturating_add(STREAM_TTL_EXTEND_TO)
+            .saturating_sub(STREAM_TTL_MIN_REMAINING)
+            .saturating_add(1);
+        env.ledger().set_sequence_number(new_seq);
+
+        env.as_contract(&contract_id, || {
+            let ttl_before = env.storage().persistent().get_ttl(&DataKey::Stream(1));
+            assert_eq!(ttl_before, STREAM_TTL_MIN_REMAINING - 1,
+                "pre-condition: TTL should be exactly one ledger below threshold");
+
+            let _ = get_stream(&env, 1);
+
+            let ttl_after = env.storage().persistent().get_ttl(&DataKey::Stream(1));
+            assert_eq!(ttl_after, STREAM_TTL_EXTEND_TO,
+                "get_stream must re-extend TTL to STREAM_TTL_EXTEND_TO");
+        });
+    }
+
+    /// `get_stream` on a non-existent stream must return `None` without
+    /// panicking — there is no TTL to extend for a missing entry.
+    #[test]
+    fn get_stream_returns_none_for_missing_id() {
+        let (env, contract_id) = setup();
+        env.as_contract(&contract_id, || {
+            let result = get_stream(&env, 999);
+            assert!(result.is_none());
+        });
+    }
+
+    // ── token-allowlist TTL ──────────────────────────────────────────────────
+
+    /// `set_token_allowed` must write the entry and extend its TTL to
+    /// exactly `TOKEN_TTL_EXTEND_TO`.
+    #[test]
+    fn set_token_allowed_extends_ttl_to_extend_to() {
+        let (env, contract_id) = setup();
+        let token = soroban_sdk::Address::generate(&env);
+        env.as_contract(&contract_id, || {
+            set_token_allowed(&env, &token, true);
+            let ttl = env
+                .storage()
+                .persistent()
+                .get_ttl(&DataKey::TokenAllowed(token.clone()));
+            assert_eq!(ttl, TOKEN_TTL_EXTEND_TO);
+        });
+    }
+
+    /// `is_token_blocked` must re-extend the TTL when the remaining TTL
+    /// drops below `TOKEN_TTL_MIN_REMAINING`.  This covers the hot read path
+    /// triggered inside `create_stream` on every call.
+    #[test]
+    fn is_token_blocked_re_extends_ttl_on_hot_read() {
+        let (env, contract_id) = setup();
+        let token = soroban_sdk::Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            set_token_allowed(&env, &token, false);
+        });
+
+        let new_seq = 1_000u32
+            .saturating_add(TOKEN_TTL_EXTEND_TO)
+            .saturating_sub(TOKEN_TTL_MIN_REMAINING)
+            .saturating_add(1);
+        env.ledger().set_sequence_number(new_seq);
+
+        env.as_contract(&contract_id, || {
+            let ttl_before = env
+                .storage()
+                .persistent()
+                .get_ttl(&DataKey::TokenAllowed(token.clone()));
+            assert_eq!(ttl_before, TOKEN_TTL_MIN_REMAINING - 1,
+                "pre-condition: TTL should be exactly one ledger below threshold");
+
+            let blocked = is_token_blocked(&env, &token);
+            assert!(blocked, "token should still be blocked");
+
+            let ttl_after = env
+                .storage()
+                .persistent()
+                .get_ttl(&DataKey::TokenAllowed(token.clone()));
+            assert_eq!(ttl_after, TOKEN_TTL_EXTEND_TO,
+                "is_token_blocked must re-extend TTL to TOKEN_TTL_EXTEND_TO");
+        });
+    }
+
+    /// `is_token_blocked` must also extend TTL when the entry is `allowed = true`.
+    #[test]
+    fn is_token_blocked_extends_ttl_for_allowed_token() {
+        let (env, contract_id) = setup();
+        let token = soroban_sdk::Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            set_token_allowed(&env, &token, true);
+        });
+
+        let new_seq = 1_000u32
+            .saturating_add(TOKEN_TTL_EXTEND_TO)
+            .saturating_sub(TOKEN_TTL_MIN_REMAINING)
+            .saturating_add(1);
+        env.ledger().set_sequence_number(new_seq);
+
+        env.as_contract(&contract_id, || {
+            let blocked = is_token_blocked(&env, &token);
+            assert!(!blocked, "token should be allowed");
+
+            let ttl_after = env
+                .storage()
+                .persistent()
+                .get_ttl(&DataKey::TokenAllowed(token.clone()));
+            assert_eq!(ttl_after, TOKEN_TTL_EXTEND_TO);
+        });
+    }
+
+    /// Calling `is_token_blocked` for a token that has no storage entry must
+    /// return `false` without panicking — there is nothing to extend.
+    #[test]
+    fn is_token_blocked_returns_false_and_no_panic_for_absent_token() {
+        let (env, contract_id) = setup();
+        let token = soroban_sdk::Address::generate(&env);
+        env.as_contract(&contract_id, || {
+            let blocked = is_token_blocked(&env, &token);
+            assert!(!blocked);
+        });
+    }
+
+    // ── instance TTL (admin + paused flag) ───────────────────────────────────
+
+    /// `set_admin` must extend the instance TTL to `INSTANCE_TTL_EXTEND_TO`.
+    #[test]
+    fn set_admin_extends_instance_ttl() {
+        let (env, contract_id) = setup();
+        let admin = soroban_sdk::Address::generate(&env);
+        env.as_contract(&contract_id, || {
+            set_admin(&env, &admin);
+            let ttl = env.storage().instance().get_ttl();
+            assert_eq!(ttl, INSTANCE_TTL_EXTEND_TO);
+        });
+    }
+
+    /// `get_admin` must re-extend the instance TTL when called on the hot path.
+    #[test]
+    fn get_admin_re_extends_instance_ttl() {
+        let (env, contract_id) = setup();
+        let admin = soroban_sdk::Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            set_admin(&env, &admin);
+        });
+
+        let new_seq = 1_000u32
+            .saturating_add(INSTANCE_TTL_EXTEND_TO)
+            .saturating_sub(INSTANCE_TTL_MIN_REMAINING)
+            .saturating_add(1);
+        env.ledger().set_sequence_number(new_seq);
+
+        env.as_contract(&contract_id, || {
+            let ttl_before = env.storage().instance().get_ttl();
+            assert_eq!(ttl_before, INSTANCE_TTL_MIN_REMAINING - 1);
+
+            let _ = get_admin(&env);
+
+            let ttl_after = env.storage().instance().get_ttl();
+            assert_eq!(ttl_after, INSTANCE_TTL_EXTEND_TO);
+        });
+    }
+
+    /// `is_paused` must extend the instance TTL on the hot path even when the
+    /// contract is not paused — this function is called on every state-changing
+    /// entrypoint.
+    #[test]
+    fn is_paused_re_extends_instance_ttl_on_hot_path() {
+        let (env, contract_id) = setup();
+
+        env.as_contract(&contract_id, || {
+            set_paused(&env, false);
+        });
+
+        let new_seq = 1_000u32
+            .saturating_add(INSTANCE_TTL_EXTEND_TO)
+            .saturating_sub(INSTANCE_TTL_MIN_REMAINING)
+            .saturating_add(1);
+        env.ledger().set_sequence_number(new_seq);
+
+        env.as_contract(&contract_id, || {
+            let ttl_before = env.storage().instance().get_ttl();
+            assert_eq!(ttl_before, INSTANCE_TTL_MIN_REMAINING - 1,
+                "pre-condition: TTL should be exactly one ledger below threshold");
+
+            let paused = is_paused(&env);
+            assert!(!paused);
+
+            let ttl_after = env.storage().instance().get_ttl();
+            assert_eq!(ttl_after, INSTANCE_TTL_EXTEND_TO,
+                "is_paused must re-extend instance TTL to INSTANCE_TTL_EXTEND_TO");
+        });
+    }
+
+    /// Calling `is_paused` when no `Paused` key exists must return `false`
+    /// without panicking and must NOT attempt to extend a non-existent entry.
+    #[test]
+    fn is_paused_returns_false_for_unset_flag() {
+        let (env, contract_id) = setup();
+        env.as_contract(&contract_id, || {
+            let paused = is_paused(&env);
+            assert!(!paused);
+        });
+    }
+
+    // ── peek_next_stream_id / set_next_stream_id_for_test ────────────────────
+
+    /// `peek_next_stream_id` returns `1` when no streams have ever been
+    /// created — same default as `next_stream_id`.
+    #[test]
+    fn peek_next_stream_id_returns_one_when_unset() {
+        let (env, contract_id) = setup();
+        env.as_contract(&contract_id, || {
+            assert_eq!(peek_next_stream_id(&env), 1u64,
+                "unset counter should default to 1");
+        });
+    }
+
+    /// After `next_stream_id` is called once, `peek_next_stream_id` must
+    /// return `2` (the next ID that *would* be assigned).
+    #[test]
+    fn peek_next_stream_id_reflects_incremented_counter() {
+        let (env, contract_id) = setup();
+        env.as_contract(&contract_id, || {
+            let assigned = next_stream_id(&env); // consumes ID 1, counter → 2
+            assert_eq!(assigned, 1u64);
+            assert_eq!(peek_next_stream_id(&env), 2u64,
+                "counter must now be 2 after one allocation");
+        });
+    }
+
+    /// `peek_next_stream_id` must NOT increment the counter — repeated calls
+    /// must return the same value.
+    #[test]
+    fn peek_next_stream_id_is_idempotent() {
+        let (env, contract_id) = setup();
+        env.as_contract(&contract_id, || {
+            let first = peek_next_stream_id(&env);
+            let second = peek_next_stream_id(&env);
+            assert_eq!(first, second,
+                "peek must be idempotent — counter must not change");
+        });
+    }
+
+    /// `set_next_stream_id_for_test` allows tests to seed the counter to any
+    /// arbitrary value; subsequent `peek` and `next_stream_id` calls should
+    /// observe the new value.
+    #[test]
+    fn set_next_stream_id_for_test_seeds_counter() {
+        let (env, contract_id) = setup();
+        env.as_contract(&contract_id, || {
+            set_next_stream_id_for_test(&env, 42);
+            assert_eq!(peek_next_stream_id(&env), 42u64,
+                "peek must return the value written by the test setter");
+
+            // next_stream_id should consume 42 and advance the counter to 43
+            let id = next_stream_id(&env);
+            assert_eq!(id, 42u64);
+            assert_eq!(peek_next_stream_id(&env), 43u64);
+        });
+    }
+
+    /// Setting the counter to `1` effectively resets to the empty-contract
+    /// state; `next_stream_id` should start again from `1`.
+    #[test]
+    fn set_next_stream_id_for_test_can_reset_to_one() {
+        let (env, contract_id) = setup();
+        env.as_contract(&contract_id, || {
+            // Advance the counter to 5
+            for _ in 0..4 {
+                next_stream_id(&env);
+            }
+            assert_eq!(peek_next_stream_id(&env), 5u64);
+
+            // Reset
+            set_next_stream_id_for_test(&env, 1);
+            assert_eq!(peek_next_stream_id(&env), 1u64);
+            assert_eq!(next_stream_id(&env), 1u64);
+        });
+    }
 }

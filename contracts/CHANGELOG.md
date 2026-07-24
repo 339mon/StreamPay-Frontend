@@ -13,6 +13,33 @@ and must never be reused — see the module rustdoc for details.
 ## [Unreleased]
 
 ### Added
+- **Paginated stream enumeration views** (GrantFox FWC26). Six read-only
+  entrypoints for off-chain consumers (indexers, frontends, analytics):
+  - `list_streams(start_after, limit)` — all streams, ordered by ID.
+  - `list_streams_by_sender(sender, start_after, limit)` — filtered by sender.
+  - `list_streams_by_recipient(recipient, start_after, limit)` — filtered by recipient.
+  - `list_streams_by_status(status, start_after, limit)` — filtered by status.
+  - `list_streams_recipient_status(recipient, status, start_after, limit)` — compound filter.
+  - `list_streams_sender_status(sender, status, start_after, limit)` — compound filter.
+
+  All views share a cursor-based pagination API (`StreamPage { streams, next_cursor }`).
+  The `limit` parameter is capped at `MAX_PAGE_SIZE = 100`. Views require no auth
+  and are unaffected by the global pause flag.
+
+- `storage::peek_next_stream_id` — side-effect-free read of the stream-ID counter
+  used by all view functions as the exclusive upper-bound for paginated scans.
+
+- Overflow-safe arithmetic: all pagination boundaries use `saturating_add` /
+  `saturating_sub`; `start_after = u64::MAX` and `limit = 0` are handled cleanly.
+
+- Focused unit tests in `views.rs` covering:
+  normal pagination, multi-page cursor chaining, filtered views, gap handling,
+  `u64::MAX` overflow safety, `limit = 0`, `start_after = Some(0)` identity,
+  and no-match cases for all filter combinations.
+
+- Integration tests in `views_integration_test.rs` covering all six view
+  entrypoints via the `ContractClient` interface with real on-chain state.
+
 - Module-level documentation for `error.rs`, `storage.rs`, and events
   schema in `events.rs`.
 - `init_with_token_allowlist(admin, tokens)` entrypoint. Performs the
