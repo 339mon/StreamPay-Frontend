@@ -264,3 +264,101 @@ describe("ReceiptShareCard", () => {
     });
   });
 });
+
+describe("ReceiptShareCard aria-live announcements", () => {
+  beforeEach(() => {
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: jest.fn().mockResolvedValue(undefined),
+      },
+    });
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.runOnlyPendingTimers();
+    jest.useRealTimers();
+    jest.clearAllMocks();
+  });
+
+  it("renders a live region present from the initial render", () => {
+    render(
+      <ReceiptShareCard streamId="s-1" recipient={RECIPIENT} amount="42.00" />,
+    );
+
+    const region = screen.getByRole("status");
+    expect(region).toHaveAttribute("aria-live", "polite");
+    expect(region).toHaveTextContent("");
+  });
+
+  it("announces that the share text was copied", async () => {
+    render(
+      <ReceiptShareCard streamId="s-1" recipient={RECIPIENT} amount="42.00" />,
+    );
+
+    const copyBtn = screen.getByRole("button", { name: "Copy share text" });
+    fireEvent.click(copyBtn);
+
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Share text copied to clipboard.",
+      );
+    });
+  });
+
+  it("announces when the recipient address is hidden", () => {
+    render(
+      <ReceiptShareCard
+        streamId="s-1"
+        recipient={RECIPIENT}
+        amount="42.00"
+        defaultMasked={false}
+      />,
+    );
+
+    const toggle = screen.getByLabelText("Mask recipient address for privacy");
+    fireEvent.click(toggle);
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Recipient address hidden.",
+    );
+  });
+
+  it("announces when the recipient address is shown", () => {
+    render(
+      <ReceiptShareCard streamId="s-1" recipient={RECIPIENT} amount="42.00" />,
+    );
+
+    const toggle = screen.getByLabelText("Mask recipient address for privacy");
+    fireEvent.click(toggle);
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Recipient address shown.",
+    );
+  });
+
+  it("keeps the live region mounted after the copy feedback resets", async () => {
+    render(
+      <ReceiptShareCard streamId="s-1" recipient={RECIPIENT} amount="42.00" />,
+    );
+
+    const copyBtn = screen.getByRole("button", { name: "Copy share text" });
+    fireEvent.click(copyBtn);
+
+    await waitFor(() => {
+      expect(copyBtn).toHaveTextContent("Copied");
+    });
+
+    jest.advanceTimersByTime(2000);
+
+    await waitFor(() => {
+      expect(copyBtn).toHaveTextContent("Copy");
+    });
+
+    // The announcement text itself persists (screen readers already spoke
+    // it) — only the visible button label reverts.
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Share text copied to clipboard.",
+    );
+  });
+});
