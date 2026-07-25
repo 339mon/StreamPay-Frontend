@@ -19,3 +19,18 @@ export const webhookDuration = new Histogram({
   buckets: [0.1, 0.5, 1, 2, 5],
   registers: [registry],
 });
+
+export const exportCounter = new Counter({
+  name: 'export_requests_total',
+  help: 'Total number of export API requests received',
+  labelNames: ['status', 'method'],
+  registers: [registry],
+});
+
+export const exportDuration = new Histogram({
+  name: 'export_request_duration_seconds',
+  help: 'Histogram of export API request processing duration in seconds',
+  labelNames: ['status', 'method'],
+  buckets: [0.1, 0.5, 1, 2, 5, 15],
+  registers: [registry],
+});
