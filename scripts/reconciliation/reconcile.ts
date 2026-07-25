@@ -12,7 +12,7 @@ export class ReconciliationService {
     this.tolerance = options.tolerance ?? 0n;
   }
 
-  public async runReconciliation(options?: { streamId?: string; dryRun?: boolean; dbStreams?: DbStream[] }): Promise<ReconciliationReport> {
+  public async runReconciliation(options?: { streamId?: string; dryRun?: boolean; dbStreams?: DbStream[]; signal?: AbortSignal }): Promise<ReconciliationReport> {
     const report: ReconciliationReport = {
       timestamp: new Date().toISOString(),
       totalStreamsChecked: 0,
@@ -24,6 +24,7 @@ export class ReconciliationService {
     const streamId = options?.streamId;
     const dryRun = options?.dryRun ?? false;
     const inputDbStreams = options?.dbStreams;
+    const signal = options?.signal;
 
     if (inputDbStreams) {
       // Reconcile over the provided streams
@@ -35,6 +36,11 @@ export class ReconciliationService {
         report.errors.push({ streamId, error: "Stream not found in DB" });
       } else {
         for (const dbStream of targetStreams) {
+          if (signal?.aborted) {
+            report.status = 'FAILED';
+            report.errors.push({ streamId: dbStream.id, error: 'Reconciliation aborted before this stream was checked.' });
+            return report;
+          }
           report.totalStreamsChecked++;
           try {
             await this.reconcileSingleStream(dbStream, report);
@@ -71,6 +77,11 @@ export class ReconciliationService {
         let hasMore = true;
 
         while (hasMore) {
+          if (signal?.aborted) {
+            report.status = 'FAILED';
+            report.errors.push({ streamId: 'all-streams', error: 'Reconciliation aborted before completion.' });
+            return report;
+          }
           let dbStreams: DbStream[] = [];
           try {
             dbStreams = await dbClient.getStreams(limit, offset);
@@ -89,6 +100,11 @@ export class ReconciliationService {
           }
 
           for (const dbStream of dbStreams) {
+            if (signal?.aborted) {
+              report.status = 'FAILED';
+              report.errors.push({ streamId: dbStream.id, error: 'Reconciliation aborted before this stream was checked.' });
+              return report;
+            }
             report.totalStreamsChecked++;
             try {
               await this.reconcileSingleStream(dbStream, report);
@@ -110,7 +126,7 @@ export class ReconciliationService {
       report.status = report.errors.length > 0 ? 'FAILED' : 'MISMATCH_FOUND';
     }
 
-    if (!dryRun) {
+    if (!dryRun && !signal?.aborted) {
       try {
         await dbClient.updateLastRunStatus(report.status, Date.now());
       } catch (err) {

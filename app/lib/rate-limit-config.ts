@@ -1,6 +1,7 @@
 export const RATE_LIMITS = {
   read: { limit: 60, windowMs: 60_000 },
   write: { limit: 10, windowMs: 60_000 },
+  export: { limit: 5, windowMs: 60_000 },
 } as const;
 
 export type LimitType = keyof typeof RATE_LIMITS;
@@ -33,6 +34,8 @@ export const ROUTE_LIMITS: Record<string, LimitType> = {
   "POST:/api/streams/*/stop": "write",
   "POST:/api/streams/*/settle": "write",
   "POST:/api/streams/*/withdraw": "write",
+  "POST:/api/streams/*/webhooks/test": "write",
+  "POST:/api/exports": "export",
 };
 
 export const STORE_TYPE = process.env.RATE_LIMIT_STORE_TYPE || "in-memory";

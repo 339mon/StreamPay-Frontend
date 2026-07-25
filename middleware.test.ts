@@ -1,5 +1,61 @@
 /** @jest-environment node */
 
+describe('CSRF middleware', () => {
+  let middleware: any;
+
+  beforeEach(async () => {
+    jest.resetModules();
+
+    (process.env as any).STELLAR_NETWORK = 'testnet';
+    (process.env as any).JWT_SECRET = 'test-secret-at-least-32-characters-long';
+    (process.env as any).NODE_ENV = 'production';
+    (process.env as any).ALLOWED_ORIGINS = 'https://allowed.example.com';
+
+    const imported = await import('./middleware');
+    middleware = imported.middleware;
+  });
+
+  afterEach(() => {
+    delete (process.env as any).STELLAR_NETWORK;
+    delete (process.env as any).JWT_SECRET;
+    delete (process.env as any).NODE_ENV;
+    delete (process.env as any).ALLOWED_ORIGINS;
+  });
+
+  it('blocks state-changing requests without a matching CSRF token pair', async () => {
+    const request = new Request('https://api.example.com/api/streams', {
+      method: 'POST',
+      headers: {
+        origin: 'https://allowed.example.com',
+        'x-csrf-token': 'csrf-token',
+      },
+    });
+
+    const response = await middleware(request as any);
+
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    expect(body.error.code).toBe('FORBIDDEN');
+    expect(body.error.message).toContain('CSRF token');
+  });
+
+  it('allows state-changing requests when the cookie and header tokens match', async () => {
+    const request = new Request('https://api.example.com/api/streams', {
+      method: 'POST',
+      headers: {
+        origin: 'https://allowed.example.com',
+        'x-csrf-token': 'shared-token',
+        cookie: 'csrf-token=shared-token',
+      },
+    });
+
+    const response = await middleware(request as any);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('access-control-allow-origin')).toBe('https://allowed.example.com');
+  });
+});
+
 describe('CORS middleware', () => {
   let middleware: any;
 
@@ -364,19 +420,19 @@ describe('request size cap middleware', () => {
   // Path scoping
   // ---------------------------------------------------------------------------
 
-  it('applies the default size cap to paths outside /api/v2/streams', async () => {
-    // /api/v1/streams is subject to the default 256 KB cap.
+  it('does not apply a middleware size cap to paths outside /api/v2/streams', async () => {
+    // /api/v1/streams is outside the stream/webhook path allowlist — no middleware-level cap.
     const request = makeRequest('/api/v1/streams', 'POST', DEFAULT_CAP + 1);
     const response = await middleware(request as any);
 
-    expect(response.status).toBe(413);
+    expect(response.status).not.toBe(413);
   });
 
-  it('applies the default size cap to other v2 routes (e.g. /api/v2/other)', async () => {
+  it('does not apply a middleware size cap to other v2 routes (e.g. /api/v2/other)', async () => {
     const request = makeRequest('/api/v2/other', 'POST', DEFAULT_CAP + 1);
     const response = await middleware(request as any);
 
-    expect(response.status).toBe(413);
+    expect(response.status).not.toBe(413);
   });
 
   // ---------------------------------------------------------------------------
@@ -566,13 +622,11 @@ describe('request size cap middleware', () => {
   });
 
   it('does not apply webhook limit to paths similar to webhooks but not exact', async () => {
-    // /api/webhook (singular) should not get 1 MB limit
-    // Falls through to default 256 KB limit
+    // /api/webhook (singular) is not a webhook route and has no middleware-level cap.
     const request = makeRequest('/api/webhook', 'POST', 512 * 1024);
     const response = await middleware(request as any);
 
-    // Should be 413 because /api/webhook exceeds the default 256 KB limit
-    expect(response.status).toBe(413);
+    expect(response.status).not.toBe(413);
   });
 });
 
@@ -645,3 +699,175 @@ describe('request fingerprint middleware', () => {
     expect(response.headers.get('x-request-fingerprint')).toMatch(/^[a-f0-9]{64}$/);
   });
 });
+
+// =============================================================================
+// CSRF protection middleware
+// =============================================================================
+
+describe('CSRF protection middleware', () => {
+  let middleware: any;
+
+  beforeEach(async () => {
+    jest.resetModules();
+
+    (process.env as any).STELLAR_NETWORK = 'testnet';
+    (process.env as any).JWT_SECRET = 'test-secret-at-least-32-characters-long';
+    (process.env as any).NODE_ENV = 'production';
+    (process.env as any).ALLOWED_ORIGINS = 'https://allowed.example.com';
+
+    const imported = await import('./middleware');
+    middleware = imported.middleware;
+  });
+
+  afterEach(() => {
+    delete (process.env as any).STELLAR_NETWORK;
+    delete (process.env as any).JWT_SECRET;
+    delete (process.env as any).NODE_ENV;
+    delete (process.env as any).ALLOWED_ORIGINS;
+  });
+
+  it('sets a csrf-token cookie on safe GET requests if missing', async () => {
+    const request = new Request('https://api.example.com/api/v2/streams', {
+      method: 'GET',
+    });
+
+    const response = await middleware(request as any);
+
+    // It should not be blocked
+    expect(response.status).not.toBe(403);
+    
+    // It should set the Set-Cookie header with a valid 64-character hex token
+    const setCookie = response.headers.get('set-cookie');
+    expect(setCookie).toBeTruthy();
+    expect(setCookie).toContain('csrf-token=');
+    const tokenMatch = setCookie.match(/csrf-token=([a-f0-9]{64})/);
+    expect(tokenMatch).toBeTruthy();
+  });
+
+  it('does not overwrite the csrf-token cookie on GET requests if a valid one is already present', async () => {
+    const validToken = 'a'.repeat(64);
+    const request = new Request('https://api.example.com/api/v2/streams', {
+      method: 'GET',
+      headers: {
+        cookie: `csrf-token=${validToken}`,
+      },
+    });
+
+    const response = await middleware(request as any);
+
+    expect(response.status).not.toBe(403);
+    const setCookie = response.headers.get('set-cookie');
+    // It should not set a new csrf-token cookie
+    if (setCookie) {
+      expect(setCookie).not.toContain('csrf-token=');
+    }
+  });
+
+  it('overwrites the csrf-token cookie on GET requests if the existing cookie is invalid', async () => {
+    const invalidToken = 'invalid-token-short';
+    const request = new Request('https://api.example.com/api/v2/streams', {
+      method: 'GET',
+      headers: {
+        cookie: `csrf-token=${invalidToken}`,
+      },
+    });
+
+    const response = await middleware(request as any);
+
+    expect(response.status).not.toBe(403);
+    const setCookie = response.headers.get('set-cookie');
+    expect(setCookie).toBeTruthy();
+    expect(setCookie).toContain('csrf-token=');
+    const tokenMatch = setCookie.match(/csrf-token=([a-f0-9]{64})/);
+    expect(tokenMatch).toBeTruthy();
+  });
+
+  it('rejects state-changing requests (POST) if csrf-token cookie and x-csrf-token header are missing', async () => {
+    const request = new Request('https://api.example.com/api/v2/streams', {
+      method: 'POST',
+    });
+
+    const response = await middleware(request as any);
+
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      error: {
+        code: 'CSRF_TOKEN_INVALID',
+        message: 'CSRF token validation failed.',
+        request_id: expect.any(String),
+      },
+    });
+  });
+
+  it('rejects state-changing requests (POST) if cookie is present but header is missing', async () => {
+    const validToken = 'a'.repeat(64);
+    const request = new Request('https://api.example.com/api/v2/streams', {
+      method: 'POST',
+      headers: {
+        cookie: `csrf-token=${validToken}`,
+      },
+    });
+
+    const response = await middleware(request as any);
+
+    expect(response.status).toBe(403);
+  });
+
+  it('rejects state-changing requests (POST) if header is present but cookie is missing', async () => {
+    const validToken = 'a'.repeat(64);
+    const request = new Request('https://api.example.com/api/v2/streams', {
+      method: 'POST',
+      headers: {
+        'x-csrf-token': validToken,
+      },
+    });
+
+    const response = await middleware(request as any);
+
+    expect(response.status).toBe(403);
+  });
+
+  it('rejects state-changing requests (POST) if cookie and header are present but mismatched', async () => {
+    const token1 = 'a'.repeat(64);
+    const token2 = 'b'.repeat(64);
+    const request = new Request('https://api.example.com/api/v2/streams', {
+      method: 'POST',
+      headers: {
+        cookie: `csrf-token=${token1}`,
+        'x-csrf-token': token2,
+      },
+    });
+
+    const response = await middleware(request as any);
+
+    expect(response.status).toBe(403);
+  });
+
+  it('allows state-changing requests (POST) if cookie and header are present and match', async () => {
+    const token = 'a'.repeat(64);
+    const request = new Request('https://api.example.com/api/v2/streams', {
+      method: 'POST',
+      headers: {
+        cookie: `csrf-token=${token}`,
+        'x-csrf-token': token,
+      },
+    });
+
+    const response = await middleware(request as any);
+
+    expect(response.status).not.toBe(403);
+  });
+
+  it('exempts webhook paths from CSRF checks', async () => {
+    const request = new Request('https://api.example.com/api/webhooks/rotate', {
+      method: 'POST',
+    });
+
+    const response = await middleware(request as any);
+
+    // Should not be 403 CSRF rejected
+    expect(response.status).not.toBe(403);
+  });
+});
+

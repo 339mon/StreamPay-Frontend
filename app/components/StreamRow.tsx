@@ -1,13 +1,17 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { StatusBadge, type StreamStatus } from "./StatusBadge";
+import type { StreamStatus } from "@/app/types/openapi";
+import { StatusBadge } from "./StatusBadge";
 import { StreamProgress } from "./StreamProgress";
 import { MiniBurnDown } from "./MiniBurnDown";
+import { RecipientAvatar } from "./RecipientAvatar";
 import { ErrorToast } from "./ErrorToast";
 import { fetchWithIdempotency } from "../../lib/apiClient";
-import { isStreamPayError, formatErrorForDisplay } from "../lib/errors";
-import type { StreamPayError } from "../lib/errors";
+import { isStreamPayError } from "../lib/errors/mapper";
+import { formatErrorForDisplay } from "../lib/errors/handler";
+import type { StreamPayError } from "../lib/errors/types";
+import { LiveRegion } from "../../src/components/LiveRegion";
 
 export type StreamRowData = {
   id: string;
@@ -24,13 +28,16 @@ export type StreamRowData = {
   startedAt?: string;
   /** ISO-8601 expected end timestamp. Used by StreamProgress fallback. */
   endsAt?: string;
+  /** Freeform labels shown on the row and used by the tag-chip filter. */
+  tags?: string[];
 };
 
 type StreamRowProps = {
   stream: StreamRowData;
+  density?: "cozy" | "compact";
 };
 
-export function StreamRow({ stream }: StreamRowProps) {
+export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<StreamPayError | null>(null);
   const [isIncidentMode] = useState(false);
@@ -53,7 +60,9 @@ export function StreamRow({ stream }: StreamRowProps) {
 
   const handleAction = async () => {
     if (isIncidentMode) {
-      setErrorMsg("On-chain operations are temporarily paused during incident mode.");
+      setErrorMsg(
+        "On-chain operations are temporarily paused during incident mode.",
+      );
       return;
     }
 
@@ -63,7 +72,7 @@ export function StreamRow({ stream }: StreamRowProps) {
 
     try {
       const actionRoute = stream.nextAction.toLowerCase();
-      
+
       await fetchWithIdempotency(`/api/streams/${stream.id}/${actionRoute}`, {
         method: "POST",
         headers: {
@@ -82,7 +91,6 @@ export function StreamRow({ stream }: StreamRowProps) {
       setTimeout(() => {
         actionButtonRef.current?.focus();
       }, 0);
-
     } catch (err: unknown) {
       const streamError = isStreamPayError(err) ? err : null;
       const display = streamError
@@ -94,25 +102,44 @@ export function StreamRow({ stream }: StreamRowProps) {
       }
 
       setError(streamError);
-      setSrAnnouncement(`Stream action failed: ${display.message || "Unknown error occurred"}.`);
+      setSrAnnouncement(
+        `Stream action failed: ${display.message || "Unknown error occurred"}.`,
+      );
     } finally {
       setIsProcessing(false);
     }
   };
 
   return (
-    <article className="stream-row" aria-labelledby={`${stream.id}-recipient`}>
+    <article
+      className={[
+        "stream-row",
+        `stream-row--${stream.status}`,
+        density === "compact" ? "stream-row--compact" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-status={stream.status}
+      aria-labelledby={`${stream.id}-recipient`}
+    >
+      {/* Decorative color-blind safe pattern overlay. Purely visual so it
+          is hidden from assistive technology — state is already conveyed via
+          the StatusBadge (glyph + label) and the StreamProgress (label +
+          percentage). */}
+      <div className="stream-row__pattern" aria-hidden="true" />
+
       {/* Dynamic polite status messenger announcement node layer for assistive tech */}
-      <div className="sr-only" aria-live="polite" role="status">
-        {srAnnouncement}
-      </div>
+      <LiveRegion message={srAnnouncement} />
 
       <div className="stream-row__primary">
-        <div>
-          <h2 className="stream-row__recipient" id={`${stream.id}-recipient`}>
-            {stream.recipient}
-          </h2>
-          <p className="stream-row__schedule">{stream.schedule}</p>
+        <div className="stream-row__identity">
+          <RecipientAvatar recipient={stream.recipient} />
+          <div>
+            <h2 className="stream-row__recipient" id={`${stream.id}-recipient`}>
+              {stream.recipient}
+            </h2>
+            <p className="stream-row__schedule">{stream.schedule}</p>
+          </div>
         </div>
         <StatusBadge status={stream.status} />
       </div>
@@ -120,7 +147,11 @@ export function StreamRow({ stream }: StreamRowProps) {
       <div className="stream-row__meta">
         <div>
           <dt>Rate</dt>
-          <dd className={stream.status === "active" ? "stream-row__accrued--animated" : ""}>
+          <dd
+            className={`tabular-nums ${
+              stream.status === "active" ? "stream-row__accrued--animated" : ""
+            }`.trim()}
+          >
             {stream.rate}
           </dd>
         </div>
@@ -136,7 +167,9 @@ export function StreamRow({ stream }: StreamRowProps) {
           stream.status !== "draft" && (
             <div>
               <dt>Burn-down</dt>
-              <dd className={`stream-row__burndown stream-row__burndown--${stream.status}`}>
+              <dd
+                className={`stream-row__burndown stream-row__burndown--${stream.status} tabular-nums`}
+              >
                 <MiniBurnDown
                   totalAmount={stream.totalAmount}
                   accruedAmount={stream.accruedAmount}
@@ -158,7 +191,7 @@ export function StreamRow({ stream }: StreamRowProps) {
         />
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", alignItems: "flex-end" }}>
+      <div className="stream-row__action-wrap">
         <button
           ref={actionButtonRef}
           className={`button button--secondary stream-row__action ${isProcessing ? "button--busy" : ""}`}
@@ -177,9 +210,13 @@ export function StreamRow({ stream }: StreamRowProps) {
             <span>{stream.nextAction}</span>
           )}
         </button>
-        {errorMsg && <p className="detail-incident-warning" role="alert">{errorMsg}</p>}
+        {errorMsg && (
+          <p className="detail-incident-warning" role="alert">
+            {errorMsg}
+          </p>
+        )}
       </div>
-      
+
       {error && (
         <ErrorToast
           error={error}

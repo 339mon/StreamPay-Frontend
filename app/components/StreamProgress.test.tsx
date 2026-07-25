@@ -58,3 +58,54 @@ describe("StreamProgress reduced-motion fallback", () => {
     expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "25");
   });
 });
+
+describe("StreamProgress color-blind safe patterns", () => {
+  afterEach(() => {
+    // @ts-expect-error reset between tests
+    delete window.matchMedia;
+  });
+
+  it.each([
+    ["active", "cb-pattern--active"],
+    ["paused", "cb-pattern--paused"],
+    ["draft", "cb-pattern--draft"],
+    ["ended", "cb-pattern--ended"],
+    ["withdrawn", "cb-pattern--ended"],
+    ["cancelled", "cb-pattern--cancelled"],
+  ] as const)("applies the %s fill texture class", (status, patternClass) => {
+    mockMatchMedia(false);
+    const { container } = render(
+      <StreamProgress status={status} accruedAmount={50} totalAmount={100} />
+    );
+
+    const fill = container.querySelector(".stream-progress__fill");
+    expect(fill).toHaveClass("cb-pattern");
+    expect(fill).toHaveClass(patternClass);
+  });
+});
+
+describe("StreamProgress keyboard focus", () => {
+  afterEach(() => {
+    // @ts-expect-error reset between tests
+    delete window.matchMedia;
+  });
+
+  it("is reachable via keyboard tab order", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="active" accruedAmount={50} totalAmount={100} />);
+
+    const bar = screen.getByRole("progressbar");
+    expect(bar).toHaveAttribute("tabIndex", "0");
+  });
+
+  it("receives real DOM focus and carries the shared focus-visible class hook", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="active" accruedAmount={50} totalAmount={100} />);
+
+    const bar = screen.getByRole("progressbar");
+    bar.focus();
+
+    expect(bar).toHaveFocus();
+    expect(bar).toHaveClass("stream-progress__track");
+  });
+});

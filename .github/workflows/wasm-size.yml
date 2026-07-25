@@ -1,0 +1,61 @@
+name: WASM Size Budget
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "contracts/**"
+      - ".github/workflows/wasm-size.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "contracts/**"
+      - ".github/workflows/wasm-size.yml"
+
+jobs:
+  wasm-size-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo registry + build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            contracts/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('contracts/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Build Contracts
+        working-directory: contracts
+        run: cargo build --target wasm32-unknown-unknown --release
+
+      - name: Check WASM Size
+        run: |
+          echo "Checking WASM size for contracts..."
+          MAX_SIZE=102400 # 100KB in bytes
+          FAILED=0
+          
+          for file in $(find ./contracts/target/wasm32-unknown-unknown/release -maxdepth 1 -name "*.wasm"); do
+            SIZE=$(stat -c%s "$file")
+            echo "File: $file - Size: $SIZE bytes"
+            
+            if [ "$SIZE" -gt "$MAX_SIZE" ]; then
+              echo "❌ Error: $file exceeds the 100KB budget ($SIZE bytes > $MAX_SIZE bytes)"
+              FAILED=1
+            else
+              echo "✅ $file is within the budget"
+            fi
+          done
+          
+          if [ "$FAILED" -eq 1 ]; then
+            exit 1
+          fi

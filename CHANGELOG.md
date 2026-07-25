@@ -8,6 +8,27 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
 
 ## [Unreleased]
 
+### Performance (issue #85 — reduce initial render time)
+- **SplashScreen delay reduced**: mandatory display time cut from 2 400 ms to
+  400 ms and fade-out from 600 ms to 300 ms, removing ~2.3 s of forced
+  blocking before the app becomes interactive.
+- **SplashScreen lazy-loaded**: the branded overlay is now loaded via
+  `next/dynamic` with `ssr: false`, removing it from the critical render path
+  entirely. First paint of the actual page content no longer waits for the
+  splash bundle.
+- **Home page converted to React Server Component**: `app/page.tsx` no longer
+  carries `"use client"`. The `localStorage`-dependent onboarding state is
+  isolated in a new `OnboardingManager` client component, keeping the bulk of
+  the page as a zero-JS static render.
+- **Unused import removed**: `StreamPrimer` was imported but never rendered in
+  `app/page.tsx`; the import has been removed to reduce the client bundle.
+- **Image optimisation enabled**: `next.config.ts` now specifies
+  `images.formats: ["image/avif", "image/webp"]` so the 339 KB PNG splash
+  icon (and any future images) are served in modern formats to supporting
+  browsers.
+- **HTTP compression enabled**: `compress: true` added to `next.config.ts`
+  (gzip/brotli for all responses).
+
 ### Added
 - MRU (most-recently-used) wallet ordering on the connect modal: the
   provider a user picked last surfaces at the top of `WalletModal`,
@@ -35,6 +56,17 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
   and the middleware dispatch surface.
 
 ### Security
+- Per-user rate limit on `POST /api/exports`: 5 requests/min per
+  authenticated wallet, checked after JWT verification so forged tokens
+  cannot spend a victim's budget, returning the standard `429` envelope with
+  `Retry-After`. Rate-limit buckets are now keyed per limit tier
+  (read/write/export), so throttling one endpoint class can no longer drain
+  a user's allowance for another.
+- Wallet auth IP rate limiting on `GET|POST /api/auth/wallet` now returns the
+  canonical `{ error: { code, message, request_id } }` envelope on 429, echoes
+  `x-request-id`, and emits structured `wallet_ip_rate_limit_exceeded` logs
+  with correlation IDs. OpenAPI documents the login (5/min) and challenge
+  (20/min) IP limits.
 - Boundary validation rejects NaN/Infinity rates, negative latency, 1xx/2xx/
   3xx status codes, malformed path prefixes (whitespace or control chars),
   empty/whitespace `errorCode` / `errorMessage`, and non-integer seeds.
@@ -43,12 +75,21 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
 - Centralized accessible toast queue (`ToastProvider`, `useToast`) with
   severity icons, auto-dismiss, queue limits, and `role="status"` live
   region announcements per WCAG 2.1 AA.
+- A shared keyboard focus-visible layer for interactive controls so focus
+  indicators remain clear in both light and dark themes.
 - Request fingerprinting for fraud signals on all `/api/*` routes. Edge
   middleware computes a stable SHA-256 hash from non-volatile request signals
   (method, path, client IP, User-Agent, Accept-Language, Accept-Encoding) and
   forwards it via the internal `x-request-fingerprint` header. Fingerprint
   observations are written to the append-only audit log with correlation IDs,
   and privileged stream audit events now include `requestFingerprint` metadata.
+
+### Changed
+- The streams list now surfaces a distinct filtered-results empty state when the
+  current view has no matches, with clearer guidance to clear filters and return
+  to the broader streams list.
+- `StreamProgress` now emits shared color-blind pattern classes on its fill so
+  stream state remains distinguishable beyond color alone.
 
 ### Fixed
 - `GET /api/orgs/:orgId/members` and `POST /api/orgs/:orgId/members` now return
