@@ -4,6 +4,7 @@ import { errorResponse, ErrorCode } from "@/app/lib/errors/server";
 import { validateCsrfToken } from "@/app/lib/auth";
 import { checkIpRateLimit, rateLimitResponse } from "@/lib/rateLimitIp";
 import { getCorrelationContext, logger } from "@/app/lib/logger";
+import { logAccessEvent } from "@/src/middleware/accessLog";
 import {
   validateWalletChallengeQuery,
   validateWalletVerifyBody,
@@ -138,8 +139,17 @@ function handleIfNoneMatch(
  * naturally prevents serving stale cached challenges.
  */
 export async function GET(req: NextRequest) {
+  const startedAt = Date.now();
   const rateCheck = await checkIpRateLimit(req, "challenge");
   if (!rateCheck.allowed) {
+    logAccessEvent({
+      method: "GET",
+      path: req.nextUrl.pathname,
+      status: 429,
+      durationMs: Date.now() - startedAt,
+      errorCode: "rate_limit_exceeded",
+      errorMessage: "Wallet challenge rate limit exceeded",
+    });
     return rateLimitResponse(rateCheck.retryAfter!, req);
   }
 
@@ -201,6 +211,23 @@ export async function GET(req: NextRequest) {
     const record = createWalletChallengeRecord(address!, challenge, expiresAt);
     walletChallengeStore.push(record);
 
+    logAccessEvent({
+      method: "GET",
+      path: req.nextUrl.pathname,
+      status: 200,
+      durationMs: Date.now() - startedAt,
+    });
+
+    return NextResponse.json({ challenge, expires_at: expiresAt }, { status: 200 });
+  } catch (error) {
+    logAccessEvent({
+      method: "GET",
+      path: req.nextUrl.pathname,
+      status: 500,
+      durationMs: Date.now() - startedAt,
+      errorCode: ErrorCode.WALLET_CHALLENGE_FAILED,
+      errorMessage: error instanceof Error ? error.message : "Unknown error",
+    });
     const body = { challenge, expires_at: expiresAt };
     const etag = computeStrongEtag(body);
 
@@ -227,9 +254,18 @@ export async function GET(req: NextRequest) {
  * Rate-limited by IP (5 req/min) to prevent brute-force login attempts.
  */
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
   // IP throttle for login (POST /api/auth/wallet) — 5 req/min per IP
   const rateCheck = await checkIpRateLimit(req, "login");
   if (!rateCheck.allowed) {
+    logAccessEvent({
+      method: "POST",
+      path: req.nextUrl.pathname,
+      status: 429,
+      durationMs: Date.now() - startedAt,
+      errorCode: "rate_limit_exceeded",
+      errorMessage: "Wallet login rate limit exceeded",
+    });
     return rateLimitResponse(rateCheck.retryAfter!, req);
   }
 
@@ -266,6 +302,14 @@ export async function POST(req: NextRequest) {
 
     // Double-submit cookie check
     if (!validateCsrfToken(csrfCookie, csrfHeader)) {
+      logAccessEvent({
+        method: "POST",
+        path: req.nextUrl.pathname,
+        status: 403,
+        durationMs: Date.now() - startedAt,
+        errorCode: ErrorCode.FORBIDDEN,
+        errorMessage: "CSRF token mismatch.",
+      });
       return errorResponse(
         ErrorCode.FORBIDDEN,
         "CSRF token mismatch.",
@@ -276,6 +320,14 @@ export async function POST(req: NextRequest) {
     const isValid = signature.length > 0;
 
     if (!isValid) {
+      logAccessEvent({
+        method: "POST",
+        path: req.nextUrl.pathname,
+        status: 401,
+        durationMs: Date.now() - startedAt,
+        errorCode: ErrorCode.UNAUTHORIZED,
+        errorMessage: "Signature verification failed.",
+      });
       return errorResponse(
         ErrorCode.UNAUTHORIZED,
         "Signature verification failed.",
@@ -286,8 +338,23 @@ export async function POST(req: NextRequest) {
     const token = `tok_${Buffer.from(address).toString("base64url").slice(0, 24)}`;
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
+    logAccessEvent({
+      method: "POST",
+      path: req.nextUrl.pathname,
+      status: 200,
+      durationMs: Date.now() - startedAt,
+    });
+
     return NextResponse.json({ token, expires_at: expiresAt }, { status: 200 });
-  } catch {
+  } catch (error) {
+    logAccessEvent({
+      method: "POST",
+      path: req.nextUrl.pathname,
+      status: 500,
+      durationMs: Date.now() - startedAt,
+      errorCode: ErrorCode.WALLET_VERIFY_FAILED,
+      errorMessage: error instanceof Error ? error.message : "Unknown error",
+    });
     return errorResponse(
       ErrorCode.WALLET_VERIFY_FAILED,
       "Failed to verify wallet signature.",
