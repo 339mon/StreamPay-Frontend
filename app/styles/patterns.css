@@ -79,6 +79,7 @@
   .cb-pattern--draft,
   .cb-pattern--paused,
   .cb-pattern--ended,
+  .cb-pattern--withdrawn,
   .cb-pattern--cancelled {
     position: relative;
     isolation: isolate;
@@ -90,6 +91,7 @@
   .cb-pattern--draft::before,
   .cb-pattern--paused::before,
   .cb-pattern--ended::before,
+  .cb-pattern--withdrawn::before,
   .cb-pattern--cancelled::before {
     content: "";
     position: absolute;
@@ -118,7 +120,8 @@
   .cb-pattern--paused::before {
     background-image: var(--cb-pattern-paused);
   }
-  .cb-pattern--ended::before {
+  .cb-pattern--ended::before,
+  .cb-pattern--withdrawn::before {
     background-image: var(--cb-pattern-ended);
   }
   .cb-pattern--cancelled::before {
@@ -131,6 +134,7 @@
   .cb-pattern--draft > *,
   .cb-pattern--paused > *,
   .cb-pattern--ended > *,
+  .cb-pattern--withdrawn > *,
   .cb-pattern--cancelled > * {
     position: relative;
     z-index: 1;
@@ -194,7 +198,14 @@
   .status-badge.cb-pattern--draft::before,
   .status-badge.cb-pattern--paused::before,
   .status-badge.cb-pattern--ended::before,
-  .status-badge.cb-pattern--cancelled::before {
+  .status-badge.cb-pattern--withdrawn::before,
+  .status-badge.cb-pattern--cancelled::before,
+  .receipt-status-badge.cb-pattern--active::before,
+  .receipt-status-badge.cb-pattern--draft::before,
+  .receipt-status-badge.cb-pattern--paused::before,
+  .receipt-status-badge.cb-pattern--ended::before,
+  .receipt-status-badge.cb-pattern--withdrawn::before,
+  .receipt-status-badge.cb-pattern--cancelled::before {
     /* Slightly lighter opacity inside the small badge so the glyph + text
        remain clearly legible. */
     opacity: calc(var(--cb-pattern-opacity) * 0.7);
@@ -210,6 +221,7 @@
   .stream-progress__fill.cb-pattern--draft,
   .stream-progress__fill.cb-pattern--paused,
   .stream-progress__fill.cb-pattern--ended,
+  .stream-progress__fill.cb-pattern--withdrawn,
   .stream-progress__fill.cb-pattern--cancelled {
     background-blend-mode: multiply;
   }

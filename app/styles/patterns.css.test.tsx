@@ -18,7 +18,7 @@ describe("shared color-blind pattern layer", () => {
   });
 
   it("keeps the pattern textures layered under the fill color", () => {
-    expect(styleText).toContain("background-image:\n      var(--cb-pattern-active),");
+    expect(styleText.replace(/\r\n/g, "\n")).toContain("background-image:\n      var(--cb-pattern-active),");
     expect(styleText).toContain("background-blend-mode: multiply;");
   });
 });
