@@ -88,9 +88,8 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
 - The streams list now surfaces a distinct filtered-results empty state when the
   current view has no matches, with clearer guidance to clear filters and return
   to the broader streams list.
-- The receipt route loading UI now uses the shared `Skeleton` component for the
-  first paint state, preserving the receipt shell layout while the server data
-  resolves.
+- `StreamProgress` now emits shared color-blind pattern classes on its fill so
+  stream state remains distinguishable beyond color alone.
 
 ### Fixed
 - `GET /api/orgs/:orgId/members` and `POST /api/orgs/:orgId/members` now return
