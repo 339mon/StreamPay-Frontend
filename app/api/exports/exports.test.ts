@@ -55,6 +55,43 @@ describe("Exports API — authentication and scoping", () => {
       const job = db.exportJobs.get(data.id);
       expect(job?.ownerId).toBe("GOWNER1");
     });
+
+    it("returns 422 if format is invalid", async () => {
+      const token = makeToken("GOWNER1");
+      const res = await createExport(new Request("http://localhost/api/exports", {
+        method: "POST",
+        headers: { "authorization": `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ format: "xml" })
+      }));
+      expect(res.status).toBe(422);
+      const json = await res.json();
+      expect(json.error.code).toBe("VALIDATION_ERROR");
+      expect(json.error.details[0].field).toBe("format");
+    });
+
+    it("returns 422 if unknown fields are present", async () => {
+      const token = makeToken("GOWNER1");
+      const res = await createExport(new Request("http://localhost/api/exports", {
+        method: "POST",
+        headers: { "authorization": `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ unknownField: "foo" })
+      }));
+      expect(res.status).toBe(422);
+      const json = await res.json();
+      expect(json.error.code).toBe("VALIDATION_ERROR");
+    });
+    
+    it("accepts valid JSON body and uses provided format", async () => {
+      const token = makeToken("GOWNER1");
+      const res = await createExport(new Request("http://localhost/api/exports", {
+        method: "POST",
+        headers: { "authorization": `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ format: "json" })
+      }));
+      expect(res.status).toBe(201);
+      const json = await res.json();
+      expect(json.data.fileName).toMatch(/\.json$/);
+    });
   });
 
   // ── GET /api/exports/[id] ─────────────────────────────────────────────────

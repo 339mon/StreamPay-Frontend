@@ -2,13 +2,16 @@ import { createHmac } from "crypto";
 import { NextResponse } from "next/server";
 import { tryAuthenticateRequest, JWT_SECRET } from "@/app/lib/auth";
 import { ExportJob, getStore } from "@/app/lib/db";
+import { getCorrelationContext, logger } from "@/app/lib/logger";
+import { validateExportRequest } from "@/src/validators/exports";
 
 const EXPORT_RETENTION_DAYS = 7;
 const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1 hour
 const EXPORT_PROCESS_DELAY_MS = 50;
 
 function createErrorResponse(code: string, message: string, status: number) {
-  return NextResponse.json({ error: { code, message, request_id: "mock-request-id" } }, { status });
+  const context = getCorrelationContext();
+  return NextResponse.json({ error: { code, message, request_id: context?.request_id } }, { status });
 }
 
 function createAuditRecord(exportId: string, type: "export.requested" | "export.downloaded" | "export.expired", details?: Record<string, unknown>) {
@@ -108,6 +111,33 @@ export async function POST(request: Request) {
     return createErrorResponse("UNAUTHORIZED", "Missing or invalid authorization header", 401);
   }
 
+  let body: unknown = {};
+  const contentType = request.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    try {
+      const text = await request.text();
+      if (text) body = JSON.parse(text);
+    } catch {
+      return createErrorResponse("INVALID_REQUEST", "Request body must be valid JSON", 400);
+    }
+  }
+
+  const validationResult = validateExportRequest(body);
+  if (!validationResult.success) {
+    logger.warn("Export request validation failed", { errors: validationResult.errors });
+    return NextResponse.json(
+      {
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "One or more fields are invalid.",
+          details: validationResult.errors,
+          request_id: getCorrelationContext()?.request_id,
+        },
+      },
+      { status: 422 }
+    );
+  }
+
   const id = crypto.randomUUID();
   const requestedAt = new Date().toISOString();
   const expiresAt = new Date(Date.now() + EXPORT_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
@@ -118,12 +148,15 @@ export async function POST(request: Request) {
     requestedAt,
     status: "pending",
     expiresAt,
-    fileName: `streampay-export-${requestedAt.slice(0, 10)}.csv`,
+    fileName: `streampay-export-${requestedAt.slice(0, 10)}.${validationResult.data.format}`,
     rows: 0,
   };
 
   exportRepository.jobs.set(id, job);
-  createAuditRecord(id, "export.requested", { requestedAt, retentionDays: EXPORT_RETENTION_DAYS });
+  createAuditRecord(id, "export.requested", { requestedAt, retentionDays: EXPORT_RETENTION_DAYS, format: validationResult.data.format });
+  
+  logger.info("Export job created", { jobId: id, ownerId: job.ownerId, format: validationResult.data.format });
+  
   scheduleExportJob(id);
 
   return NextResponse.json({ data: job, links: { self: `/api/exports/${id}` } }, { status: 201 });
