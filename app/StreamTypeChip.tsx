@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import '../src/styles/typography.css'; // Adjust path if needed
 import styles from './StreamTypeChip.module.css';
+import { EmptyState } from '../src/components/EmptyState';
+import { StreamTypeChipEmptyIllustration } from './StreamTypeChipEmptyIllustration';
 
 /**
  * Tracks the user's `prefers-reduced-motion` setting.
@@ -33,21 +35,65 @@ function usePrefersReducedMotion(): boolean {
 /**
  * StreamTypeChip component.
  * Displays a stream type and an amount using tabular figures for better alignment.
- * 
- * @param {string} type - The type of stream.
- * @param {number} amount - The amount associated with the stream.
+ * When empty, renders a themed EmptyState with a helpful CTA (Issue #1085).
  */
 export interface StreamTypeChipProps {
-  type: string;
-  amount: number;
+  /** The type of stream. Optional when rendering the empty state. */
+  type?: string;
+  /** The amount associated with the stream. Optional when empty. */
+  amount?: number;
+  /** Force the empty-state illustration + CTA. */
+  isEmpty?: boolean;
+  /** Empty-state title override. */
+  emptyTitle?: string;
+  /** Empty-state description override. */
+  emptyDescription?: string;
+  /** Empty-state CTA label. */
+  emptyCtaText?: string;
+  /** Empty-state CTA handler. */
+  onEmptyCtaClick?: () => void;
+  /** Additional CSS class names. */
+  className?: string;
 }
 
-export const StreamTypeChip: React.FC<StreamTypeChipProps> = ({ type, amount }) => {
+export const StreamTypeChip: React.FC<StreamTypeChipProps> = ({
+  type,
+  amount,
+  isEmpty = false,
+  emptyTitle,
+  emptyDescription,
+  emptyCtaText,
+  onEmptyCtaClick,
+  className = '',
+}) => {
   const prefersReducedMotion = usePrefersReducedMotion();
+  const showEmpty =
+    isEmpty ||
+    type === undefined ||
+    type === null ||
+    (typeof type === 'string' && type.trim() === '');
+
+  if (showEmpty) {
+    return (
+      <EmptyState
+        title={emptyTitle ?? 'No stream type selected'}
+        description={
+          emptyDescription ??
+          'Pick a stream type to see amount details, or create a new stream to get started.'
+        }
+        illustration={<StreamTypeChipEmptyIllustration />}
+        ctaText={emptyCtaText ?? 'Create a stream'}
+        onCtaClick={onEmptyCtaClick}
+        className={`stream-type-chip-empty ${className}`.trim()}
+        testId="stream-type-chip-empty-state"
+        variant="stream-type-chip"
+      />
+    );
+  }
 
   return (
     <div
-      className={`${styles.streamTypeChip} stream-type-chip`}
+      className={`${styles.streamTypeChip} stream-type-chip ${className}`.trim()}
       tabIndex={0}
       data-reduced-motion={prefersReducedMotion}
       style={{
@@ -57,11 +103,10 @@ export const StreamTypeChip: React.FC<StreamTypeChipProps> = ({ type, amount }) 
     >
       <span className={styles.type}>{type}</span>
       <span className={`tabular-nums ${styles.amount}`}>
-        {amount}
+        {amount ?? 0}
       </span>
     </div>
   );
 };
 
 export default StreamTypeChip;
-
