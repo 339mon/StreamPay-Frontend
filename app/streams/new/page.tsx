@@ -141,6 +141,8 @@ export default function NewStreamPage() {
       <section style={{ maxWidth: '560px', margin: '0 auto', padding: '0 1.5rem' }}>
         <form
           onSubmit={handleSubmit}
+          data-testid="create-stream-form"
+          className="create-stream-form"
           style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}
         >
           {/* Recipient */}
@@ -162,6 +164,7 @@ export default function NewStreamPage() {
               value={recipient}
               onChange={(e) => setRecipient(e.target.value)}
               placeholder="GABC..."
+              className="csf-field"
               style={{ ...fieldStyle, marginTop: '0.5rem' }}
             />
           </div>
@@ -184,6 +187,7 @@ export default function NewStreamPage() {
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="100"
+                className="csf-field"
                 style={fieldStyle}
               />
             </div>
@@ -198,6 +202,7 @@ export default function NewStreamPage() {
                 id="token"
                 value={token}
                 onChange={(e) => setToken(e.target.value as 'XLM' | 'USDC')}
+                className="csf-field"
                 style={fieldStyle}
               >
                 <option value="XLM">XLM</option>
@@ -217,14 +222,14 @@ export default function NewStreamPage() {
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
             <button
               type="button"
-              className="button button--secondary"
+              className="button button--secondary csf-field"
               onClick={() => window.history.back()}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className={`button button--primary${isSubmitting ? ' button--busy' : ''}`}
+              className={`button button--primary csf-field${isSubmitting ? ' button--busy' : ''}`}
               disabled={isSubmitting}
             >
               {isSubmitting ? 'Creating…' : 'Create Stream'}
