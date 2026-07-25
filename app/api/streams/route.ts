@@ -18,6 +18,7 @@ import {
   validateListStreamsQuery,
 } from "@/app/lib/stream-validation";
 import type { Stream } from "@/app/types/openapi";
+import { createCacheHeaders, createStrongEtag, isIfNoneMatchMatch } from "@/src/middleware/etag";
 
 function errorResponse(code: string, message: string, status: number) {
   return createErrorResponse(code, message, status);
@@ -111,16 +112,30 @@ export async function GET(request: Request) {
       ? encodeCursor(paginatedStreams[paginatedStreams.length - 1].id)
       : null;
 
+  const payload = {
+    data: paginatedStreams,
+    links: { self: `/api/v1/streams?limit=${limit}` },
+    meta: { hasNext, nextCursor, total: streams.length },
+  };
+  const etag = createStrongEtag(payload);
+
+  if (isIfNoneMatchMatch(etag, getHeader(request, "if-none-match"))) {
+    return new NextResponse(null, {
+      status: 304,
+      headers: createCacheHeaders(etag),
+    });
+  }
+
   logger.info("Streams listed successfully", {
     count: paginatedStreams.length,
     total: streamRepository.streams.size,
   });
 
-  return NextResponse.json({
-    data: paginatedStreams,
-    links: { self: `/api/v1/streams?limit=${limit}` },
-    meta: { hasNext, nextCursor, total: streams.length },
-  });
+  const response = NextResponse.json(payload);
+  for (const [name, value] of Object.entries(createCacheHeaders(etag))) {
+    response.headers.set(name, value);
+  }
+  return response;
 }
 
 export async function POST(request: Request) {
