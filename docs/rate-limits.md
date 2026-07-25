@@ -65,6 +65,7 @@ All API endpoints are rate limited:
 | GET | `/api/identity/me` | Read |
 | GET | `/api/auth/wallet` | Challenge (20 req/min per IP) |
 | POST | `/api/auth/wallet` | Login (5 req/min per IP) |
+| POST | `/api/exports` | Export (5 req/min per user) |
 
 ## Wallet Authentication Limits
 

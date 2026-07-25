@@ -2,6 +2,17 @@ import { createHmac } from "crypto";
 import { NextResponse } from "next/server";
 import { tryAuthenticateRequest, JWT_SECRET } from "@/app/lib/auth";
 import { ExportJob, getStore } from "@/app/lib/db";
+import { checkRateLimit, rateLimitResponse, type ClientIdentity } from "@/app/lib/rate-limit";
+import { getLimitForRoute } from "@/app/lib/rate-limit-config";
+import { recordRequest, recordThrottle } from "@/app/lib/rate-limit-metrics";
+
+function getRequestUrl(request: Request): URL {
+  try {
+    return new URL(request.url);
+  } catch {
+    return new URL("http://localhost/api/exports");
+  }
+}
 
 const EXPORT_RETENTION_DAYS = 7;
 const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1 hour
@@ -107,6 +118,23 @@ export async function POST(request: Request) {
   if (!actor) {
     return createErrorResponse("UNAUTHORIZED", "Missing or invalid authorization header", 401);
   }
+
+  // Limit by the verified wallet, after auth, so a forged bearer token can
+  // neither mint fresh buckets nor spend another user's budget.
+  const url = getRequestUrl(request);
+  const limitType = getLimitForRoute("POST", url.pathname);
+  const identity: ClientIdentity = {
+    type: "wallet",
+    value: actor.walletAddress,
+    displayValue: actor.walletAddress.slice(0, 16) + "...",
+  };
+  const rateCheck = await checkRateLimit(identity, limitType);
+
+  if (!rateCheck.allowed) {
+    recordThrottle(url.pathname, limitType, identity.type, identity.displayValue);
+    return rateLimitResponse(rateCheck.retryAfter!);
+  }
+  recordRequest(url.pathname);
 
   const id = crypto.randomUUID();
   const requestedAt = new Date().toISOString();
