@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { LiveRegion } from "../src/components/LiveRegion";
+import { EmptyState } from "../src/components/EmptyState";
 
 export type WalletState = "disconnected" | "connecting" | "connected" | "error" | "disconnecting";
 
@@ -30,6 +31,8 @@ export interface WalletBadgeProps {
   announcement?: string;
   /** Additional CSS class names */
   className?: string;
+  /** Whether to show a detailed empty state when disconnected */
+  showEmptyState?: boolean;
 }
 
 /**
@@ -48,6 +51,7 @@ export function WalletBadge({
   politeness = "polite",
   announcement,
   className = "",
+  showEmptyState = false,
 }: WalletBadgeProps) {
   const [srMessage, setSrMessage] = useState<string>("");
 
@@ -125,6 +129,26 @@ export function WalletBadge({
   };
 
   const isInteractive = Boolean(onClick || (state === "disconnected" && onConnect));
+
+  if (showEmptyState && state === "disconnected") {
+    return (
+      <EmptyState
+        title="Wallet Disconnected"
+        description="Connect your Stellar wallet to participate in the GrantFox campaign."
+        illustration={
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" />
+            <path d="M3 5v14a2 2 0 0 0 2 2h16v-5" />
+            <path d="M18 12a2 2 0 0 0 0 4h4v-4Z" />
+          </svg>
+        }
+        ctaText="Connect Wallet"
+        onCtaClick={onConnect}
+        className={className}
+        testId="wallet-badge-empty-state"
+      />
+    );
+  }
 
   return (
     <div
