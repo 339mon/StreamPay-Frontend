@@ -6,14 +6,15 @@
  * • 200 with strong ETag and valid data (existing)
  * • 400 on invalid limit parameter (existing)
  * • 304 Not Modified when ETag matches (existing)
- * • 429 when rate limit is exhausted (new)
- * • 429 resets after the retry window (new)
- * • Rate limit is scoped per identity — different callers get independent buckets (new)
- * • Rate limit is NOT applied when identity is under the limit (new)
+ * • Cursor pagination over (created_at, id) (new)
+ * • 422 on malformed / empty cursor (new)
+ * • 429 when rate limit is exhausted (existing)
+ * • Rate limit is scoped per identity — different callers get independent buckets
  */
 
 import { GET } from './route';
 import { getCorrelationContext } from '@/app/lib/logger';
+import { encodeCompositeCursor } from '@/app/lib/db';
 import {
   setRateLimitStore,
   resetRateLimitStore,
@@ -111,7 +112,13 @@ describe('GET /api/reconciliation – existing behaviour', () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.status).toBe('success');
-    expect(data.data).toHaveLength(2);
+    expect(data.data).toHaveLength(3);
+    expect(data.data[0]).toHaveProperty('created_at');
+    expect(data.meta).toMatchObject({
+      total: 3,
+      hasNext: false,
+      nextCursor: null,
+    });
 
     const etag = res.headers.get('etag');
     expect(etag).toMatch(/^"[a-f0-9]{64}"$/);
@@ -135,6 +142,67 @@ describe('GET /api/reconciliation – existing behaviour', () => {
 
     expect(res2.status).toBe(304);
     expect(res2.headers.get('etag')).toBe(etag);
+  });
+});
+
+describe('GET /api/reconciliation – cursor pagination', () => {
+  it('orders records by (created_at DESC, id DESC)', async () => {
+    const res = await GET(makeRequest({ search: '?limit=10' }));
+    const body = await res.json();
+
+    expect(body.data.map((row: { id: string }) => row.id)).toEqual([
+      'rec-pub-3',
+      'rec-pub-2',
+      'rec-pub-1',
+    ]);
+  });
+
+  it('returns the next page via composite cursor', async () => {
+    const page1 = await GET(makeRequest({ search: '?limit=2' }));
+    const json1 = await page1.json();
+
+    expect(json1.data).toHaveLength(2);
+    expect(json1.data[0].id).toBe('rec-pub-3');
+    expect(json1.data[1].id).toBe('rec-pub-2');
+    expect(json1.meta.hasNext).toBe(true);
+    expect(json1.meta.nextCursor).toBe(
+      encodeCompositeCursor(json1.data[1].created_at, json1.data[1].id),
+    );
+
+    const page2 = await GET(
+      makeRequest({ search: `?limit=2&cursor=${encodeURIComponent(json1.meta.nextCursor)}` }),
+    );
+    const json2 = await page2.json();
+
+    expect(json2.data).toHaveLength(1);
+    expect(json2.data[0].id).toBe('rec-pub-1');
+    expect(json2.meta.hasNext).toBe(false);
+    expect(json2.meta.nextCursor).toBeNull();
+  });
+
+  it('returns 422 for a malformed cursor', async () => {
+    const res = await GET(makeRequest({ search: '?cursor=not-base64' }));
+
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error.code).toBe('INVALID_CURSOR');
+  });
+
+  it('returns 422 for an empty cursor', async () => {
+    const res = await GET(makeRequest({ search: '?cursor=' }));
+
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error.code).toBe('INVALID_CURSOR');
+  });
+
+  it('treats an unknown but well-formed cursor as a no-op start', async () => {
+    const cursor = encodeCompositeCursor('2020-01-01T00:00:00.000Z', 'missing-id');
+    const res = await GET(makeRequest({ search: `?cursor=${encodeURIComponent(cursor)}` }));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data).toHaveLength(3);
   });
 });
 
