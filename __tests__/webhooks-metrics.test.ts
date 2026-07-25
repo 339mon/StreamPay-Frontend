@@ -11,7 +11,7 @@ jest.mock('@/app/lib/logger', () => ({
 
 describe('Webhooks API Route with Metrics', () => {
   beforeEach(() => {
-    registry.clear();
+    registry.resetMetrics();
     jest.clearAllMocks();
   });
 
