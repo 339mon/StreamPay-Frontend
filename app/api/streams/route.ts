@@ -9,6 +9,7 @@ import {
   setIdempotency,
 } from "@/app/lib/db";
 import { getCorrelationContext, logger } from "@/app/lib/logger";
+import { logAccessEvent } from "@/src/middleware/accessLog";
 import { streamsRateLimit } from "@/src/middleware/rateLimit";
 import { checkTokenAllowed, normaliseToken } from "@/app/lib/token-allowlist";
 import {
@@ -40,13 +41,19 @@ function getHeader(request: Request, name: string): string | null {
 }
 
 export async function GET(request: Request) {
+  const startedAt = Date.now();
   const { streamRepository } = getStore();
+  const url = getRequestUrl(request, "/api/streams");
+  const path = url.pathname;
+  const logAccess = (status: number, extra?: Record<string, unknown>) =>
+    logAccessEvent({ method: "GET", path, status, durationMs: Date.now() - startedAt, ...extra });
+
   const rateLimitResult = await streamsRateLimit(request, "GET", "/api/streams");
   if (!rateLimitResult.allowed) {
+    logAccess(429, { errorCode: "rate_limit_exceeded" });
     return rateLimitResult.response;
   }
 
-  const url = getRequestUrl(request, "/api/streams");
   const { searchParams } = url;
   const rawQuery: Record<string, string> = {};
   for (const key of ["limit", "status", "cursor"] as const) {
@@ -59,6 +66,7 @@ export async function GET(request: Request) {
   const { errors: queryErrors, values: query } = validateListStreamsQuery(rawQuery);
   if (queryErrors.length > 0) {
     logger.warn("Stream list validation failed", { errors: queryErrors });
+    logAccess(422, { errorCode: "VALIDATION_ERROR" });
     return NextResponse.json(
       {
         error: {
@@ -90,6 +98,7 @@ export async function GET(request: Request) {
     try {
       cursorId = decodeCursor(cursor);
     } catch {
+      logAccess(422, { errorCode: "INVALID_CURSOR" });
       return errorResponse("INVALID_CURSOR", "Malformed cursor", 422);
     }
     const cursorIndex = streams.findIndex((stream) => stream.id === cursorId);
@@ -113,6 +122,7 @@ export async function GET(request: Request) {
   const etag = createStrongEtag(payload);
 
   if (isIfNoneMatchMatch(etag, getHeader(request, "if-none-match"))) {
+    logAccess(304);
     return new NextResponse(null, {
       status: 304,
       headers: createCacheHeaders(etag),
@@ -123,6 +133,7 @@ export async function GET(request: Request) {
     count: paginatedStreams.length,
     total: streamRepository.streams.size,
   });
+  logAccess(200, { count: paginatedStreams.length, total: streamRepository.streams.size });
 
   const response = NextResponse.json(payload);
   for (const [name, value] of Object.entries(createCacheHeaders(etag))) {
@@ -132,9 +143,15 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
   const { idempotencyStore, streamRepository } = getStore();
+  const path = getRequestUrl(request, "/api/streams").pathname;
+  const logAccess = (status: number, extra?: Record<string, unknown>) =>
+    logAccessEvent({ method: "POST", path, status, durationMs: Date.now() - startedAt, ...extra });
+
   const rateLimitResult = await streamsRateLimit(request, "POST", "/api/streams");
   if (!rateLimitResult.allowed) {
+    logAccess(429, { errorCode: "rate_limit_exceeded" });
     return rateLimitResult.response;
   }
 
@@ -146,6 +163,7 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
+    logAccess(400, { errorCode: "INVALID_REQUEST" });
     return errorResponse("INVALID_REQUEST", "Request body must be valid JSON", 400);
   }
 
@@ -155,11 +173,13 @@ export async function POST(request: Request) {
     const cached = checkIdempotency(idempotencyStore, token, fingerprint);
     if (cached) {
       if (!cached.ok) {
+        logAccess(409, { errorCode: "IDEMPOTENCY_CONFLICT" });
         return NextResponse.json(
           { error: { code: "IDEMPOTENCY_CONFLICT", message: "Idempotency key has been used with a different request." } },
           { status: 409 },
         );
       }
+      logAccess(cached.status, { idempotent: true });
       return NextResponse.json(cached.body, { status: cached.status });
     }
   }
@@ -170,6 +190,7 @@ export async function POST(request: Request) {
     logger.warn("Stream creation validation failed", {
       errors: validationErrors,
     });
+    logAccess(422, { errorCode: "VALIDATION_ERROR" });
     return NextResponse.json(
       {
         error: {
@@ -199,12 +220,14 @@ export async function POST(request: Request) {
     normalisedToken = normaliseToken(tokenStr);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
+    logAccess(422, { errorCode: "INVALID_TOKEN" });
     return createErrorResponse("INVALID_TOKEN", `Invalid token format: ${msg}`, 422);
   }
 
   const allowlistResult = await checkTokenAllowed(normalisedToken);
   if (!allowlistResult.accepted) {
     logger.warn("Stream creation rejected: token not in allowlist", { token: normalisedToken });
+    logAccess(422, { errorCode: "TOKEN_NOT_ALLOWED" });
     return createErrorResponse("TOKEN_NOT_ALLOWED", allowlistResult.reason, 422);
   }
 
@@ -229,5 +252,6 @@ export async function POST(request: Request) {
     setIdempotency(idempotencyStore, token, fingerprint, 201, payload);
   }
 
+  logAccess(201, { streamId: id });
   return NextResponse.json(payload, { status: 201 });
 }
