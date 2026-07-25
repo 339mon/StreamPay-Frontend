@@ -61,6 +61,7 @@ export function ReceiptCard({
     <article
       className={styles.card}
       aria-label="Stream receipt card"
+      tabIndex={0}
     >
       <header className={styles.header}>
         <div className={styles.brand}>

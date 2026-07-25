@@ -71,4 +71,16 @@ describe("ReceiptCard", () => {
       expect(screen.getByText("Copied")).toBeInTheDocument();
     });
   });
+
+  it("is focusable for keyboard navigation", () => {
+    render(<ReceiptCard {...defaultProps} />);
+    const article = screen.getByRole("article", { name: "Stream receipt card" });
+    
+    // Should have tabIndex=0 to receive keyboard focus
+    expect(article).toHaveAttribute("tabindex", "0");
+    
+    // Simulate focus
+    article.focus();
+    expect(article).toHaveFocus();
+  });
 });
