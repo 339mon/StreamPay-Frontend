@@ -20,6 +20,8 @@
  *   reach it in tab order and hear its current value; a visible focus-visible
  *   outline (see `app/styles/focus.css`) marks it while focused via keyboard,
  *   and stays hidden for mouse/touch interaction.
+ * - Aria-live region announces status transitions (active, paused, ended, etc.)
+ *   and progress milestones (every 10 %) to assistive technologies.
  *
  * ## Amounts
  * Accepts raw i128-compatible bigint or number values. No decimal conversion
@@ -28,8 +30,9 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { StreamStatus } from "@/app/types/openapi";
+import { LiveRegion } from "./LiveRegion";
 
 // ── Reduced-motion ─────────────────────────────────────────────────────────────
 
@@ -173,6 +176,52 @@ export function StreamProgress({
   const label   = deriveLabel(status, percent);
   const prefersReducedMotion = usePrefersReducedMotion();
 
+  // ── ARIA live announcements ────────────────────────────────────────────────
+  const [srAnnouncement, setSrAnnouncement] = useState("");
+  const prevStatusRef = useRef<StreamStatus | null>(null);
+  const prevPercentRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const prevStatus  = prevStatusRef.current;
+    const prevPercent = prevPercentRef.current;
+
+    // First render — seed refs without announcing.
+    if (prevStatus === null) {
+      prevStatusRef.current  = status;
+      prevPercentRef.current = percent;
+      return;
+    }
+
+    // Status changed — announce the transition.
+    if (prevStatus !== status) {
+      if (status === "ended") {
+        setSrAnnouncement("Stream completed");
+      } else if (status === "withdrawn") {
+        setSrAnnouncement("Stream withdrawn");
+      } else if (status === "cancelled") {
+        setSrAnnouncement("Stream cancelled");
+      } else if (status === "paused") {
+        setSrAnnouncement("Stream paused");
+      } else if (status === "active") {
+        setSrAnnouncement("Stream resumed");
+      } else if (status === "draft") {
+        setSrAnnouncement("Stream draft created");
+      }
+      prevStatusRef.current  = status;
+      prevPercentRef.current = percent;
+      return;
+    }
+
+    // Percent changed by ≥ 10 % — announce progress milestone.
+    if (
+      prevPercent !== null &&
+      Math.abs(percent - prevPercent) >= 10
+    ) {
+      setSrAnnouncement(`Stream progress: ${Math.round(percent)}% accrued`);
+      prevPercentRef.current = percent;
+    }
+  }, [status, percent]);
+
   // Map status to BEM modifier for color tokens
   const modifier =
     status === "active"    ? "active"    :
@@ -191,6 +240,9 @@ export function StreamProgress({
       className={`stream-progress stream-progress--${motionModifier} ${className}`.trim()}
       data-reduced-motion={prefersReducedMotion ? "true" : "false"}
     >
+      {/* Screen-reader live announcements for status / progress changes */}
+      <LiveRegion message={srAnnouncement} data-testid="stream-progress-live" />
+
       {/* Track */}
       <div
         role="progressbar"
