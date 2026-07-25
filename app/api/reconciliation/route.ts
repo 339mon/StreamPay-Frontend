@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getCorrelationContext, logger } from '@/app/lib/logger';
 import { withStrongEtag } from '@/src/middleware/etag';
+import { applyRateLimit } from '@/src/middleware/rateLimit';
 
 function errorResponse(code: string, message: string, status: number) {
   const requestId = getCorrelationContext()?.request_id ?? `req-${crypto.randomUUID()}`;
@@ -9,6 +10,13 @@ function errorResponse(code: string, message: string, status: number) {
 }
 
 export async function GET(request: Request) {
+  // ── Per-user rate limit ─────────────────────────────────────────────────
+  // Identity resolution priority: API key > JWT wallet sub > IP address.
+  // Returns 429 with Retry-After when the caller's bucket is exhausted.
+  const rateLimited = await applyRateLimit(request, 'reconciliation');
+  if (rateLimited) return rateLimited;
+
+  // ── Request handling ────────────────────────────────────────────────────
   try {
     const url = new URL(request.url);
     const limitParam = url.searchParams.get('limit');
