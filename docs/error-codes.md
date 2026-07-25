@@ -21,6 +21,7 @@ shape is documented in the [README](../README.md#error-envelope).
 | `INTERNAL_ERROR`       | 500  | yes       | Unhandled server error; check `request_id` in logs. |
 | `SERVICE_UNAVAILABLE`  | 503  | yes       | Circuit breaker open or maintenance mode. |
 | `GATEWAY_TIMEOUT`      | 504  | yes       | Horizon or Soroban RPC timed out. |
+| `RECONCILIATION_TIMEOUT` | 504 | yes      | Internal reconciliation exceeded its per-request deadline (`RECONCILIATION_TIMEOUT_MS`). |
 | `UNKNOWN_ERROR`        | -    | no        | Fallback when no other mapping matched. |
 
 ## Contract error to API code mapping
