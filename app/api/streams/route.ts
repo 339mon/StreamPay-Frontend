@@ -9,9 +9,7 @@ import {
   setIdempotency,
 } from "@/app/lib/db";
 import { getCorrelationContext, logger } from "@/app/lib/logger";
-import { checkRateLimit, getClientIdentity, rateLimitResponse } from "@/app/lib/rate-limit";
-import { getLimitForRoute } from "@/app/lib/rate-limit-config";
-import { recordRequest, recordThrottle } from "@/app/lib/rate-limit-metrics";
+import { streamsRateLimit } from "@/src/middleware/rateLimit";
 import { checkTokenAllowed, normaliseToken } from "@/app/lib/token-allowlist";
 import {
   validateCreateStreamBody,
@@ -43,17 +41,12 @@ function getHeader(request: Request, name: string): string | null {
 
 export async function GET(request: Request) {
   const { streamRepository } = getStore();
-  const url = getRequestUrl(request, "/api/streams");
-  const limitType = getLimitForRoute("GET", url.pathname);
-  const identity = getClientIdentity(request);
-  const result = await checkRateLimit(identity, limitType);
-
-  if (!result.allowed) {
-    recordThrottle(url.pathname, limitType, identity.type, identity.displayValue);
-    return rateLimitResponse(result.retryAfter!);
+  const rateLimitResult = await streamsRateLimit(request, "GET", "/api/streams");
+  if (!rateLimitResult.allowed) {
+    return rateLimitResult.response;
   }
-  recordRequest(url.pathname);
 
+  const url = getRequestUrl(request, "/api/streams");
   const { searchParams } = url;
   const rawQuery: Record<string, string> = {};
   for (const key of ["limit", "status", "cursor"] as const) {
@@ -140,17 +133,12 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const { idempotencyStore, streamRepository } = getStore();
-  const url = getRequestUrl(request, "/api/streams");
-  const limitType = getLimitForRoute("POST", url.pathname);
-  const identity = getClientIdentity(request);
-  const result = await checkRateLimit(identity, limitType);
-
-  if (!result.allowed) {
-    recordThrottle(url.pathname, limitType, identity.type, identity.displayValue);
-    return rateLimitResponse(result.retryAfter!);
+  const rateLimitResult = await streamsRateLimit(request, "POST", "/api/streams");
+  if (!rateLimitResult.allowed) {
+    return rateLimitResult.response;
   }
-  recordRequest(url.pathname);
 
+  const url = getRequestUrl(request, "/api/streams");
   const idempotencyKey = getHeader(request, "Idempotency-Key");
   const token = idempotencyKey ? idempotencyToken("streams.create", idempotencyKey) : null;
 
