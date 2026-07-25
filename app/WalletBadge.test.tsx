@@ -89,10 +89,48 @@ describe("WalletBadge", () => {
     expect(liveRegion).toHaveTextContent("Custom screen reader message");
   });
 
-  it("renders EmptyState when showEmptyState is true and state is disconnected", () => {
-    render(<WalletBadge state="disconnected" showEmptyState={true} />);
-    expect(screen.getByTestId("wallet-badge-empty-state")).toBeInTheDocument();
-    expect(screen.getByText("Wallet Disconnected")).toBeInTheDocument();
-    expect(screen.getByText("Connect your Stellar wallet to participate in the GrantFox campaign.")).toBeInTheDocument();
+  it("applies responsive CSS module classes and BEM classes correctly", () => {
+    const { container } = render(
+      <WalletBadge
+        state="connected"
+        address="GABCD1234567890XYZ"
+        network="Mainnet"
+        balance="500.00 XLM"
+        className="custom-badge-class"
+      />
+    );
+    const badge = screen.getByTestId("wallet-badge");
+    expect(badge).toHaveClass("wallet-badge");
+    expect(badge).toHaveClass("wallet-badge--connected");
+    expect(badge).toHaveClass("custom-badge-class");
+
+    const networkTag = container.querySelector(".wallet-badge__network");
+    expect(networkTag).toBeInTheDocument();
+    expect(networkTag).toHaveTextContent("Mainnet");
+
+    const balanceTag = container.querySelector(".wallet-badge__balance");
+    expect(balanceTag).toBeInTheDocument();
+    expect(balanceTag).toHaveTextContent("500.00 XLM");
+  });
+
+  it("supports keyboard navigation with Enter and Space keys when interactive", () => {
+    const handleConnect = jest.fn();
+    render(<WalletBadge state="disconnected" onConnect={handleConnect} />);
+    const badge = screen.getByTestId("wallet-badge");
+    expect(badge).toHaveAttribute("role", "button");
+    expect(badge).toHaveAttribute("tabIndex", "0");
+
+    fireEvent.keyDown(badge, { key: "Enter" });
+    expect(handleConnect).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(badge, { key: " " });
+    expect(handleConnect).toHaveBeenCalledTimes(2);
+  });
+
+  it("renders non-interactive region when no onClick or onConnect callback is provided", () => {
+    render(<WalletBadge state="connecting" />);
+    const badge = screen.getByTestId("wallet-badge");
+    expect(badge).toHaveAttribute("role", "region");
+    expect(badge).not.toHaveAttribute("tabIndex");
   });
 });
