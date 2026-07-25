@@ -1,4 +1,6 @@
 /** @jest-environment jsdom */
+import fs from "fs";
+import path from "path";
 import React from "react";
 import { render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
@@ -148,6 +150,58 @@ describe("StreamProgress progressbar semantics", () => {
     const bar = screen.getByRole("progressbar");
     expect(bar).toHaveAttribute("aria-valuenow", "100");
     expect(bar).toHaveAttribute("aria-valuetext", "Completed");
+  });
+});
+
+// ── Spacing/typography design tokens (FWC26 Stellar Wave) ───────────────────
+
+describe("StreamProgress spacing/typography design tokens", () => {
+  const css = fs.readFileSync(path.join(__dirname, "..", "globals.css"), "utf8");
+
+  /** Returns the declaration block body for a top-level CSS selector. */
+  function ruleBody(selector: string): string {
+    const start = css.indexOf(`${selector} {`);
+    expect(start).toBeGreaterThan(-1);
+    return css.slice(start, css.indexOf("}", start));
+  }
+
+  it("defines the spacing scale tokens referenced across the app", () => {
+    for (const token of ["--space-1", "--space-2", "--space-3", "--space-4", "--space-5", "--space-6", "--space-8"]) {
+      expect(css).toContain(`${token}:`);
+    }
+  });
+
+  it("defines the typography scale tokens referenced across the app", () => {
+    for (const token of ["--text-xs", "--text-sm", "--text-base", "--text-lg", "--text-xl", "--text-2xl", "--text-4xl"]) {
+      expect(css).toContain(`${token}:`);
+    }
+  });
+
+  it("defines the font-weight tokens referenced across the app", () => {
+    for (const token of ["--font-medium", "--font-semibold", "--font-bold"]) {
+      expect(css).toContain(`${token}:`);
+    }
+  });
+
+  it("pins the track/label gap to a spacing token instead of a hardcoded rem value", () => {
+    const rule = ruleBody(".stream-progress");
+    expect(rule).toContain("gap: var(--space-2)");
+  });
+
+  it("pins the meta row gap to a spacing token", () => {
+    const rule = ruleBody(".stream-progress__meta");
+    expect(rule).toContain("gap: var(--space-4)");
+  });
+
+  it("pins the percentage label's typography to design tokens", () => {
+    const rule = ruleBody(".stream-progress__label");
+    expect(rule).toContain("font-size: var(--text-sm)");
+    expect(rule).toContain("font-weight: var(--font-semibold)");
+  });
+
+  it("pins the remaining-balance font-size to a typography token", () => {
+    const rule = ruleBody(".stream-progress__remaining");
+    expect(rule).toContain("font-size: var(--text-xs)");
   });
 });
 

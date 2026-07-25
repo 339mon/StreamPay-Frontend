@@ -26,6 +26,12 @@
  * ## Amounts
  * Accepts raw i128-compatible bigint or number values. No decimal conversion
  * is performed here; callers supply pre-scaled display values if needed.
+ *
+ * ## Styling
+ * Track/meta spacing and label typography (`app/globals.css`, the
+ * `.stream-progress*` rules) are pinned to the shared `--space-*` / `--text-*`
+ * / `--font-*` design tokens rather than hardcoded rem values, so the
+ * component stays in step with any future scale adjustments.
  */
 
 "use client";
