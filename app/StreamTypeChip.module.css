@@ -4,6 +4,17 @@
   flex-direction: column;
   gap: 0.125rem;
   max-width: 100%;
+  cursor: pointer;
+  transition: transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease;
+}
+
+.streamTypeChip:hover {
+  transform: translateY(-1px);
+  opacity: 0.9;
+}
+
+.streamTypeChip:active {
+  transform: translateY(0);
 }
 
 .type {
@@ -27,3 +38,10 @@
     white-space: nowrap;
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .streamTypeChip {
+    transition: none !important;
+    transform: none !important;
+  }
+}
