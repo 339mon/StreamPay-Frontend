@@ -1,0 +1,127 @@
+openapi: 3.1.0
+info:
+  title: StreamPay API Exports
+  version: 2.0.0
+paths:
+  /api/exports:
+    post:
+      summary: Request a new export job
+      responses:
+        '201':
+          description: Export job created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportJobResponse'
+              examples:
+                exportRequested:
+                  summary: Basic export request
+                  value:
+                    data:
+                      id: "123e4567-e89b-12d3-a456-426614174000"
+                      ownerId: "GB2ABCD..."
+                      requestedAt: "2026-07-24T12:00:00Z"
+                      status: "pending"
+                      expiresAt: "2026-07-31T12:00:00Z"
+                      fileName: "streampay-export-2026-07-24.csv"
+                      rows: 0
+                    links:
+                      self: "/api/exports/123e4567-e89b-12d3-a456-426614174000"
+  /api/exports/{id}:
+    get:
+      summary: Get the status of an export job or download it
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: download
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: expires
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: sig
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Export job status or download
+          content:
+            application/json:
+              examples:
+                exportReady:
+                  summary: Export job is ready
+                  value:
+                    data:
+                      id: "123e4567-e89b-12d3-a456-426614174000"
+                      ownerId: "GB2ABCD..."
+                      requestedAt: "2026-07-24T12:00:00Z"
+                      status: "ready"
+                      expiresAt: "2026-07-31T12:00:00Z"
+                      fileName: "streampay-export-2026-07-24.csv"
+                      rows: 15
+                      signedUrl: "/api/exports/123e4567...?download=true&expires=...&sig=..."
+                      signedUrlExpiresAt: "2026-07-24T13:00:00Z"
+        '404':
+          description: Not found
+          content:
+            application/json:
+              examples:
+                notFound:
+                  summary: Export job not found
+                  value:
+                    error:
+                      code: "NOT_FOUND"
+                      message: "Export job not found."
+                      request_id: "req_xyz"
+        '410':
+          description: Gone
+          content:
+            application/json:
+              examples:
+                expired:
+                  summary: Export job expired
+                  value:
+                    error:
+                      code: "EXPORT_EXPIRED"
+                      message: "The export job has expired."
+                      request_id: "req_xyz"
+components:
+  schemas:
+    ExportJobResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            ownerId:
+              type: string
+            requestedAt:
+              type: string
+            status:
+              type: string
+            expiresAt:
+              type: string
+            fileName:
+              type: string
+            rows:
+              type: integer
+            signedUrl:
+              type: string
+            signedUrlExpiresAt:
+              type: string
+        links:
+          type: object
+          properties:
+            self:
+              type: string
