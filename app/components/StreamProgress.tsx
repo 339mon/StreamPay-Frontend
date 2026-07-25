@@ -204,7 +204,7 @@ export function StreamProgress({
       >
         {/* Fill — transitions width unless reduced motion is requested. */}
         <div
-          className={`stream-progress__fill stream-progress__fill--${modifier}`}
+          className={`stream-progress__fill stream-progress__fill--${modifier} cb-pattern cb-pattern--${modifier}`}
           style={{
             width: `${percent}%`,
             transition: prefersReducedMotion ? "none" : "width 400ms ease",
