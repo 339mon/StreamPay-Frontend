@@ -1,4 +1,4 @@
-import { GET, POST } from "./route";
+import { GET, POST, resetWalletChallengeStoreForTesting } from "./route";
 import { resetRateLimitStore } from "@/app/lib/rate-limit-store";
 
 jest.mock("next/server", () => ({
@@ -67,6 +67,7 @@ function detailFields(res: unknown): string[] {
 
 beforeEach(() => {
   resetRateLimitStore();
+  resetWalletChallengeStoreForTesting();
 });
 
 describe("GET /api/auth/wallet", () => {
@@ -84,6 +85,46 @@ describe("GET /api/auth/wallet", () => {
     const body = (res as any).body;
     expect(body.error.code).toBe("VALIDATION_ERROR");
     expect(detailFields(res)).toEqual(["address"]);
+  });
+
+  it("returns paginated challenge records ordered by created_at and id", async () => {
+    await GET(makeGetRequest({ address: VALID_ADDRESS }));
+    await GET(makeGetRequest({ address: VALID_ADDRESS }));
+    await GET(makeGetRequest({ address: VALID_ADDRESS }));
+
+    const firstPage = await GET(
+      makeGetRequest({ address: VALID_ADDRESS, limit: "2" }),
+    );
+
+    expect(firstPage.status).toBe(200);
+    const firstBody = (firstPage as any).body;
+    expect(firstBody.data).toHaveLength(2);
+    expect(firstBody.meta.hasNext).toBe(true);
+    expect(firstBody.meta.nextCursor).toBeTruthy();
+    expect(firstBody.data[0].created_at.localeCompare(firstBody.data[1].created_at)).toBeLessThanOrEqual(0);
+
+    const secondPage = await GET(
+      makeGetRequest({
+        address: VALID_ADDRESS,
+        limit: "2",
+        cursor: firstBody.meta.nextCursor,
+      }),
+    );
+
+    expect(secondPage.status).toBe(200);
+    const secondBody = (secondPage as any).body;
+    expect(secondBody.data).toHaveLength(1);
+    expect(secondBody.meta.hasNext).toBe(false);
+    expect(secondBody.meta.nextCursor).toBeNull();
+  });
+
+  it("returns 422 for a malformed cursor", async () => {
+    const res = await GET(
+      makeGetRequest({ address: VALID_ADDRESS, limit: "2", cursor: "not-a-cursor" }),
+    );
+
+    expect(res.status).toBe(422);
+    expect((res as any).body.error.code).toBe("INVALID_CURSOR");
   });
 
   it("returns 422 when address has the right shape but a bad checksum", async () => {
