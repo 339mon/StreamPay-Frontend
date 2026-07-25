@@ -10,7 +10,8 @@
     summary,
     [role="button"],
     [tabindex]:not([tabindex="-1"]),
-    .card--clickable
+    .card--clickable,
+    .stream-progress__track
   ):focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
@@ -27,7 +28,8 @@
     summary,
     [role="button"],
     [tabindex]:not([tabindex="-1"]),
-    .card--clickable
+    .card--clickable,
+    .stream-progress__track
   ):focus:not(:focus-visible) {
     outline: none;
     box-shadow: none;
