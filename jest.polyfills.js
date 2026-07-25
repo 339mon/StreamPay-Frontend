@@ -2,6 +2,11 @@ const crypto = require("crypto");
 const { TextEncoder, TextDecoder } = require("util");
 const streamWeb = require("stream/web");
 
+if (typeof globalThis.setImmediate === "undefined") {
+  globalThis.setImmediate = (fn, ...args) => setTimeout(fn, 0, ...args);
+  globalThis.clearImmediate = (id) => clearTimeout(id);
+}
+
 if (typeof globalThis.crypto === "undefined" || typeof globalThis.crypto.randomUUID === "undefined") {
   const gCrypto = globalThis.crypto || {};
   gCrypto.randomUUID = gCrypto.randomUUID || crypto.randomUUID;
@@ -26,6 +31,8 @@ if (streamWeb) {
 }
 
 if (typeof window !== "undefined") {
+  window.setImmediate = window.setImmediate || globalThis.setImmediate;
+  window.clearImmediate = window.clearImmediate || globalThis.clearImmediate;
   window.crypto = window.crypto || globalThis.crypto;
   if (!window.crypto.randomUUID) {
     window.crypto.randomUUID = crypto.randomUUID;
@@ -41,6 +48,8 @@ if (typeof window !== "undefined") {
 }
 
 if (typeof global !== "undefined") {
+  global.setImmediate = global.setImmediate || globalThis.setImmediate;
+  global.clearImmediate = global.clearImmediate || globalThis.clearImmediate;
   global.crypto = global.crypto || globalThis.crypto;
   if (!global.crypto.randomUUID) {
     global.crypto.randomUUID = crypto.randomUUID;
