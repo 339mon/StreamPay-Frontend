@@ -45,7 +45,7 @@ pub enum StreamStatus {
 /// `released_amount` tracks cumulative withdrawals; when it reaches
 /// `total_amount` the stream transitions to `Settled`.
 ///
-/// Paused streams record `pause_time` and `total_paused_duration` so
+/// Paused streams record `paused_at` and `total_paused_duration` so
 /// that the resumption logic can extend `end_time` by the pause length
 /// without over- or under-paying the recipient.
 #[derive(Clone, Debug)]
