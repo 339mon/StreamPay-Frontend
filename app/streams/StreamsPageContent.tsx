@@ -14,17 +14,18 @@ const streamListCopy = {
   description:
     "Track recipients, rates, statuses, and the next action from one scan-friendly streams list.",
   empty: {
-    actionLabel: "Create your first stream",
+    actionLabel: "Create Your First Stream",
+    description: "No streams yet. Create one to start paying collaborators and vendors on a steady schedule.",
+    eyebrow: "Streams",
+    title: "Your streams list is empty",
+  },
+  filtered: {
+    actionLabel: "Clear filters",
     description:
-      "Get started with a single payout flow. Define a recipient, cadence, and amount in minutes.",
-    eyebrow: "First-time setup",
-    title: "Start your first stream",
-    guidanceSteps: [
-      "Choose a collaborator or vendor to pay.",
-      "Set a recurring cadence and payout amount.",
-      "Review the schedule before you launch it.",
-    ],
-  } as const,
+      "No streams match your current filters. Try clearing one filter or widening your search to bring more streams back into view.",
+    eyebrow: "Streams",
+    title: "No streams match your current filters",
+  },
   heading: "Streams",
   loadingLabel: "Loading your streams…",
   populatedCount: (n: number) => `${n} active record${n === 1 ? "" : "s"}`,
@@ -71,10 +72,10 @@ type StreamsPageContentProps = {
   errorMessage?: string;
   /** Handler bound to the error-state "Try again" button and top-level CTAs. */
   onRetry?: () => void;
-  /** Handler invoked when "Create Stream" CTA / EmptyState action is pressed. */
-  onRetryAction?: () => void;
-  /** Starting density for the StreamRow list. Defaults to `"comfortable"`. */
-  initialDensity?: DensityMode;
+  /** Switches the empty-state copy to the filtered-results variant when the current list is empty. */
+  emptyStateVariant?: "default" | "filtered";
+  /** Optional callback for the filtered empty state CTA. */
+  onClearFilters?: () => void;
 };
 
 /**
@@ -118,32 +119,11 @@ export function StreamsPageContent({
   streams = mockStreams,
   errorMessage = "There was a problem fetching your streams. Check your connection and try again.",
   onRetry,
-  onRetryAction,
-  initialDensity = "comfortable",
+  emptyStateVariant = "default",
+  onClearFilters,
 }: StreamsPageContentProps) {
-  const [density, setDensity] = useState<DensityMode>(initialDensity);
-
-  /**
-   * Derive the StateTriad internal state:
-   * - If a `state` prop was explicitly passed, trust it (allows test harness +
-   *   storybook overrides).
-   * - Otherwise auto-detect from `streams.length` (empty → "empty", else "success").
-   *
-   * The `loading` and `error` branches can only be entered via the explicit
-   * `state` prop because we can't reliably guess them from data alone.
-   */
-  const viewState: StateTriadState = useMemo(() => {
-    if (state === "loading") return "loading";
-    if (state === "error") return "error";
-    if (state === "empty" || streams.length === 0) return "empty";
-    return "success";
-  }, [state, streams.length]);
-
-  const populatedCount = streamListCopy.populatedCount(streams.length);
-
-  const primaryOnClick = () => {
-    if (onRetryAction) onRetryAction();
-  };
+  const isEmpty = state === "empty" || streams.length === 0;
+  const isFilteredEmpty = emptyStateVariant === "filtered" && streams.length === 0 && state !== "empty";
 
   return (
     <main className="page-shell">
@@ -205,27 +185,26 @@ export function StreamsPageContent({
           ) : null}
         </div>
 
-        <StateTriad
-          state={viewState}
-          loading={{
-            message: streamListCopy.loadingLabel,
-            count: 3,
-            renderSkeleton: () => <StreamListSkeleton count={3} />,
-          }}
-          empty={{
-            eyebrow: streamListCopy.empty.eyebrow,
-            title: streamListCopy.empty.title,
-            description: streamListCopy.empty.description,
-            actionLabel: streamListCopy.empty.actionLabel,
-            onAction: onRetryAction ?? onRetry,
-            guidanceSteps: [...streamListCopy.empty.guidanceSteps],
-          }}
-          error={{
-            heading: "Couldn't load your streams",
-            message: errorMessage,
-            onRetry: onRetry ?? onRetryAction,
-          }}
-        >
+        {state === "loading" ? (
+          <StreamListSkeleton />
+        ) : state === "error" ? (
+          <PageError
+            heading="Couldn't load your streams"
+            message={
+              errorMessage ??
+              "There was a problem fetching your streams. Check your connection and try again."
+            }
+            onRetry={onRetry}
+          />
+        ) : isEmpty ? (
+          <EmptyState
+            actionLabel={isFilteredEmpty ? streamListCopy.filtered.actionLabel : streamListCopy.empty.actionLabel}
+            description={isFilteredEmpty ? streamListCopy.filtered.description : streamListCopy.empty.description}
+            eyebrow={isFilteredEmpty ? streamListCopy.filtered.eyebrow : streamListCopy.empty.eyebrow}
+            title={isFilteredEmpty ? streamListCopy.filtered.title : streamListCopy.empty.title}
+            onAction={isFilteredEmpty ? onClearFilters : undefined}
+          />
+        ) : (
           <section aria-label="Streams list" className="stream-list">
             {streams.map((stream) => (
               <StreamRow
