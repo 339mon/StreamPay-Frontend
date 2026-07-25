@@ -1,0 +1,6 @@
+/* Typography Styles */
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-family: monospace; /* For fallback */
+}

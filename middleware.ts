@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateConfig } from './app/lib/config/index';
-import { buildAllowedOriginSet, isOriginAllowed, DEFAULT_CORS_HEADERS, DEFAULT_CORS_METHODS, DEFAULT_CORS_MAX_AGE_SECONDS } from './app/lib/cors';
+import {
+  buildAllowedOriginSet,
+  isOriginAllowed,
+  DEFAULT_CORS_HEADERS,
+  DEFAULT_CORS_METHODS,
+  DEFAULT_CORS_MAX_AGE_SECONDS,
+} from './app/lib/cors';
 import {
   REQUEST_FINGERPRINT_HEADER,
   captureRequestFingerprint,
@@ -9,6 +15,14 @@ import {
   checkRequestBodySize,
   buildLimitsConfig,
 } from './lib/bodySize';
+import {
+  attachCsrfCookie,
+  createCsrfForbiddenResponse,
+  getCsrfCookieValue,
+  getCsrfHeaderValue,
+  isCsrfProtectedMethod,
+  validateCsrfToken,
+} from './lib/csrf';
 
 // ---------------------------------------------------------------------------
 // Request body size cap
@@ -33,9 +47,15 @@ validateConfig();
 
 const allowedOrigins = buildAllowedOriginSet(process.env.ALLOWED_ORIGINS);
 
+// Chaos/fault injection config. Resolved once at module init; force-disabled in
+// production by getChaosConfig regardless of env vars.
+const chaosConfig = getChaosConfig();
+
 export const config = {
   matcher: ['/api/:path*'],
 };
+
+const CANARY_HEADER_NAME = 'X-Canary';
 
 function buildCorsHeaders(origin: string) {
   const headers = new Headers();
@@ -47,35 +67,163 @@ function buildCorsHeaders(origin: string) {
   return headers;
 }
 
+function getCanaryPercentage(): number {
+  const rawValue = process.env.CANARY_PERCENTAGE;
+  if (rawValue === undefined || rawValue.trim() === '') {
+    return 0;
+  }
+
+  const parsedValue = Number.parseFloat(rawValue);
+  if (!Number.isFinite(parsedValue)) {
+    return 0;
+  }
+
+  return Math.min(100, Math.max(0, Math.trunc(parsedValue)));
+}
+
+function getCanarySeed(request: NextRequest): string {
+  return (
+    request.headers.get('x-tenant-id') ??
+    request.headers.get('x-user-id') ??
+    request.headers.get('x-forwarded-user') ??
+    request.headers.get('authorization') ??
+    request.url
+  );
+}
+
+function hashSeed(seed: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+// Deterministically bucket requests by a stable tenant/user-derived seed so
+// the same identity consistently lands in the same canary cohort.
+function shouldRouteToCanary(request: NextRequest): boolean {
+  const percentage = getCanaryPercentage();
+  if (percentage <= 0) {
+    return false;
+  }
+
+  if (percentage >= 100) {
+    return true;
+  }
+
+  const seed = getCanarySeed(request);
+  const bucket = hashSeed(seed) % 100;
+  return bucket < percentage;
+}
+
+function setCanaryHeader(headers: Headers, isCanary: boolean) {
+  if (isCanary) {
+    headers.set(CANARY_HEADER_NAME, 'true');
+  }
+}
+
+function resolveRequestId(request: NextRequest): string {
+  const forwarded = request.headers.get('x-request-id');
+  if (forwarded && forwarded.trim().length > 0) {
+    return forwarded.trim();
+  }
+  return `req_${Date.now().toString(36)}_${Math.random().toString(16).slice(2, 10)}`;
+}
+
+
+
 export async function middleware(request: NextRequest) {
   const fingerprint = await captureRequestFingerprint(request);
+  touchLastSeenFromRequest(request);
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set(REQUEST_FINGERPRINT_HEADER, fingerprint);
 
+  const isCanary = shouldRouteToCanary(request);
+  if (isCanary) {
+    requestHeaders.set(CANARY_HEADER_NAME, 'true');
+  }
+
+  const origin = request.headers.get('origin');
+  let isAllowed = false;
+
   // ------------------------------------------------------------------
-  // 1. Request body size cap (path-scoped, O(1) — reads Content-Length)
+  // 1. Request body size cap (O(1) — reads Content-Length)
   // ------------------------------------------------------------------
   const sizeError = checkRequestBodySize(request, bodyLimits);
   if (sizeError !== null) {
     sizeError.headers.set(REQUEST_FINGERPRINT_HEADER, fingerprint);
+    setCanaryHeader(sizeError.headers, isCanary);
     return sizeError;
   }
 
   // ------------------------------------------------------------------
-  // 2. CORS
+  // 2. CSRF protection for state-changing requests
+  // ------------------------------------------------------------------
+  if (isCsrfProtectedMethod(request.method)) {
+    const cookieToken = getCsrfCookieValue(request);
+    const headerToken = getCsrfHeaderValue(request);
+    if (!validateCsrfToken(cookieToken, headerToken)) {
+      const response = createCsrfForbiddenResponse(request);
+      response.headers.set(REQUEST_FINGERPRINT_HEADER, fingerprint);
+      return response;
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // 3. CORS
   // ------------------------------------------------------------------
   const origin = request.headers.get('origin');
-  const originAllowed = isOriginAllowed(origin, allowedOrigins);
+  let originAllowed = false;
 
-  if (request.method === 'OPTIONS') {
+  if (origin) {
+    originAllowed = isOriginAllowed(origin, allowedOrigins);
+
     if (!originAllowed) {
-      return new NextResponse(null, { status: 204 });
+      const requestId =
+        request.headers.get('x-request-id') ??
+        `req_${Date.now().toString(36)}`;
+
+      console.warn(
+        JSON.stringify({
+          type: 'cors.rejection',
+          origin,
+          method: request.method,
+          pathname: request.nextUrl?.pathname ?? '',
+          request_id: requestId,
+        })
+      );
+
+      const errorResponse = NextResponse.json(
+        {
+          error: {
+            code: 'CORS_ORIGIN_DISALLOWED',
+            message: `Origin '${origin}' is not allowed.`,
+            request_id: requestId,
+          },
+        },
+        { status: 403 }
+      );
+      errorResponse.headers.set(REQUEST_FINGERPRINT_HEADER, fingerprint);
+      errorResponse.headers.set('Vary', 'Origin');
+      setCanaryHeader(errorResponse.headers, isCanary);
+      return errorResponse;
     }
 
-    return new NextResponse(null, {
-      status: 204,
-      headers: buildCorsHeaders(origin!),
-    });
+    if (request.method === 'OPTIONS') {
+      const headers = buildCorsHeaders(origin);
+      setCanaryHeader(headers, isCanary);
+      return new NextResponse(null, {
+        status: 204,
+        headers,
+      });
+    }
+  }
+
+  if (request.method === 'OPTIONS' && !origin) {
+    const response = new NextResponse(null, { status: 204 });
+    setCanaryHeader(response.headers, isCanary);
+    return response;
   }
 
   const response = NextResponse.next({
@@ -84,10 +232,19 @@ export async function middleware(request: NextRequest) {
     },
   });
 
+  if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') {
+    const csrfResponse = attachCsrfCookie(response, request);
+    if (originAllowed) {
+      csrfResponse.headers.set('Access-Control-Allow-Origin', origin!);
+      csrfResponse.headers.set('Vary', 'Origin');
+    }
+    return csrfResponse;
+  }
+
+  // Add CORS headers for allowed origins on non-preflight requests
   if (originAllowed) {
-    const headers = response.headers;
-    headers.set('Access-Control-Allow-Origin', origin!);
-    headers.set('Vary', 'Origin');
+    response.headers.set('Access-Control-Allow-Origin', origin!);
+    response.headers.set('Vary', 'Origin');
   }
 
   return response;
