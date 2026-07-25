@@ -71,6 +71,63 @@ describe("Exports API — authentication and scoping", () => {
     });
   });
 
+  // ── GET /api/exports (List) ────────────────────────────────────────────────
+
+  describe("GET /api/exports", () => {
+    it("returns 401 for anonymous requests", async () => {
+      const { GET: listExports } = await import("./route");
+      const res = await listExports(authRequest("http://localhost/api/exports"));
+      expect(res.status).toBe(401);
+    });
+
+    it("returns a paginated list of exports for the authenticated user", async () => {
+      const { GET: listExports } = await import("./route");
+      const token = makeToken("GOWNER1");
+      
+      // Create a few exports
+      db.exportJobs.set("job1", { id: "job1", ownerId: "GOWNER1", requestedAt: "2026-07-24T10:00:00Z", status: "pending", expiresAt: "2026-07-31T10:00:00Z", fileName: "export1.csv", rows: 0 });
+      db.exportJobs.set("job2", { id: "job2", ownerId: "GOWNER1", requestedAt: "2026-07-24T11:00:00Z", status: "pending", expiresAt: "2026-07-31T11:00:00Z", fileName: "export2.csv", rows: 0 });
+      db.exportJobs.set("job-other", { id: "job-other", ownerId: "GOTHER2", requestedAt: "2026-07-24T12:00:00Z", status: "pending", expiresAt: "2026-07-31T12:00:00Z", fileName: "export-other.csv", rows: 0 });
+
+      const res = await listExports(authRequest("http://localhost/api/exports", token));
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.data.length).toBe(2);
+      // Descending order by requestedAt
+      expect(json.data[0].id).toBe("job2");
+      expect(json.data[1].id).toBe("job1");
+      expect(json.meta.total).toBe(2);
+      expect(json.meta.hasNext).toBe(false);
+    });
+
+    it("supports cursor pagination", async () => {
+      const { GET: listExports } = await import("./route");
+      const { encodeCompositeCursor } = await import("@/app/lib/db");
+      const token = makeToken("GOWNER1");
+      
+      // Create jobs
+      db.exportJobs.set("job1", { id: "job1", ownerId: "GOWNER1", requestedAt: "2026-07-24T10:00:00Z", status: "pending", expiresAt: "2026-07-31T10:00:00Z", fileName: "export1.csv", rows: 0 });
+      db.exportJobs.set("job2", { id: "job2", ownerId: "GOWNER1", requestedAt: "2026-07-24T11:00:00Z", status: "pending", expiresAt: "2026-07-31T11:00:00Z", fileName: "export2.csv", rows: 0 });
+      db.exportJobs.set("job3", { id: "job3", ownerId: "GOWNER1", requestedAt: "2026-07-24T12:00:00Z", status: "pending", expiresAt: "2026-07-31T12:00:00Z", fileName: "export3.csv", rows: 0 });
+
+      // First page
+      const res1 = await listExports(authRequest("http://localhost/api/exports?limit=2", token));
+      const json1 = await res1.json();
+      expect(json1.data.length).toBe(2);
+      expect(json1.data[0].id).toBe("job3");
+      expect(json1.data[1].id).toBe("job2");
+      expect(json1.meta.hasNext).toBe(true);
+
+      // Second page
+      const cursor = encodeCompositeCursor("2026-07-24T11:00:00Z", "job2");
+      const res2 = await listExports(authRequest(`http://localhost/api/exports?limit=2&cursor=${cursor}`, token));
+      const json2 = await res2.json();
+      expect(json2.data.length).toBe(1);
+      expect(json2.data[0].id).toBe("job1");
+      expect(json2.meta.hasNext).toBe(false);
+    });
+  });
+
   // ── GET /api/exports/[id] ─────────────────────────────────────────────────
 
   describe("GET /api/exports/[id]", () => {
