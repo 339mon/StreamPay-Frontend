@@ -921,11 +921,25 @@
                   }
                 }
               },
-              "example": {
-                "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
-                "rate": "120",
-                "schedule": "month",
-                "token": "XLM"
+              "examples": {
+                "minimal-xlm": {
+                  "summary": "Minimal request — XLM (default token)",
+                  "value": {
+                    "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                    "rate": "120",
+                    "schedule": "month",
+                    "token": "XLM"
+                  }
+                },
+                "with-usdc-token": {
+                  "summary": "Full request with USDC token",
+                  "value": {
+                    "recipient": "GDEF1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFGH",
+                    "rate": "500",
+                    "schedule": "week",
+                    "token": "USDC"
+                  }
+                }
               }
             }
           }
@@ -949,19 +963,41 @@
                     }
                   }
                 },
-                "example": {
-                  "data": {
-                    "id": "stream-abc12345",
-                    "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
-                    "rate": "120",
-                    "schedule": "month",
-                    "status": "draft",
-                    "nextAction": "start",
-                    "token": "XLM",
-                    "createdAt": "2024-01-15T10:00:00.000Z",
-                    "updatedAt": "2024-01-15T10:00:00.000Z"
+                "examples": {
+                  "draft-xlm": {
+                    "summary": "Newly created XLM stream in draft status",
+                    "value": {
+                      "data": {
+                        "id": "stream-abc12345",
+                        "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                        "rate": "120",
+                        "schedule": "month",
+                        "status": "draft",
+                        "nextAction": "start",
+                        "token": "XLM",
+                        "createdAt": "2024-01-15T10:00:00.000Z",
+                        "updatedAt": "2024-01-15T10:00:00.000Z"
+                      },
+                      "links": { "self": "/api/v1/streams/stream-abc12345" }
+                    }
                   },
-                  "links": { "self": "/api/v1/streams/stream-abc12345" }
+                  "draft-usdc": {
+                    "summary": "Newly created USDC stream in draft status",
+                    "value": {
+                      "data": {
+                        "id": "stream-def67890",
+                        "recipient": "GDEF1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFGH",
+                        "rate": "500",
+                        "schedule": "week",
+                        "status": "draft",
+                        "nextAction": "start",
+                        "token": "USDC",
+                        "createdAt": "2024-01-16T14:30:00.000Z",
+                        "updatedAt": "2024-01-16T14:30:00.000Z"
+                      },
+                      "links": { "self": "/api/v1/streams/stream-def67890" }
+                    }
+                  }
                 }
               }
             }
@@ -1094,6 +1130,36 @@
                       "properties": {
                         "self": { "type": "string" }
                       }
+                    }
+                  }
+                },
+                "examples": {
+                  "results-found": {
+                    "summary": "Search returned matching streams",
+                    "value": {
+                      "data": [
+                        {
+                          "id": "stream-abc12345",
+                          "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                          "rate": "120",
+                          "schedule": "month",
+                          "status": "active",
+                          "nextAction": "pause",
+                          "token": "XLM",
+                          "createdAt": "2024-01-15T10:00:00.000Z",
+                          "updatedAt": "2024-01-16T08:30:00.000Z"
+                        }
+                      ],
+                      "meta": { "total": 1, "limit": 50, "offset": 0, "count": 1, "query": "abc12345" },
+                      "links": { "self": "/api/streams/search?q=abc12345&limit=50" }
+                    }
+                  },
+                  "no-results": {
+                    "summary": "No streams matched the search query",
+                    "value": {
+                      "data": [],
+                      "meta": { "total": 0, "limit": 50, "offset": 0, "count": 0, "query": "nonexistent" },
+                      "links": { "self": "/api/streams/search?q=nonexistent&limit=50" }
                     }
                   }
                 }
@@ -1258,7 +1324,16 @@
                   }
                 }
               },
-              "example": { "rate": "150" }
+              "examples": {
+                "update-rate": {
+                  "summary": "Update rate only",
+                  "value": { "rate": "150" }
+                },
+                "update-rate-and-token": {
+                  "summary": "Update rate and switch token",
+                  "value": { "rate": "200", "token": "USDC" }
+                }
+              }
             }
           }
         },
@@ -1274,17 +1349,38 @@
                     "data": { "$ref": "#/components/schemas/StreamV1" }
                   }
                 },
-                "example": {
-                  "data": {
-                    "id": "stream-abc12345",
-                    "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
-                    "rate": "150",
-                    "schedule": "month",
-                    "status": "draft",
-                    "nextAction": "start",
-                    "token": "XLM",
-                    "createdAt": "2024-01-15T10:00:00.000Z",
-                    "updatedAt": "2024-01-15T11:30:00.000Z"
+                "examples": {
+                  "rate-updated": {
+                    "summary": "Rate updated successfully",
+                    "value": {
+                      "data": {
+                        "id": "stream-abc12345",
+                        "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                        "rate": "150",
+                        "schedule": "month",
+                        "status": "draft",
+                        "nextAction": "start",
+                        "token": "XLM",
+                        "createdAt": "2024-01-15T10:00:00.000Z",
+                        "updatedAt": "2024-01-15T11:30:00.000Z"
+                      }
+                    }
+                  },
+                  "rate-and-token-updated": {
+                    "summary": "Rate and token updated",
+                    "value": {
+                      "data": {
+                        "id": "stream-abc12345",
+                        "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                        "rate": "200",
+                        "schedule": "month",
+                        "status": "draft",
+                        "nextAction": "start",
+                        "token": "USDC",
+                        "createdAt": "2024-01-15T10:00:00.000Z",
+                        "updatedAt": "2024-01-15T11:35:00.000Z"
+                      }
+                    }
                   }
                 }
               }
@@ -1365,7 +1461,21 @@
             }
           },
           "404": { "$ref": "#/components/responses/404" },
-          "409": { "$ref": "#/components/responses/409" },
+          "409": {
+            "description": "Conflict — stream is active or paused and cannot be deleted.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "example": {
+                  "error": {
+                    "code": "STREAM_INACTIVE_STATE",
+                    "message": "Cannot delete an active or paused stream. Stop it first.",
+                    "request_id": "req_01HZ9ABCDEF"
+                  }
+                }
+              }
+            }
+          },
           "429": {
             "description": "Rate limit exceeded.",
             "content": {
@@ -1904,27 +2014,63 @@
       "get": {
         "operationId": "listStreamsV2",
         "summary": "List payment streams (v2)",
-        "description": "Returns all streams owned by the authenticated user in the v2 shape (`allowed_actions`, `created_at`, `settlement`).",
+        "description": "Returns a cursor-paginated list of streams owned by the authenticated user in the v2 shape (`allowed_actions`, `created_at`, `settlement`). Supports filtering by status and cursor-based pagination.",
         "tags": ["Streams"],
         "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of streams to return (1–100, default 20).",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20, "example": 20 }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque pagination cursor from a previous response `meta.nextCursor` field.",
+            "schema": { "type": "string", "example": "c3RyZWFtX2xmM2s5eg==" }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter results to streams with this status.",
+            "schema": { "type": "string", "enum": ["draft", "active", "paused", "ended"] }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Stream list.",
+            "description": "Paginated stream list.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["streams"],
+                  "required": ["streams", "meta", "links"],
                   "properties": {
                     "streams": {
                       "type": "array",
                       "items": { "$ref": "#/components/schemas/StreamV2" }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "required": ["hasNext", "nextCursor", "total"],
+                      "properties": {
+                        "hasNext": { "type": "boolean", "description": "Whether additional results are available." },
+                        "nextCursor": { "type": ["string", "null"], "description": "Opaque cursor for the next page. Null when hasNext is false." },
+                        "total": { "type": "integer", "description": "Total number of streams matching the filter." }
+                      }
+                    },
+                    "links": {
+                      "type": "object",
+                      "required": ["self"],
+                      "properties": {
+                        "self": { "type": "string", "description": "Canonical URL for this request." }
+                      }
                     }
                   }
                 },
                 "examples": {
                   "one-active-stream": {
-                    "summary": "Single active stream",
+                    "summary": "Single active stream, no further pages",
                     "value": {
                       "streams": [
                         {
@@ -1936,7 +2082,9 @@
                           "created_at": "2024-01-15T10:00:00.000Z",
                           "settlement": null
                         }
-                      ]
+                      ],
+                      "meta": { "hasNext": false, "nextCursor": null, "total": 1 },
+                      "links": { "self": "/api/v2/streams?limit=20" }
                     }
                   },
                   "settled-stream": {
@@ -1956,26 +2104,75 @@
                             "currency": "XLM"
                           }
                         }
-                      ]
+                      ],
+                      "meta": { "hasNext": false, "nextCursor": null, "total": 1 },
+                      "links": { "self": "/api/v2/streams?limit=20" }
                     }
                   },
                   "empty-list": {
                     "summary": "No streams for this user",
-                    "value": { "streams": [] }
+                    "value": {
+                      "streams": [],
+                      "meta": { "hasNext": false, "nextCursor": null, "total": 0 },
+                      "links": { "self": "/api/v2/streams?limit=20" }
+                    }
+                  },
+                  "paginated-first-page": {
+                    "summary": "First page of a multi-page result set",
+                    "value": {
+                      "streams": [
+                        {
+                          "id": "stream_lf3k9z",
+                          "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                          "rate": "120 XLM/month",
+                          "status": "draft",
+                          "allowed_actions": ["start"],
+                          "created_at": "2024-01-15T10:00:00.000Z",
+                          "settlement": null
+                        }
+                      ],
+                      "meta": { "hasNext": true, "nextCursor": "c3RyZWFtX2xmM2s5eg==", "total": 3 },
+                      "links": { "self": "/api/v2/streams?limit=1" }
+                    }
                   }
                 }
               }
             }
           },
           "401": { "$ref": "#/components/responses/401" },
+          "422": {
+            "description": "Unprocessable entity — malformed cursor.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "example": {
+                  "error": {
+                    "code": "INVALID_CURSOR",
+                    "message": "Malformed cursor",
+                    "request_id": "req_01HZ9ABCDEF"
+                  }
+                }
+              }
+            }
+          },
           "500": { "$ref": "#/components/responses/500" }
         }
       },
       "post": {
         "operationId": "createStreamV2",
         "summary": "Create a payment stream (v2)",
+        "description": "Creates a new payment stream in `draft` status. The stream is created in `draft` status and must be started via `POST /api/v2/streams/{id}/start`.\n\nSupplying an `Idempotency-Key` header makes this request idempotent; replaying the same key and body returns the cached response.\n\nPer-org daily quota applies — see `Retry-After` on 429 responses.",
         "tags": ["Streams"],
         "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Client-generated key (UUID recommended) to make the request idempotent.",
+            "schema": { "type": "string", "example": "f47ac10b-58cc-4372-a567-0e02b2c3d479" }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -2007,10 +2204,24 @@
                   }
                 }
               },
-              "example": {
-                "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
-                "rate": "120",
-                "schedule": "month"
+              "examples": {
+                "minimal-xlm": {
+                  "summary": "Minimal request — XLM (default token)",
+                  "value": {
+                    "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                    "rate": "120",
+                    "schedule": "month"
+                  }
+                },
+                "with-usdc-token": {
+                  "summary": "Full request with USDC token",
+                  "value": {
+                    "recipient": "GDEF1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFGH",
+                    "rate": "500",
+                    "schedule": "week",
+                    "token": "USDC"
+                  }
+                }
               }
             }
           }
@@ -2021,21 +2232,68 @@
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/StreamV2" },
-                "example": {
-                  "id": "stream_lf3k9z",
-                  "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
-                  "rate": "120 XLM/month",
-                  "status": "draft",
-                  "allowed_actions": ["start"],
-                  "created_at": "2024-01-15T10:00:00.000Z",
-                  "settlement": null
+                "examples": {
+                  "draft-xlm": {
+                    "summary": "Newly created XLM stream in draft status",
+                    "value": {
+                      "id": "stream_lf3k9z",
+                      "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                      "rate": "120 XLM/month",
+                      "status": "draft",
+                      "allowed_actions": ["start"],
+                      "created_at": "2024-01-15T10:00:00.000Z",
+                      "settlement": null
+                    }
+                  },
+                  "draft-usdc": {
+                    "summary": "Newly created USDC stream in draft status",
+                    "value": {
+                      "id": "stream_m7n2p1",
+                      "recipient": "GDEF1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFGH",
+                      "rate": "500 USDC/week",
+                      "status": "draft",
+                      "allowed_actions": ["start"],
+                      "created_at": "2024-01-16T14:30:00.000Z",
+                      "settlement": null
+                    }
+                  }
                 }
               }
             }
           },
           "400": { "$ref": "#/components/responses/400" },
           "401": { "$ref": "#/components/responses/401" },
+          "409": {
+            "description": "Idempotency key reused with a different request body.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "example": {
+                  "error": {
+                    "code": "IDEMPOTENCY_CONFLICT",
+                    "message": "Idempotency key has been used with a different request.",
+                    "request_id": "req_01HZ9ABCDEF"
+                  }
+                }
+              }
+            }
+          },
           "422": { "$ref": "#/components/responses/422" },
+          "429": {
+            "description": "Per-org daily quota exceeded.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "example": {
+                  "error": {
+                    "code": "QUOTA_EXCEEDED",
+                    "message": "Daily stream creation limit reached for this organization.",
+                    "request_id": "req_01HZ9ABCDEF"
+                  }
+                }
+              }
+            }
+          },
           "500": { "$ref": "#/components/responses/500" }
         }
       }
@@ -2146,7 +2404,21 @@
           },
           "401": { "$ref": "#/components/responses/401" },
           "404": { "$ref": "#/components/responses/404" },
-          "409": { "$ref": "#/components/responses/409" },
+          "409": {
+            "description": "Conflict — stream is active or paused and cannot be deleted.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "example": {
+                  "error": {
+                    "code": "STREAM_INACTIVE_STATE",
+                    "message": "Cannot delete an active or paused stream. Stop it first.",
+                    "request_id": "req_01HZ9ABCDEF"
+                  }
+                }
+              }
+            }
+          },
           "500": { "$ref": "#/components/responses/500" }
         }
       }
@@ -2174,8 +2446,20 @@
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/StreamV2" },
                 "examples": {
-                  "success": {
+                  "draft-to-active": {
                     "summary": "Stream transitioned from draft to active",
+                    "value": {
+                      "id": "stream_lf3k9z",
+                      "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                      "rate": "120 XLM/month",
+                      "status": "active",
+                      "allowed_actions": ["pause", "stop"],
+                      "created_at": "2024-01-15T10:00:00.000Z",
+                      "settlement": null
+                    }
+                  },
+                  "paused-to-active": {
+                    "summary": "Paused stream resumed to active",
                     "value": {
                       "id": "stream_lf3k9z",
                       "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
@@ -2193,14 +2477,14 @@
           "401": { "$ref": "#/components/responses/401" },
           "404": { "$ref": "#/components/responses/404" },
           "409": {
-            "description": "Conflict — stream is not in `draft` status.",
+            "description": "Conflict — stream is not in `draft` or `paused` status.",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
                 "example": {
                   "error": {
                     "code": "INVALID_STATE_TRANSITION",
-                    "message": "Cannot start a stream that is not in draft status.",
+                    "message": "Cannot start a stream that is not in draft or paused status.",
                     "request_id": "req_01HZ9ABCDEF"
                   }
                 }
@@ -2306,8 +2590,8 @@
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/StreamV2" },
                 "examples": {
-                  "success": {
-                    "summary": "Active stream paused",
+                  "active-to-paused": {
+                    "summary": "Active stream paused, payments halted",
                     "value": {
                       "id": "stream_lf3k9z",
                       "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
@@ -2315,6 +2599,18 @@
                       "status": "paused",
                       "allowed_actions": ["start", "stop"],
                       "created_at": "2024-01-15T10:00:00.000Z",
+                      "settlement": null
+                    }
+                  },
+                  "high-value-paused": {
+                    "summary": "High-value USDC stream paused",
+                    "value": {
+                      "id": "stream_q8r4s5",
+                      "recipient": "GDEF1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFGH",
+                      "rate": "5000 USDC/month",
+                      "status": "paused",
+                      "allowed_actions": ["start", "stop"],
+                      "created_at": "2024-02-01T09:00:00.000Z",
                       "settlement": null
                     }
                   }
