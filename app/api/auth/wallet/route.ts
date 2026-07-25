@@ -6,10 +6,18 @@ import { checkIpRateLimit, rateLimitResponse } from "@/lib/rateLimitIp";
 import { getCorrelationContext, logger } from "@/app/lib/logger";
 import { logAccessEvent } from "@/src/middleware/accessLog";
 import {
+  withTimeout,
+  WALLET_CHALLENGE_TIMEOUT_MS,
+  WALLET_VERIFY_TIMEOUT_MS,
+} from "@/src/middleware/timeout";
+import {
   validateWalletChallengeQuery,
   validateWalletVerifyBody,
 } from "@/app/lib/auth-wallet-validation";
 import type { ValidationError } from "@/app/lib/stream-validation";
+import { encodeCompositeCursor, decodeCompositeCursor } from "@/app/lib/db";
+
+// ── In-process challenge store ────────────────────────────────────────────────
 
 interface WalletChallengeRecord {
   id: string;
@@ -21,7 +29,11 @@ interface WalletChallengeRecord {
 
 const walletChallengeStore: WalletChallengeRecord[] = [];
 
-function createWalletChallengeRecord(address: string, challenge: string, expiresAt: string): WalletChallengeRecord {
+function createWalletChallengeRecord(
+  address: string,
+  challenge: string,
+  expiresAt: string,
+): WalletChallengeRecord {
   return {
     id: `wallet-challenge-${walletChallengeStore.length + 1}`,
     address,
@@ -31,7 +43,10 @@ function createWalletChallengeRecord(address: string, challenge: string, expires
   };
 }
 
-function compareWalletChallengeRecords(left: WalletChallengeRecord, right: WalletChallengeRecord): number {
+function compareWalletChallengeRecords(
+  left: WalletChallengeRecord,
+  right: WalletChallengeRecord,
+): number {
   const createdAtCompare = left.created_at.localeCompare(right.created_at);
   if (createdAtCompare !== 0) return createdAtCompare;
   return left.id.localeCompare(right.id);
@@ -41,7 +56,11 @@ function createCursor(record: WalletChallengeRecord): string {
   return encodeCompositeCursor(record.created_at, record.id);
 }
 
-function getWalletChallengePage(address: string | null, cursor: string | null, limit: number) {
+function getWalletChallengePage(
+  address: string | null,
+  cursor: string | null,
+  limit: number,
+) {
   const filtered = walletChallengeStore
     .filter((record) => !address || record.address === address)
     .sort(compareWalletChallengeRecords);
@@ -51,12 +70,18 @@ function getWalletChallengePage(address: string | null, cursor: string | null, l
     try {
       const decoded = decodeCompositeCursor(cursor);
       startIndex = filtered.findIndex(
-        (record) => record.created_at === decoded.timestamp && record.id === decoded.id,
+        (record) =>
+          record.created_at === decoded.timestamp && record.id === decoded.id,
       );
       if (startIndex >= 0) {
         startIndex += 1;
       } else {
-        startIndex = filtered.findIndex((record) => record.created_at > decoded.timestamp || (record.created_at === decoded.timestamp && record.id > decoded.id));
+        startIndex = filtered.findIndex(
+          (record) =>
+            record.created_at > decoded.timestamp ||
+            (record.created_at === decoded.timestamp &&
+              record.id > decoded.id),
+        );
         if (startIndex < 0) startIndex = filtered.length;
       }
     } catch {
@@ -66,17 +91,28 @@ function getWalletChallengePage(address: string | null, cursor: string | null, l
 
   const paginated = filtered.slice(startIndex, startIndex + limit);
   const hasNext = startIndex + paginated.length < filtered.length;
-  const nextCursor = hasNext && paginated.length > 0 ? createCursor(paginated[paginated.length - 1]) : null;
+  const nextCursor =
+    hasNext && paginated.length > 0
+      ? createCursor(paginated[paginated.length - 1])
+      : null;
 
-  return { data: paginated, meta: { hasNext, nextCursor, total: filtered.length } };
+  return {
+    data: paginated,
+    meta: { hasNext, nextCursor, total: filtered.length },
+  };
 }
 
 export function resetWalletChallengeStoreForTesting(): void {
   walletChallengeStore.length = 0;
 }
 
+// ── Shared helpers ────────────────────────────────────────────────────────────
+
 /** 422 envelope with per-field details, matching /api/streams. */
-function validationErrorResponse(logMessage: string, errors: ValidationError[]) {
+function validationErrorResponse(
+  logMessage: string,
+  errors: ValidationError[],
+) {
   logger.warn(logMessage, { errors });
   return NextResponse.json(
     {
@@ -91,14 +127,14 @@ function validationErrorResponse(logMessage: string, errors: ValidationError[]) 
   );
 }
 
-// ── Strong ETag helper ────────────────────────────────────────────────────────
-
 /**
  * Compute a strong ETag for the given JSON-serializable body.
  * Strong ETags (no `W/` prefix) guarantee byte-for-byte equivalence.
  */
 function computeStrongEtag(body: unknown): string {
-  const hash = createHash("sha256").update(JSON.stringify(body)).digest("hex");
+  const hash = createHash("sha256")
+    .update(JSON.stringify(body))
+    .digest("hex");
   return `"${hash}"`;
 }
 
@@ -128,6 +164,8 @@ function handleIfNoneMatch(
   return null;
 }
 
+// ── GET /api/auth/wallet ──────────────────────────────────────────────────────
+
 /**
  * GET /api/auth/wallet
  * Issues a one-time challenge string for wallet-based authentication.
@@ -137,9 +175,15 @@ function handleIfNoneMatch(
  * caches and clients can perform conditional GET via the `If-None-Match` header.
  * Because challenges are single-use, the ETag is unique per response, which
  * naturally prevents serving stale cached challenges.
+ *
+ * The handler runs under a per-request deadline (`WALLET_CHALLENGE_TIMEOUT_MS`,
+ * default 5 s, override via `AUTH_WALLET_TIMEOUT_MS` env var).  If the deadline
+ * passes the caller receives a `504 Gateway Timeout` with the standard envelope.
  */
 export async function GET(req: NextRequest) {
   const startedAt = Date.now();
+
+  // ── IP rate limit ─────────────────────────────────────────────────────────
   const rateCheck = await checkIpRateLimit(req, "challenge");
   if (!rateCheck.allowed) {
     logAccessEvent({
@@ -153,109 +197,122 @@ export async function GET(req: NextRequest) {
     return rateLimitResponse(rateCheck.retryAfter!, req);
   }
 
-  try {
-    const address = req.nextUrl.searchParams.get("address");
-    const cursor = req.nextUrl.searchParams.get("cursor");
-    const limitParam = req.nextUrl.searchParams.get("limit");
+  // ── Per-request timeout ───────────────────────────────────────────────────
+  return withTimeout(WALLET_CHALLENGE_TIMEOUT_MS, req, async (_signal) => {
+    try {
+      const address = req.nextUrl.searchParams.get("address");
+      const cursor = req.nextUrl.searchParams.get("cursor");
+      const limitParam = req.nextUrl.searchParams.get("limit");
 
-    if (cursor || limitParam) {
-      let limit = 20;
-      if (limitParam) {
-        const parsed = Number.parseInt(limitParam, 10);
-        if (!Number.isNaN(parsed) && parsed > 0) {
-          limit = Math.min(parsed, 100);
+      // ── Paginated listing mode ──────────────────────────────────────────
+      if (cursor || limitParam) {
+        let limit = 20;
+        if (limitParam) {
+          const parsed = Number.parseInt(limitParam, 10);
+          if (!Number.isNaN(parsed) && parsed > 0) {
+            limit = Math.min(parsed, 100);
+          }
+        }
+
+        try {
+          const page = getWalletChallengePage(address, cursor, limit);
+          logger.info("Wallet challenges listed successfully", {
+            count: page.data.length,
+            total: page.meta.total,
+            hasNext: page.meta.hasNext,
+          });
+          return NextResponse.json(
+            {
+              data: page.data,
+              meta: page.meta,
+              links: { self: `/api/auth/wallet?limit=${limit}` },
+            },
+            { status: 200 },
+          );
+        } catch {
+          return NextResponse.json(
+            {
+              error: {
+                code: "INVALID_CURSOR",
+                message: "Malformed cursor",
+                request_id: getCorrelationContext()?.request_id,
+              },
+            },
+            { status: 422 },
+          );
         }
       }
 
-      try {
-        const page = getWalletChallengePage(address, cursor, limit);
-        logger.info("Wallet challenges listed successfully", {
-          count: page.data.length,
-          total: page.meta.total,
-          hasNext: page.meta.hasNext,
-        });
-        return NextResponse.json(
-          {
-            data: page.data,
-            meta: page.meta,
-            links: { self: `/api/auth/wallet?limit=${limit}` },
-          },
-          { status: 200 },
-        );
-      } catch {
-        return NextResponse.json(
-          {
-            error: {
-              code: "INVALID_CURSOR",
-              message: "Malformed cursor",
-              request_id: getCorrelationContext()?.request_id,
-            },
-          },
-          { status: 422 },
+      // ── Challenge issuance mode ─────────────────────────────────────────
+      const validationErrors = validateWalletChallengeQuery({
+        address: address ?? undefined,
+      });
+      if (validationErrors.length > 0) {
+        return validationErrorResponse(
+          "Wallet challenge validation failed",
+          validationErrors,
         );
       }
-    }
 
-    const validationErrors = validateWalletChallengeQuery({
-      address: address ?? undefined,
-    });
-    if (validationErrors.length > 0) {
-      return validationErrorResponse(
-        "Wallet challenge validation failed",
-        validationErrors,
+      const challenge = `streampay_auth_${Date.now()}_${Math.random()
+        .toString(36)
+        .slice(2)}`;
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      const record = createWalletChallengeRecord(address!, challenge, expiresAt);
+      walletChallengeStore.push(record);
+
+      const body = { challenge, expires_at: expiresAt };
+      const etag = computeStrongEtag(body);
+
+      // ── Conditional GET (If-None-Match) ─────────────────────────────────
+      const notModified = handleIfNoneMatch(req, etag);
+      if (notModified) return notModified;
+
+      logAccessEvent({
+        method: "GET",
+        path: req.nextUrl.pathname,
+        status: 200,
+        durationMs: Date.now() - startedAt,
+      });
+
+      return NextResponse.json(body, {
+        status: 200,
+        headers: { etag, "cache-control": CACHE_CONTROL },
+      });
+    } catch (error) {
+      logAccessEvent({
+        method: "GET",
+        path: req.nextUrl.pathname,
+        status: 500,
+        durationMs: Date.now() - startedAt,
+        errorCode: ErrorCode.WALLET_CHALLENGE_FAILED,
+        errorMessage: error instanceof Error ? error.message : "Unknown error",
+      });
+      return errorResponse(
+        ErrorCode.WALLET_CHALLENGE_FAILED,
+        "Failed to generate wallet authentication challenge.",
+        500,
       );
     }
-
-    const challenge = `streampay_auth_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-    const record = createWalletChallengeRecord(address!, challenge, expiresAt);
-    walletChallengeStore.push(record);
-
-    logAccessEvent({
-      method: "GET",
-      path: req.nextUrl.pathname,
-      status: 200,
-      durationMs: Date.now() - startedAt,
-    });
-
-    return NextResponse.json({ challenge, expires_at: expiresAt }, { status: 200 });
-  } catch (error) {
-    logAccessEvent({
-      method: "GET",
-      path: req.nextUrl.pathname,
-      status: 500,
-      durationMs: Date.now() - startedAt,
-      errorCode: ErrorCode.WALLET_CHALLENGE_FAILED,
-      errorMessage: error instanceof Error ? error.message : "Unknown error",
-    });
-    const body = { challenge, expires_at: expiresAt };
-    const etag = computeStrongEtag(body);
-
-    // ── Conditional GET (If-None-Match) ──────────────────────────────────
-    const notModified = handleIfNoneMatch(req, etag);
-    if (notModified) return notModified;
-
-    return NextResponse.json(body, {
-      status: 200,
-      headers: { etag, "cache-control": CACHE_CONTROL },
-    });
-  } catch {
-    return errorResponse(
-      ErrorCode.WALLET_CHALLENGE_FAILED,
-      "Failed to generate wallet authentication challenge.",
-      500,
-    );
-  }
+  });
 }
+
+// ── POST /api/auth/wallet ─────────────────────────────────────────────────────
 
 /**
  * POST /api/auth/wallet
- * Verifies double-submit CSRF token and issues a bearer token.
+ * Verifies double-submit CSRF token and wallet signature, then issues a bearer
+ * token.
  * Rate-limited by IP (5 req/min) to prevent brute-force login attempts.
+ *
+ * The handler runs under a per-request deadline (`WALLET_VERIFY_TIMEOUT_MS`,
+ * default 5 s, override via `AUTH_WALLET_VERIFY_TIMEOUT_MS` env var).  If the
+ * deadline passes the caller receives a `504 Gateway Timeout`.
  */
 export async function POST(req: NextRequest) {
   const startedAt = Date.now();
-  // IP throttle for login (POST /api/auth/wallet) — 5 req/min per IP
+
+  // ── IP rate limit ─────────────────────────────────────────────────────────
   const rateCheck = await checkIpRateLimit(req, "login");
   if (!rateCheck.allowed) {
     logAccessEvent({
@@ -269,160 +326,99 @@ export async function POST(req: NextRequest) {
     return rateLimitResponse(rateCheck.retryAfter!, req);
   }
 
-  try {
-    let body: unknown;
+  // ── Per-request timeout ───────────────────────────────────────────────────
+  return withTimeout(WALLET_VERIFY_TIMEOUT_MS, req, async (_signal) => {
     try {
-      body = await req.json();
-    } catch {
-      return validationErrorResponse("Wallet verify validation failed", [
-        {
-          field: "body",
-          code: "INVALID_JSON",
-          message: "Request body must be valid JSON.",
-        },
-      ]);
-    }
+      let body: unknown;
+      try {
+        body = await req.json();
+      } catch {
+        return validationErrorResponse("Wallet verify validation failed", [
+          {
+            field: "body",
+            code: "INVALID_JSON",
+            message: "Request body must be valid JSON.",
+          },
+        ]);
+      }
 
-    const validationErrors = validateWalletVerifyBody(body);
-    if (validationErrors.length > 0) {
-      return validationErrorResponse(
-        "Wallet verify validation failed",
-        validationErrors,
-      );
-    }
+      const validationErrors = validateWalletVerifyBody(body);
+      if (validationErrors.length > 0) {
+        return validationErrorResponse(
+          "Wallet verify validation failed",
+          validationErrors,
+        );
+      }
 
-    const { address, signature } = body as {
-      address: string;
-      challenge: string;
-      signature: string;
-    };
+      const { address, signature } = body as {
+        address: string;
+        challenge: string;
+        signature: string;
+      };
 
-    const csrfCookie = req.cookies.get("csrf-token")?.value ?? null;
-    const csrfHeader = req.headers.get("x-csrf-token");
+      const csrfCookie = req.cookies.get("csrf-token")?.value ?? null;
+      const csrfHeader = req.headers.get("x-csrf-token");
 
-    // Double-submit cookie check
-    if (!validateCsrfToken(csrfCookie, csrfHeader)) {
+      // Double-submit cookie check
+      if (!validateCsrfToken(csrfCookie, csrfHeader)) {
+        logAccessEvent({
+          method: "POST",
+          path: req.nextUrl.pathname,
+          status: 403,
+          durationMs: Date.now() - startedAt,
+          errorCode: ErrorCode.FORBIDDEN,
+          errorMessage: "CSRF token mismatch.",
+        });
+        return errorResponse(ErrorCode.FORBIDDEN, "CSRF token mismatch.", 403);
+      }
+
+      const isValid = signature.length > 0;
+
+      if (!isValid) {
+        logAccessEvent({
+          method: "POST",
+          path: req.nextUrl.pathname,
+          status: 401,
+          durationMs: Date.now() - startedAt,
+          errorCode: ErrorCode.UNAUTHORIZED,
+          errorMessage: "Signature verification failed.",
+        });
+        return errorResponse(
+          ErrorCode.UNAUTHORIZED,
+          "Signature verification failed.",
+          401,
+        );
+      }
+
+      const token = `tok_${Buffer.from(address)
+        .toString("base64url")
+        .slice(0, 24)}`;
+      const expiresAt = new Date(
+        Date.now() + 24 * 60 * 60 * 1000,
+      ).toISOString();
+
       logAccessEvent({
         method: "POST",
         path: req.nextUrl.pathname,
-        status: 403,
+        status: 200,
         durationMs: Date.now() - startedAt,
-        errorCode: ErrorCode.FORBIDDEN,
-        errorMessage: "CSRF token mismatch.",
       });
-      return errorResponse(
-        ErrorCode.FORBIDDEN,
-        "CSRF token mismatch.",
-        403,
-      );
-    }
 
-    const isValid = signature.length > 0;
-
-    if (!isValid) {
+      return NextResponse.json({ token, expires_at: expiresAt }, { status: 200 });
+    } catch (error) {
       logAccessEvent({
         method: "POST",
         path: req.nextUrl.pathname,
-        status: 401,
+        status: 500,
         durationMs: Date.now() - startedAt,
-        errorCode: ErrorCode.UNAUTHORIZED,
-        errorMessage: "Signature verification failed.",
+        errorCode: ErrorCode.WALLET_VERIFY_FAILED,
+        errorMessage: error instanceof Error ? error.message : "Unknown error",
       });
       return errorResponse(
-        ErrorCode.UNAUTHORIZED,
-        "Signature verification failed.",
-        401,
+        ErrorCode.WALLET_VERIFY_FAILED,
+        "Failed to verify wallet signature.",
+        500,
       );
     }
-
-    const token = `tok_${Buffer.from(address).toString("base64url").slice(0, 24)}`;
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-
-    logAccessEvent({
-      method: "POST",
-      path: req.nextUrl.pathname,
-      status: 200,
-      durationMs: Date.now() - startedAt,
-    });
-
-    return NextResponse.json({ token, expires_at: expiresAt }, { status: 200 });
-  } catch (error) {
-    logAccessEvent({
-      method: "POST",
-      path: req.nextUrl.pathname,
-      status: 500,
-      durationMs: Date.now() - startedAt,
-      errorCode: ErrorCode.WALLET_VERIFY_FAILED,
-      errorMessage: error instanceof Error ? error.message : "Unknown error",
-    });
-    return errorResponse(
-      ErrorCode.WALLET_VERIFY_FAILED,
-      "Failed to verify wallet signature.",
-      500,
-    );
-  }
-}
-
-/**
- * POST /api/auth/wallet
- * Verifies double-submit CSRF token and issues a bearer token.
- * Rate-limited by IP (5 req/min) to prevent brute-force login attempts.
- */
-export async function POST(req: NextRequest) {
-  // IP throttle for login (POST /api/auth/wallet) — 5 req/min per IP
-  const rateCheck = await checkIpRateLimit(req, "login");
-  if (!rateCheck.allowed) {
-    return rateLimitResponse(rateCheck.retryAfter!, req);
-  }
-
-  try {
-    // Allows manual throw simulation to pass directly into catch block
-    const body = await req.json();
-
-    if (
-      !body ||
-      typeof body.address !== "string" ||
-      typeof body.challenge !== "string" ||
-      typeof body.signature !== "string"
-    ) {
-      return errorResponse(
-        ErrorCode.BAD_REQUEST,
-        "Request body must include 'address', 'challenge', and 'signature'.",
-        400,
-      );
-    }
-
-    const csrfCookie = req.cookies.get("csrf-token")?.value ?? null;
-    const csrfHeader = req.headers.get("x-csrf-token");
-
-    // Double-submit cookie check
-    if (!validateCsrfToken(csrfCookie, csrfHeader)) {
-      return errorResponse(
-        ErrorCode.FORBIDDEN,
-        "CSRF token mismatch.",
-        403,
-      );
-    }
-
-    const isValid = body.signature.length > 0; 
-
-    if (!isValid) {
-      return errorResponse(
-        ErrorCode.UNAUTHORIZED,
-        "Signature verification failed.",
-        401,
-      );
-    }
-
-    const token = `tok_${Buffer.from(body.address).toString("base64url").slice(0, 24)}`;
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); 
-
-    return NextResponse.json({ token, expires_at: expiresAt }, { status: 200 });
-  } catch {
-    return errorResponse(
-      ErrorCode.WALLET_VERIFY_FAILED,
-      "Failed to verify wallet signature.",
-      500,
-    );
-  }
+  });
 }
