@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
+import { decodeCompositeCursor, encodeCompositeCursor } from "@/app/lib/db";
 import { errorResponse, ErrorCode } from "@/app/lib/errors/server";
 import { validateCsrfToken } from "@/app/lib/auth";
 import { checkIpRateLimit, rateLimitResponse } from "@/lib/rateLimitIp";
@@ -8,6 +9,70 @@ import {
   validateWalletVerifyBody,
 } from "@/app/lib/auth-wallet-validation";
 import type { ValidationError } from "@/app/lib/stream-validation";
+
+interface WalletChallengeRecord {
+  id: string;
+  address: string;
+  challenge: string;
+  created_at: string;
+  expires_at: string;
+}
+
+const walletChallengeStore: WalletChallengeRecord[] = [];
+
+function createWalletChallengeRecord(address: string, challenge: string, expiresAt: string): WalletChallengeRecord {
+  return {
+    id: `wallet-challenge-${walletChallengeStore.length + 1}`,
+    address,
+    challenge,
+    created_at: new Date().toISOString(),
+    expires_at: expiresAt,
+  };
+}
+
+function compareWalletChallengeRecords(left: WalletChallengeRecord, right: WalletChallengeRecord): number {
+  const createdAtCompare = left.created_at.localeCompare(right.created_at);
+  if (createdAtCompare !== 0) return createdAtCompare;
+  return left.id.localeCompare(right.id);
+}
+
+function createCursor(record: WalletChallengeRecord): string {
+  return encodeCompositeCursor(record.created_at, record.id);
+}
+
+function getWalletChallengePage(address: string | null, cursor: string | null, limit: number) {
+  const filtered = walletChallengeStore
+    .filter((record) => !address || record.address === address)
+    .sort(compareWalletChallengeRecords);
+
+  let startIndex = 0;
+  if (cursor) {
+    try {
+      const decoded = decodeCompositeCursor(cursor);
+      startIndex = filtered.findIndex(
+        (record) => record.created_at === decoded.timestamp && record.id === decoded.id,
+      );
+      if (startIndex >= 0) {
+        startIndex += 1;
+      } else {
+        startIndex = filtered.findIndex((record) => record.created_at > decoded.timestamp || (record.created_at === decoded.timestamp && record.id > decoded.id));
+        if (startIndex < 0) startIndex = filtered.length;
+      }
+    } catch {
+      throw new Error("INVALID_CURSOR");
+    }
+  }
+
+  const paginated = filtered.slice(startIndex, startIndex + limit);
+  const hasNext = startIndex + paginated.length < filtered.length;
+  const nextCursor = hasNext && paginated.length > 0 ? createCursor(paginated[paginated.length - 1]) : null;
+
+  return { data: paginated, meta: { hasNext, nextCursor, total: filtered.length } };
+}
+
+export function resetWalletChallengeStoreForTesting(): void {
+  walletChallengeStore.length = 0;
+}
 
 /** 422 envelope with per-field details, matching /api/streams. */
 function validationErrorResponse(logMessage: string, errors: ValidationError[]) {
@@ -38,6 +103,46 @@ export async function GET(req: NextRequest) {
 
   try {
     const address = req.nextUrl.searchParams.get("address");
+    const cursor = req.nextUrl.searchParams.get("cursor");
+    const limitParam = req.nextUrl.searchParams.get("limit");
+
+    if (cursor || limitParam) {
+      let limit = 20;
+      if (limitParam) {
+        const parsed = Number.parseInt(limitParam, 10);
+        if (!Number.isNaN(parsed) && parsed > 0) {
+          limit = Math.min(parsed, 100);
+        }
+      }
+
+      try {
+        const page = getWalletChallengePage(address, cursor, limit);
+        logger.info("Wallet challenges listed successfully", {
+          count: page.data.length,
+          total: page.meta.total,
+          hasNext: page.meta.hasNext,
+        });
+        return NextResponse.json(
+          {
+            data: page.data,
+            meta: page.meta,
+            links: { self: `/api/auth/wallet?limit=${limit}` },
+          },
+          { status: 200 },
+        );
+      } catch {
+        return NextResponse.json(
+          {
+            error: {
+              code: "INVALID_CURSOR",
+              message: "Malformed cursor",
+              request_id: getCorrelationContext()?.request_id,
+            },
+          },
+          { status: 422 },
+        );
+      }
+    }
 
     const validationErrors = validateWalletChallengeQuery({
       address: address ?? undefined,
@@ -51,6 +156,8 @@ export async function GET(req: NextRequest) {
 
     const challenge = `streampay_auth_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    const record = createWalletChallengeRecord(address!, challenge, expiresAt);
+    walletChallengeStore.push(record);
 
     return NextResponse.json({ challenge, expires_at: expiresAt }, { status: 200 });
   } catch {
