@@ -134,6 +134,14 @@ function log(level: 'info' | 'warn' | 'error' | 'debug', message: string, meta: 
   console.log(JSON.stringify(logEntry));
 }
 
+// Logger interface
+export const logger = {
+  info: (message: string, meta: Record<string, unknown> = {}) => log('info', message, meta),
+  warn: (message: string, meta: Record<string, unknown> = {}) => log('warn', message, meta),
+  error: (message: string, meta: Record<string, unknown> = {}) => log('error', message, meta),
+  debug: (message: string, meta: Record<string, unknown> = {}) => log('debug', message, meta),
+};
+
 // Update correlation context with additional fields
 export function updateCorrelationContext(updates: Partial<CorrelationContext>): void {
   const context = getCorrelationContext();

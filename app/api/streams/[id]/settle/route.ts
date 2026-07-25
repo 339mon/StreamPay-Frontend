@@ -1,84 +1,148 @@
-import { NextRequest, NextResponse } from "next/server";
-import { db, withLock, checkIdempotency, setIdempotency, computeFingerprint, idempotencyToken } from "@/app/lib/db";
-import { logger } from "@/app/lib/logger";
-import { auditLogStore } from "@/app/lib/audit-log";
+import { NextResponse } from "next/server";
+import {
+  checkIdempotency,
+  computeFingerprint,
+  db,
+  idempotencyToken,
+  setIdempotency,
+  withLock,
+} from "@/app/lib/db";
+import { getCorrelationContext, logger } from "@/app/lib/logger";
+import { checkStreamOrgPolicy } from "@/app/lib/org-policy";
+import { recordPrivilegedStreamAuditEvent } from "@/app/lib/audit-log";
+import { getStellarSettlementClient } from "@/app/lib/stellar";
+
+type Context = { params: Promise<{ id: string }> };
+
+function createErrorResponse(code: string, message: string, status: number) {
+  const context = getCorrelationContext();
+  return NextResponse.json({ error: { code, message, request_id: context?.request_id } }, { status });
+}
+
+function errorResponse(code: string, message: string, status: number) {
+  return createErrorResponse(code, message, status);
+}
+
+function getHeader(request: Request, name: string): string | null {
+  return request.headers?.get?.(name) ?? null;
+}
 
 export async function POST(
-  request: NextRequest,
-  context: { params: { id: string } } | { params: Promise<{ id: string }> }
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const resolvedParams = "then" in context.params ? await context.params : context.params;
-  const streamId = resolvedParams.id;
+  const { id } = await params;
 
-  const idempotencyHeader = request.headers.get("idempotency-key");
-  const lockKey = `stream:${streamId}`;
+  const idempotencyKey = getHeader(request, "Idempotency-Key");
+  const token = idempotencyKey
+    ? idempotencyToken(`streams.settle.${id}`, idempotencyKey)
+    : null;
 
-  return withLock(lockKey, async () => {
-    if (idempotencyHeader) {
-      const token = idempotencyToken("settle", `${streamId}:${idempotencyHeader}`);
-      const fp = computeFingerprint("POST", `/api/streams/${streamId}/settle`, {});
-      const cached = checkIdempotency(db.idempotency, token, fp);
+  const fingerprint = computeFingerprint("POST", `/api/streams/${id}/settle`, null);
+
+  if (token) {
+    const cached = checkIdempotency(db.idempotency, token, fingerprint);
+    if (cached) {
+      if (!cached.ok) {
+        return NextResponse.json(
+          { error: { code: "IDEMPOTENCY_CONFLICT", message: "Idempotency key has been used with a different request." } },
+          { status: 409 },
+        );
+      }
+      return NextResponse.json(cached.body, { status: cached.status });
+    }
+  }
+
+  return withLock(id, async () => {
+    if (token) {
+      const cached = checkIdempotency(db.idempotency, token, fingerprint);
       if (cached) {
-        if ("conflict" in cached && cached.conflict) {
+        if (!cached.ok) {
           return NextResponse.json(
-            { code: "IDEMPOTENCY_CONFLICT", error: "Idempotency key mismatch", message: "Idempotency key mismatch" },
-            { status: 409 }
+            { error: { code: "IDEMPOTENCY_CONFLICT", message: "Idempotency key has been used with a different request." } },
+            { status: 409 },
           );
         }
         return NextResponse.json(cached.body, { status: cached.status });
       }
     }
 
-    const stream = db.streams[streamId];
+    const stream = db.streams.get(id);
     if (!stream) {
-      return NextResponse.json(
-        { code: "STREAM_NOT_FOUND", error: `Stream '${streamId}' not found`, message: `Stream '${streamId}' not found` },
-        { status: 404 }
-      );
+      return errorResponse("STREAM_NOT_FOUND", `Stream '${id}' not found`, 404);
     }
 
-    if (stream.status !== "active") {
-      return NextResponse.json(
-        { code: "INVALID_STATE", error: "Stream must be active to settle", message: "Stream must be active to settle" },
-        { status: 409 }
-      );
+    const actorAddress = getHeader(request, "Actor-Wallet-Address");
+    const policyResult = actorAddress
+      ? checkStreamOrgPolicy(id, actorAddress, "settle")
+      : null;
+    if (policyResult) {
+      if (!policyResult.allowed) {
+        return errorResponse(policyResult.code, policyResult.message, policyResult.httpStatus);
+      }
+      if (policyResult.requiresApproval) {
+        return errorResponse(
+          "APPROVAL_REQUIRED",
+          "This action requires multi-sig approval. Please initiate an approval request.",
+          409
+        );
+      }
     }
 
-    stream.updatedAt = new Date().toISOString();
-    db.streams[streamId] = stream;
+    if (stream.status !== "active" && stream.status !== "paused") {
+      return errorResponse("INVALID_STREAM_STATE", "Only active or paused streams can be settled", 409);
+    }
 
-    const requestId = request.headers.get("x-request-id") || "";
-    const actorId = request.headers.get("x-streampay-actor-id") || request.headers.get("x-actor-id") || "ops-admin-17";
-    const actorRole = request.headers.get("x-streampay-actor-role") || "admin";
-    const fakeTxHash = `fake-tx-${Date.now()}`;
+    const before = structuredClone(stream);
+    const txHash = `fake-tx-${crypto.randomUUID().slice(0, 8)}`;
+    const now = new Date().toISOString();
+    const updatedStream = {
+      ...stream,
+      nextAction: "withdraw" as const,
+      settlementTxHash: txHash,
+      status: "ended" as const,
+      updatedAt: now,
+      withdrawal: {
+        attempts: 0,
+        lastCheckedAt: now,
+        requestedAt: now,
+        settlementTxHash: txHash,
+        state: "pending" as const,
+      },
+    };
+    db.streams.set(id, updatedStream);
 
-    // Record into auditLogStore
-    if (typeof auditLogStore?.append === "function") {
-      auditLogStore.append({
-        requestId,
+    try {
+      const settlement = await getStellarSettlementClient().settleStream({ streamId: id });
+
+      db.streams.set(id, updatedStream);
+
+      recordPrivilegedStreamAuditEvent({
         action: "stream.settle",
-        actor: { id: actorId, role: actorRole },
-        target: { id: streamId, type: "stream" },
-        metadata: { settlementTxHash: fakeTxHash },
-        timestamp: new Date().toISOString(),
+        after: updatedStream as any,
+        before: before as any,
+        metadata: {
+          settlementTxHash: settlement.txHash,
+        },
+        request,
+        streamId: id,
+        targetAccount: updatedStream.recipient,
       });
+
+      const payload = { data: { ...updatedStream, settlement } };
+      if (token) {
+        setIdempotency(db.idempotency, token, fingerprint, 200, payload);
+      }
+
+      logger.info("Stream settled successfully", {
+        streamId: id,
+        action: "settle",
+        status: "success",
+      });
+
+      return NextResponse.json(payload);
+    } catch {
+      return errorResponse("SETTLEMENT_FAILED", "Failed to settle stream on Stellar/Soroban", 502);
     }
-
-    logger.info({
-      message: "Stream settled successfully",
-      streamId,
-      action: "settle",
-      status: "success",
-    });
-
-    const responseBody = { message: "Stream settled successfully", stream };
-
-    if (idempotencyHeader) {
-      const token = idempotencyToken("settle", `${streamId}:${idempotencyHeader}`);
-      const fp = computeFingerprint("POST", `/api/streams/${streamId}/settle`, {});
-      setIdempotency(db.idempotency, token, fp, 200, responseBody);
-    }
-
-    return NextResponse.json(responseBody, { status: 200 });
   });
 }
