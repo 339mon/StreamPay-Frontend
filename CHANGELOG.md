@@ -90,6 +90,9 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
   to the broader streams list.
 - `StreamProgress` now emits shared color-blind pattern classes on its fill so
   stream state remains distinguishable beyond color alone.
+- `StreamProgress` now applies `tabular-nums` to its percentage/status label
+  (the remaining-balance amount already had it), so digit widths stay fixed
+  as accrual updates instead of jittering horizontally.
 
 ### Fixed
 - `GET /api/orgs/:orgId/members` and `POST /api/orgs/:orgId/members` now return

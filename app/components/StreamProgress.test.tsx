@@ -151,6 +151,33 @@ describe("StreamProgress progressbar semantics", () => {
   });
 });
 
+// ── Tabular numerals (FWC26 Stellar Wave) ───────────────────────────────────
+
+describe("StreamProgress tabular-nums formatting", () => {
+  afterEach(() => {
+    // @ts-expect-error reset between tests
+    delete window.matchMedia;
+  });
+
+  it("applies tabular-nums to the percentage label so digit widths stay fixed", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="active" accruedAmount={25} totalAmount={100} />);
+    expect(screen.getByText("25% accrued")).toHaveClass("tabular-nums");
+  });
+
+  it("applies tabular-nums to the label for non-numeric statuses too", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="draft" />);
+    expect(screen.getByText("Not started")).toHaveClass("tabular-nums");
+  });
+
+  it("applies tabular-nums to the remaining-balance amount", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="active" accruedAmount={30} totalAmount={100} />);
+    expect(screen.getByText("70 remaining")).toHaveClass("tabular-nums");
+  });
+});
+
 // ── Aria-live announcements ─────────────────────────────────────────────────
 
 describe("StreamProgress aria-live announcements", () => {

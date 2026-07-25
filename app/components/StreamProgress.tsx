@@ -26,6 +26,10 @@
  * ## Amounts
  * Accepts raw i128-compatible bigint or number values. No decimal conversion
  * is performed here; callers supply pre-scaled display values if needed.
+ * The percentage label and remaining-balance text both render with
+ * `font-variant-numeric: tabular-nums` (the shared `.tabular-nums` utility
+ * in `app/styles/typography.css`) so digit widths stay fixed as the value
+ * changes, preventing the bar's meta row from jittering horizontally.
  */
 
 "use client";
@@ -266,7 +270,7 @@ export function StreamProgress({
 
       {/* Visible label — state is NOT conveyed by color alone */}
       <div className="stream-progress__meta" aria-hidden="true">
-        <span className="stream-progress__label">{label}</span>
+        <span className="stream-progress__label tabular-nums">{label}</span>
         {typeof totalAmount === "number" && typeof accruedAmount === "number" && totalAmount > 0 && (
           <span className="stream-progress__remaining tabular-nums">
             {Math.round(totalAmount - accruedAmount).toLocaleString()} remaining
