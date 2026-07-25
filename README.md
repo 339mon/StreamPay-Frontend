@@ -288,6 +288,7 @@ Wallet-based auth uses a challenge/verify flow:
 |--------|------|------|-------------|
 | `GET` | `/api/auth/wallet` | — | Issue wallet challenge |
 | `POST` | `/api/auth/wallet` | — | Verify signature, get token |
+| `GET` | `/api/auth/wallet/health` | — | Wallet-auth subsystem health probe |
 | `GET` | `/api/v2/streams` | Bearer | List streams (v2 shape) |
 | `POST` | `/api/v2/streams` | Bearer | Create a stream |
 | `POST` | `/api/webhooks/dlq` | — | Receive DLQ webhook events |
