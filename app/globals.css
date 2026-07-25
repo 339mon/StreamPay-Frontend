@@ -1969,6 +1969,7 @@ a:hover {
   color: #111827;
   font-size: 0.9375rem;
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
   word-break: break-all;
 }
 
@@ -1980,6 +1981,7 @@ a:hover {
   color: #1f2937;
   font-family: ui-monospace, "Cascadia Code", "Fira Mono", monospace;
   font-size: 0.875em;
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
   padding: 0.1em 0.35em;
 }
@@ -2128,6 +2130,12 @@ a:hover {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+/* ─── Receipt Share Card ───────────────────────────────────────────────── */
+
+.receipt-share-card__amount-value {
+  font-variant-numeric: tabular-nums;
 }
 
 /* Visibility helpers */
