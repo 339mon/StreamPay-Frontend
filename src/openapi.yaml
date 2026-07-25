@@ -3,6 +3,43 @@ info:
   title: StreamPay API Exports
   version: 2.0.0
 paths:
+  /api/streams:
+    post:
+      summary: Create a new stream
+      responses:
+        '201':
+          description: Stream created
+          content:
+            application/json:
+              examples:
+                streamCreated:
+                  summary: Basic stream creation
+                  value:
+                    data:
+                      id: "str_12345"
+                      sender: "GB2ABCD..."
+                      receiver: "GB3EFGH..."
+                      amount: "100.00"
+                      asset: "USDC"
+                      status: "active"
+                      createdAt: "2026-07-24T12:00:00Z"
+        '400':
+          description: Validation error
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+              description: Correlation ID for structured logging
+          content:
+            application/json:
+              examples:
+                validationError:
+                  summary: Input validation error
+                  value:
+                    error:
+                      code: "VALIDATION_ERROR"
+                      message: "Invalid receiver address."
+                      request_id: "req_xyz"
   /api/exports:
     post:
       summary: Request a new export job
