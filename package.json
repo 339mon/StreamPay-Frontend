@@ -12,6 +12,8 @@
     "test:e2e": "node scripts/run-from-realpath.mjs jest --runInBand --testPathPattern=e2e\\.test\\.ts$",
     "test:e2e:coverage": "node scripts/run-from-realpath.mjs jest --runInBand --testPathPattern=stream-lifecycle.e2e --coverage --collectCoverageFrom='app/api/streams/**/*.ts' --forceExit",
     "smoke": "node scripts/validate-openapi.mjs && node scripts/run-from-realpath.mjs jest lib/rateLimitIp.test.ts app/api/auth/wallet/route.test.ts --forceExit",
+    "smoke:contract": "bash scripts/smoke.sh --contract",
+    "smoke:shell": "bash scripts/smoke-contract.sh",
     "reconcile": "node scripts/run-from-realpath.mjs ts-node scripts/reconcile-streams.ts",
     "recon:cli": "node scripts/run-from-realpath.mjs ts-node scripts/recon-cli.ts"
   },
