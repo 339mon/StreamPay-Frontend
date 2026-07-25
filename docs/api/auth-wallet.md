@@ -6,11 +6,13 @@ other processing.
 
 ## GET /api/auth/wallet
 
-Issues a one-time challenge for wallet-based authentication.
+Issues a one-time challenge for wallet-based authentication. When `limit` or `cursor` is supplied, the endpoint instead returns a paginated list of previously issued wallet challenges ordered by `(created_at, id)` for stable navigation.
 
 | Query param | Rules |
 | ----------- | ----- |
-| `address`   | Required. Stellar public key, checksum-validated (strkey), not just shape. |
+| `address`   | Required for challenge issuance. Stellar public key, checksum-validated (strkey), not just shape. |
+| `limit`     | Optional for pagination. Defaults to `20`, capped at `100`. |
+| `cursor`    | Optional for pagination. Must be a valid composite cursor encoding `(created_at,id)`. |
 
 ## POST /api/auth/wallet
 
