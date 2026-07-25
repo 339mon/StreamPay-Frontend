@@ -113,18 +113,10 @@ export default function NewStreamPage() {
         </div>
       </section>
 
-      <section style={{ maxWidth: '560px', margin: '0 auto 1.5rem', padding: '0 1.5rem' }}>
+      <section className="csf-section" data-testid="csf-cta-section" style={{ maxWidth: '560px', margin: '0 auto 1.5rem', padding: '0 1.5rem' }}>
         <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: '0.75rem',
-            padding: '1rem 1.25rem',
-            background: 'var(--panel)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-md)',
-          }}
+          className="csf-cta-banner"
+          data-testid="csf-cta-banner"
         >
           <div>
             <p style={{ margin: 0, fontWeight: 600 }}>Need a fan-out split?</p>
@@ -138,7 +130,7 @@ export default function NewStreamPage() {
         </div>
       </section>
 
-      <section style={{ maxWidth: '560px', margin: '0 auto', padding: '0 1.5rem' }}>
+      <section className="csf-section" data-testid="csf-form-section" style={{ maxWidth: '560px', margin: '0 auto', padding: '0 1.5rem' }}>
         <form
           onSubmit={handleSubmit}
           data-testid="create-stream-form"
@@ -170,7 +162,7 @@ export default function NewStreamPage() {
           </div>
 
           {/* Amount + token */}
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem' }}>
+          <div className="csf-field-row" data-testid="csf-field-row" style={{ gap: '1rem' }}>
             <div>
               <label
                 htmlFor="amount"
@@ -219,7 +211,7 @@ export default function NewStreamPage() {
           />
 
           {/* Actions */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+          <div className="csf-actions" data-testid="csf-actions">
             <button
               type="button"
               className="button button--secondary csf-field"
