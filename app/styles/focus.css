@@ -11,6 +11,7 @@
     [role="button"],
     [tabindex]:not([tabindex="-1"]),
     .card--clickable,
+    .stream-row__action,
     .stream-progress__track
   ):focus-visible {
     outline: 2px solid var(--accent);
@@ -29,6 +30,7 @@
     [role="button"],
     [tabindex]:not([tabindex="-1"]),
     .card--clickable,
+    .stream-row__action,
     .stream-progress__track
   ):focus:not(:focus-visible) {
     outline: none;

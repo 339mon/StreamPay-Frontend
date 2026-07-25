@@ -59,6 +59,31 @@ describe("StreamProgress reduced-motion fallback", () => {
   });
 });
 
+describe("StreamProgress color-blind safe patterns", () => {
+  afterEach(() => {
+    // @ts-expect-error reset between tests
+    delete window.matchMedia;
+  });
+
+  it.each([
+    ["active", "cb-pattern--active"],
+    ["paused", "cb-pattern--paused"],
+    ["draft", "cb-pattern--draft"],
+    ["ended", "cb-pattern--ended"],
+    ["withdrawn", "cb-pattern--ended"],
+    ["cancelled", "cb-pattern--cancelled"],
+  ] as const)("applies the %s fill texture class", (status, patternClass) => {
+    mockMatchMedia(false);
+    const { container } = render(
+      <StreamProgress status={status} accruedAmount={50} totalAmount={100} />
+    );
+
+    const fill = container.querySelector(".stream-progress__fill");
+    expect(fill).toHaveClass("cb-pattern");
+    expect(fill).toHaveClass(patternClass);
+  });
+});
+
 describe("StreamProgress keyboard focus", () => {
   afterEach(() => {
     // @ts-expect-error reset between tests
