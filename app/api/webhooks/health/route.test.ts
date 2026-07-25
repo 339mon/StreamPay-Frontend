@@ -20,6 +20,13 @@ jest.mock("next/headers", () => ({
   headers: () => ({ get: () => null }),
 }));
 
+// Mock request for withTimeout — must provide method, url, and headers.
+const mockRequest = {
+  method: "GET",
+  url: "http://localhost/api/webhooks/health",
+  headers: new Headers(),
+} as unknown as Request;
+
 const emptyStats: WebhookDeliveryStats = {
   total: 0,
   delivered: 0,
@@ -31,7 +38,7 @@ const emptyStats: WebhookDeliveryStats = {
 
 describe("GET /api/webhooks/health", () => {
   it("returns 200 with expected shape", async () => {
-    const res = await GET();
+    const res = await GET(mockRequest);
     expect(res.status).toBe(200);
 
     const body = (res as unknown as { body: Record<string, unknown> }).body;
@@ -42,13 +49,13 @@ describe("GET /api/webhooks/health", () => {
   });
 
   it("returns status 'ok' when all subscriptions are healthy", async () => {
-    const res = await GET();
+    const res = await GET(mockRequest);
     const body = (res as unknown as { body: { status: string } }).body;
     expect(body.status).toBe("ok");
   });
 
   it("includes all subscription fields", async () => {
-    const res = await GET();
+    const res = await GET(mockRequest);
     const body = (
       res as unknown as {
         body: { subscriptions: Record<string, unknown> };
@@ -61,7 +68,7 @@ describe("GET /api/webhooks/health", () => {
   });
 
   it("includes all delivery_stats fields", async () => {
-    const res = await GET();
+    const res = await GET(mockRequest);
     const body = (
       res as unknown as {
         body: { delivery_stats: Record<string, unknown> };
@@ -76,7 +83,7 @@ describe("GET /api/webhooks/health", () => {
   });
 
   it("checked_at is a valid ISO-8601 timestamp", async () => {
-    const res = await GET();
+    const res = await GET(mockRequest);
     const body = (res as unknown as { body: { checked_at: string } }).body;
     expect(new Date(body.checked_at).toISOString()).toBe(body.checked_at);
   });

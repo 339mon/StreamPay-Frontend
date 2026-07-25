@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { errorResponse, ErrorCode } from "@/app/lib/errors/server";
+import { withTimeout, WEBHOOK_TIMEOUT_MS } from "@/src/middleware/timeout";
 import {
   deriveHealthStatus,
   type WebhookDeliveryStats,
@@ -14,7 +15,8 @@ import {
  * per-subscription delivery statistics.
  */
 
-export async function GET() {
+export async function GET(request: Request) {
+  return withTimeout(WEBHOOK_TIMEOUT_MS, request, async () => {
   try {
     // TODO: replace stubs with real data-layer queries once persistence is wired up.
     const subscriptions: WebhookSubscriptionStats = {
@@ -51,4 +53,5 @@ export async function GET() {
       500,
     );
   }
+  });
 }

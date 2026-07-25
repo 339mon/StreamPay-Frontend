@@ -57,6 +57,13 @@ export const WALLET_CHALLENGE_TIMEOUT_MS =
 export const WALLET_VERIFY_TIMEOUT_MS =
   Number(process.env.AUTH_WALLET_VERIFY_TIMEOUT_MS) || 5_000;
 
+/**
+ * Default wall-clock budget for webhook routes.
+ * Override via the `WEBHOOK_TIMEOUT_MS` environment variable.
+ */
+export const WEBHOOK_TIMEOUT_MS =
+  Number(process.env.WEBHOOK_TIMEOUT_MS) || 30_000;
+
 // ── Core helper ───────────────────────────────────────────────────────────────
 
 /**
