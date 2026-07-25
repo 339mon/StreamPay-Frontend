@@ -1,5 +1,10 @@
 import { GET, POST } from "./route";
 import { resetRateLimitStore } from "@/app/lib/rate-limit-store";
+import { logAccessEvent } from "@/src/middleware/accessLog";
+
+jest.mock("@/src/middleware/accessLog", () => ({
+  logAccessEvent: jest.fn(),
+}));
 
 jest.mock("next/server", () => ({
   NextResponse: {
@@ -67,6 +72,7 @@ function detailFields(res: unknown): string[] {
 
 beforeEach(() => {
   resetRateLimitStore();
+  jest.clearAllMocks();
 });
 
 describe("GET /api/auth/wallet", () => {
@@ -76,6 +82,9 @@ describe("GET /api/auth/wallet", () => {
     const body = (res as any).body;
     expect(typeof body.challenge).toBe("string");
     expect(body.challenge).toMatch(/^streampay_auth_/);
+    expect(logAccessEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ method: "GET", path: "/api/auth/wallet", status: 200 }),
+    );
   });
 
   it("returns 422 VALIDATION_ERROR with details when address is missing", async () => {
@@ -192,6 +201,9 @@ describe("POST /api/auth/wallet", () => {
     expect(res.status).toBe(200);
     const body = (res as any).body;
     expect(typeof body.token).toBe("string");
+    expect(logAccessEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ method: "POST", path: "/api/auth/wallet", status: 200 }),
+    );
   });
 
   it("returns 429 when rate limit is exceeded on POST (login)", async () => {
