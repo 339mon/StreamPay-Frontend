@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { LiveRegion } from "../src/components/LiveRegion";
+import { EmptyState } from "../src/components/EmptyState";
 import styles from "./WalletBadge.module.css";
 
 export type WalletState = "disconnected" | "connecting" | "connected" | "error" | "disconnecting";
@@ -36,8 +37,41 @@ export interface WalletBadgeProps {
 }
 
 /**
+ * Tracks the user's `prefers-reduced-motion` setting.
+ *
+ * Returns `true` when reduced motion is requested. SSR-safe: defaults to
+ * `false` before hydration and updates live if the preference changes.
+ * Used to swap animated connecting/status transitions for a static fallback.
+ */
+function usePrefersReducedMotion(): boolean {
+  const [prefersReduced, setPrefersReduced] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return;
+    }
+
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setPrefersReduced(query.matches);
+
+    const onChange = (event: MediaQueryListEvent) => setPrefersReduced(event.matches);
+
+    if (typeof query.addEventListener === "function") {
+      query.addEventListener("change", onChange);
+      return () => query.removeEventListener("change", onChange);
+    }
+
+    query.addListener(onChange);
+    return () => query.removeListener(onChange);
+  }, []);
+
+  return prefersReduced;
+}
+
+/**
  * WalletBadge displays current wallet status and announces state changes via an ARIA live region.
  * Refactored for Issue #1072 with responsive breakpoint layout rules, design tokens, and WCAG accessibility.
+ * Issue #1078: static fallback when `prefers-reduced-motion: reduce` is set.
  */
 export function WalletBadge({
   state = "disconnected",
@@ -55,6 +89,7 @@ export function WalletBadge({
   showEmptyState = false,
 }: WalletBadgeProps) {
   const [srMessage, setSrMessage] = useState<string>("");
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   const formattedAddress = useMemo(() => {
     if (!address) return "";
@@ -152,20 +187,33 @@ export function WalletBadge({
     );
   }
 
+  const motionClass = prefersReducedMotion ? styles.badgeStatic : styles.badgeAnimated;
+
   return (
     <div
-      className={`wallet-badge wallet-badge--${state} ${styles.badge} ${isInteractive ? styles.badgeInteractive : ""} ${className}`.trim()}
+      className={`wallet-badge wallet-badge--${state} ${styles.badge} ${motionClass} ${isInteractive ? styles.badgeInteractive : ""} ${className}`.trim()}
       onClick={handleAction}
       onKeyDown={isInteractive ? handleKeyDown : undefined}
       role={isInteractive ? "button" : "region"}
       tabIndex={isInteractive ? 0 : undefined}
       aria-label={`Wallet status: ${state}`}
       data-testid="wallet-badge"
+      data-reduced-motion={prefersReducedMotion ? "true" : "false"}
+      style={{
+        transition: prefersReducedMotion
+          ? "none"
+          : "background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease",
+      }}
     >
       {/* Status Dot */}
       <span
         className={`wallet-badge__dot ${styles.dot} ${getDotStyleClass()}`}
         aria-hidden="true"
+        data-reduced-motion={prefersReducedMotion ? "true" : "false"}
+        style={{
+          transition: prefersReducedMotion ? "none" : "background-color 0.2s ease",
+          animation: prefersReducedMotion ? "none" : undefined,
+        }}
       />
 
       {/* Main Content */}

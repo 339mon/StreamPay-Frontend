@@ -6,6 +6,20 @@ import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { WalletBadge } from "./WalletBadge";
 
+/** Installs a matchMedia mock that reports the given reduced-motion preference. */
+function mockMatchMedia(prefersReduced: boolean) {
+  window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+    matches: query.includes("prefers-reduced-motion") ? prefersReduced : false,
+    media: query,
+    onchange: null,
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+    addListener: jest.fn(),
+    removeListener: jest.fn(),
+    dispatchEvent: jest.fn(),
+  }));
+}
+
 describe("WalletBadge", () => {
   it("renders disconnected state by default with connect label and SR announcement", () => {
     render(<WalletBadge providerName="Freighter" />);
@@ -132,5 +146,56 @@ describe("WalletBadge", () => {
     const badge = screen.getByTestId("wallet-badge");
     expect(badge).toHaveAttribute("role", "region");
     expect(badge).not.toHaveAttribute("tabIndex");
+  });
+
+  describe("reduced-motion fallback (Issue #1078)", () => {
+    afterEach(() => {
+      // @ts-expect-error reset between tests
+      delete window.matchMedia;
+    });
+
+    it("applies animated transitions when reduced motion is not requested", () => {
+      mockMatchMedia(false);
+      render(<WalletBadge state="connecting" providerName="Freighter" />);
+      const badge = screen.getByTestId("wallet-badge");
+
+      expect(badge).toHaveAttribute("data-reduced-motion", "false");
+      expect(badge.style.transition).toContain("background-color");
+
+      const dot = badge.querySelector(".wallet-badge__dot") as HTMLElement;
+      expect(dot).toHaveAttribute("data-reduced-motion", "false");
+      expect(dot.style.transition).not.toBe("none");
+      expect(dot.style.animation).not.toBe("none");
+    });
+
+    it("renders static fallback (no transition/animation) when reduced motion is requested", () => {
+      mockMatchMedia(true);
+      render(<WalletBadge state="connecting" providerName="Freighter" />);
+      const badge = screen.getByTestId("wallet-badge");
+
+      expect(badge).toHaveAttribute("data-reduced-motion", "true");
+      expect(badge.style.transition).toBe("none");
+
+      const dot = badge.querySelector(".wallet-badge__dot") as HTMLElement;
+      expect(dot).toHaveAttribute("data-reduced-motion", "true");
+      expect(dot.style.transition).toBe("none");
+      expect(dot.style.animation).toBe("none");
+    });
+
+    it("keeps status content accessible regardless of motion preference", () => {
+      mockMatchMedia(true);
+      render(
+        <WalletBadge
+          state="connected"
+          address="GABCD1234567890XYZ"
+          providerName="Freighter"
+          network="Testnet"
+          balance="10 XLM"
+        />
+      );
+      expect(screen.getByText("GABC...0XYZ")).toBeInTheDocument();
+      expect(screen.getByText("Testnet")).toBeInTheDocument();
+      expect(screen.getByTestId("live-region")).toHaveTextContent("Freighter connected");
+    });
   });
 });
