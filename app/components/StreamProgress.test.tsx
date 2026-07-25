@@ -1,10 +1,10 @@
-/**
- * @jest-environment jsdom
- */
+/** @jest-environment jsdom */
 import React from "react";
 import { render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { StreamProgress } from "./StreamProgress";
+
+// ── matchMedia mock ─────────────────────────────────────────────────────────
 
 /** Installs a matchMedia mock that reports the given reduced-motion preference. */
 function mockMatchMedia(prefersReduced: boolean) {
@@ -19,6 +19,8 @@ function mockMatchMedia(prefersReduced: boolean) {
     dispatchEvent: jest.fn(),
   }));
 }
+
+// ── Existing: reduced-motion tests ──────────────────────────────────────────
 
 describe("StreamProgress reduced-motion fallback", () => {
   afterEach(() => {
@@ -59,6 +61,8 @@ describe("StreamProgress reduced-motion fallback", () => {
   });
 });
 
+// ── Color-blind safe patterns ───────────────────────────────────────────────
+
 describe("StreamProgress color-blind safe patterns", () => {
   afterEach(() => {
     // @ts-expect-error reset between tests
@@ -84,6 +88,8 @@ describe("StreamProgress color-blind safe patterns", () => {
   });
 });
 
+// ── Keyboard focus ──────────────────────────────────────────────────────────
+
 describe("StreamProgress keyboard focus", () => {
   afterEach(() => {
     // @ts-expect-error reset between tests
@@ -107,5 +113,147 @@ describe("StreamProgress keyboard focus", () => {
 
     expect(bar).toHaveFocus();
     expect(bar).toHaveClass("stream-progress__track");
+  });
+});
+
+// ── Progressbar role tests ──────────────────────────────────────────────────
+
+describe("StreamProgress progressbar semantics", () => {
+  afterEach(() => {
+    // @ts-expect-error reset between tests
+    delete window.matchMedia;
+  });
+
+  it("has correct aria attributes for active stream", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="active" accruedAmount={25} totalAmount={100} />);
+    const bar = screen.getByRole("progressbar");
+    expect(bar).toHaveAttribute("aria-valuenow", "25");
+    expect(bar).toHaveAttribute("aria-valuemin", "0");
+    expect(bar).toHaveAttribute("aria-valuemax", "100");
+    expect(bar).toHaveAttribute("aria-valuetext", "25% accrued");
+  });
+
+  it("shows 'Not started' for draft status", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="draft" />);
+    const bar = screen.getByRole("progressbar");
+    expect(bar).toHaveAttribute("aria-valuenow", "0");
+    expect(bar).toHaveAttribute("aria-valuetext", "Not started");
+  });
+
+  it("shows 'Completed' for ended status", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="ended" />);
+    const bar = screen.getByRole("progressbar");
+    expect(bar).toHaveAttribute("aria-valuenow", "100");
+    expect(bar).toHaveAttribute("aria-valuetext", "Completed");
+  });
+});
+
+// ── Aria-live announcements ─────────────────────────────────────────────────
+
+describe("StreamProgress aria-live announcements", () => {
+  afterEach(() => {
+    // @ts-expect-error reset between tests
+    delete window.matchMedia;
+  });
+
+  it("renders a LiveRegion with data-testid stream-progress-live", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="active" accruedAmount={50} totalAmount={100} />);
+    expect(screen.getByTestId("stream-progress-live")).toBeInTheDocument();
+  });
+
+  it("has empty announcement on initial render (no false positive)", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="active" accruedAmount={50} totalAmount={100} />);
+    const region = screen.getByTestId("stream-progress-live");
+    expect(region).toHaveTextContent("");
+  });
+
+  it("announces 'Stream paused' when status changes to paused", () => {
+    mockMatchMedia(false);
+    const { rerender } = render(
+      <StreamProgress status="active" accruedAmount={50} totalAmount={100} />,
+    );
+    rerender(
+      <StreamProgress status="paused" accruedAmount={50} totalAmount={100} />,
+    );
+    expect(screen.getByTestId("stream-progress-live")).toHaveTextContent("Stream paused");
+  });
+
+  it("announces 'Stream completed' when status changes to ended", () => {
+    mockMatchMedia(false);
+    const { rerender } = render(
+      <StreamProgress status="active" accruedAmount={50} totalAmount={100} />,
+    );
+    rerender(
+      <StreamProgress status="ended" accruedAmount={100} totalAmount={100} />,
+    );
+    expect(screen.getByTestId("stream-progress-live")).toHaveTextContent("Stream completed");
+  });
+
+  it("announces 'Stream withdrawn' when status changes to withdrawn", () => {
+    mockMatchMedia(false);
+    const { rerender } = render(
+      <StreamProgress status="active" accruedAmount={50} totalAmount={100} />,
+    );
+    rerender(
+      <StreamProgress status="withdrawn" accruedAmount={50} totalAmount={100} />,
+    );
+    expect(screen.getByTestId("stream-progress-live")).toHaveTextContent("Stream withdrawn");
+  });
+
+  it("announces 'Stream cancelled' when status changes to cancelled", () => {
+    mockMatchMedia(false);
+    const { rerender } = render(
+      <StreamProgress status="active" accruedAmount={50} totalAmount={100} />,
+    );
+    rerender(
+      <StreamProgress status="cancelled" accruedAmount={50} totalAmount={100} />,
+    );
+    expect(screen.getByTestId("stream-progress-live")).toHaveTextContent("Stream cancelled");
+  });
+
+  it("announces 'Stream resumed' when status changes from paused to active", () => {
+    mockMatchMedia(false);
+    const { rerender } = render(
+      <StreamProgress status="paused" accruedAmount={50} totalAmount={100} />,
+    );
+    rerender(
+      <StreamProgress status="active" accruedAmount={50} totalAmount={100} />,
+    );
+    expect(screen.getByTestId("stream-progress-live")).toHaveTextContent("Stream resumed");
+  });
+
+  it("announces progress milestone when percent changes by >= 10", () => {
+    mockMatchMedia(false);
+    const { rerender } = render(
+      <StreamProgress status="active" accruedAmount={20} totalAmount={100} />,
+    );
+    rerender(
+      <StreamProgress status="active" accruedAmount={50} totalAmount={100} />,
+    );
+    expect(screen.getByTestId("stream-progress-live")).toHaveTextContent("Stream progress: 50% accrued");
+  });
+
+  it("does not announce for small percent changes (< 10%)", () => {
+    mockMatchMedia(false);
+    const { rerender } = render(
+      <StreamProgress status="active" accruedAmount={20} totalAmount={100} />,
+    );
+    rerender(
+      <StreamProgress status="active" accruedAmount={25} totalAmount={100} />,
+    );
+    expect(screen.getByTestId("stream-progress-live")).toHaveTextContent("");
+  });
+
+  it("live region uses polite politeness by default", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="active" accruedAmount={50} totalAmount={100} />);
+    const region = screen.getByTestId("stream-progress-live");
+    expect(region).toHaveAttribute("aria-live", "polite");
+    expect(region).toHaveAttribute("role", "status");
   });
 });
