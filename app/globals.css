@@ -3899,6 +3899,34 @@ a:hover {
   }
 }
 
+/*
+ * Compact override for the generic-variant EmptyState rendered inline above
+ * the recipient address field when there are no recent recipients yet.
+ * Scoped to this class only so the shared .empty-state styles used by the
+ * streams list, contacts, and templates pages are unaffected.
+ */
+.recent-recipients-empty.empty-state {
+  padding: 0.85rem 1rem;
+  border-radius: 0.85rem;
+  gap: 0.5rem;
+}
+
+.recent-recipients-empty .empty-state__content {
+  gap: 0.35rem;
+}
+
+.recent-recipients-empty .empty-state__eyebrow {
+  font-size: 0.6875rem;
+}
+
+.recent-recipients-empty .empty-state__title {
+  font-size: 1rem;
+}
+
+.recent-recipients-empty .empty-state__description {
+  font-size: 0.8125rem;
+}
+
 /* =========================================================
    Help & FAQ page
    ========================================================= */
