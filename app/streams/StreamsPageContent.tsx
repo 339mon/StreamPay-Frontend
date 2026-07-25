@@ -214,7 +214,7 @@ export function StreamsPageContent({
               />
             ))}
           </section>
-        }
+        )}
       </section>
     </main>
   );
