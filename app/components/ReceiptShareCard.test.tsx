@@ -263,4 +263,55 @@ describe("ReceiptShareCard", () => {
       );
     });
   });
+
+  /* ── tabular-nums formatting ─────────────────────────────────────────── */
+
+  it("renders the amount value with the receipt-share-card__amount-value class that applies tabular-nums", () => {
+    const { container } = render(
+      <ReceiptShareCard streamId="s-1" recipient={RECIPIENT} amount="1234.56" />,
+    );
+
+    const amountValue = container.querySelector(".receipt-share-card__amount-value");
+    expect(amountValue).toBeInTheDocument();
+    expect(amountValue).toHaveTextContent("1234.56");
+    // The class .receipt-share-card__amount-value carries font-variant-numeric: tabular-nums
+    // in globals.css (verified via integration tests / visual review).
+    // jsdom does not resolve external CSS, so we verify the class contract instead.
+    expect(amountValue!.className).toContain("receipt-share-card__amount-value");
+  });
+
+  it("renders the amount with the correct class for a whole number", () => {
+    const { container } = render(
+      <ReceiptShareCard streamId="s-1" recipient={RECIPIENT} amount="1000" />,
+    );
+
+    const amountValue = container.querySelector(".receipt-share-card__amount-value");
+    expect(amountValue).toBeInTheDocument();
+    expect(amountValue).toHaveTextContent("1000");
+    expect(amountValue!.className).toContain("receipt-share-card__amount-value");
+  });
+
+  it("renders the amount with the correct class for a large number", () => {
+    const { container } = render(
+      <ReceiptShareCard streamId="s-1" recipient={RECIPIENT} amount="999999.99" />,
+    );
+
+    const amountValue = container.querySelector(".receipt-share-card__amount-value");
+    expect(amountValue).toBeInTheDocument();
+    expect(amountValue).toHaveTextContent("999999.99");
+    expect(amountValue!.className).toContain("receipt-share-card__amount-value");
+  });
+
+  it("does not apply the amount-value class to the asset code element", () => {
+    const { container } = render(
+      <ReceiptShareCard streamId="s-1" recipient={RECIPIENT} amount="42.00" assetCode="USDC" />,
+    );
+
+    const assetCode = container.querySelector(".receipt-share-card__amount-asset");
+    expect(assetCode).toBeInTheDocument();
+    expect(assetCode).toHaveTextContent("USDC");
+    // The asset code element uses a different BEM class and does NOT get
+    // the tabular-nums rule — only the amount-value class carries it.
+    expect(assetCode!.className).not.toContain("receipt-share-card__amount-value");
+  });
 });
