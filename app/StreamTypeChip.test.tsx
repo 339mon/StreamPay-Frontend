@@ -50,4 +50,51 @@ describe('StreamTypeChip', () => {
     expect(chip).toHaveFocus();
     expect(chip).toHaveClass('stream-type-chip');
   });
+
+  describe('reduced-motion', () => {
+    afterEach(() => {
+      // @ts-expect-error reset between tests
+      delete window.matchMedia;
+    });
+
+    it('applies standard transition style and attribute when reduced motion is not requested', () => {
+      window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+        addListener: jest.fn(),
+        removeListener: jest.fn(),
+        dispatchEvent: jest.fn(),
+      }));
+
+      const { container } = render(<StreamTypeChip type="Video" amount={12345} />);
+      const chip = container.querySelector('.stream-type-chip') as HTMLElement;
+      
+      expect(chip).toHaveAttribute('data-reduced-motion', 'false');
+      expect(chip.style.transition).toContain('transform');
+    });
+
+    it('renders static fallback (transition/transform none) when reduced motion is requested', () => {
+      window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+        matches: true,
+        media: query,
+        onchange: null,
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+        addListener: jest.fn(),
+        removeListener: jest.fn(),
+        dispatchEvent: jest.fn(),
+      }));
+
+      const { container } = render(<StreamTypeChip type="Video" amount={12345} />);
+      const chip = container.querySelector('.stream-type-chip') as HTMLElement;
+      
+      expect(chip).toHaveAttribute('data-reduced-motion', 'true');
+      expect(chip.style.transition).toBe('none');
+      expect(chip.style.transform).toBe('none');
+    });
+  });
 });
+
