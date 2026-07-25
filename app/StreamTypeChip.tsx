@@ -16,7 +16,10 @@ export interface StreamTypeChipProps {
 
 export const StreamTypeChip: React.FC<StreamTypeChipProps> = ({ type, amount }) => {
   return (
-    <div className={styles.streamTypeChip}>
+    <div
+      className={`${styles.streamTypeChip} stream-type-chip`}
+      tabIndex={0}
+    >
       <span className={styles.type}>{type}</span>
       <span className={`tabular-nums ${styles.amount}`}>
         {amount}

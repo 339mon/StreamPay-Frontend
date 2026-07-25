@@ -35,4 +35,19 @@ describe('StreamTypeChip', () => {
     const amountElement = screen.getByText('67890');
     expect(amountElement).toHaveClass('tabular-nums');
   });
+
+  it('is reachable via keyboard tab order', () => {
+    const { container } = render(<StreamTypeChip type="Video" amount={12345} />);
+    const chip = container.querySelector('.stream-type-chip');
+    expect(chip).toHaveAttribute('tabIndex', '0');
+  });
+
+  it('receives real DOM focus and carries the shared focus-visible class hook', () => {
+    const { container } = render(<StreamTypeChip type="Video" amount={12345} />);
+    const chip = container.querySelector('.stream-type-chip') as HTMLElement;
+    expect(chip).not.toBeNull();
+    chip.focus();
+    expect(chip).toHaveFocus();
+    expect(chip).toHaveClass('stream-type-chip');
+  });
 });
