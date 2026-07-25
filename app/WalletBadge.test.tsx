@@ -88,4 +88,11 @@ describe("WalletBadge", () => {
     const liveRegion = screen.getByTestId("live-region");
     expect(liveRegion).toHaveTextContent("Custom screen reader message");
   });
+
+  it("renders EmptyState when showEmptyState is true and state is disconnected", () => {
+    render(<WalletBadge state="disconnected" showEmptyState={true} />);
+    expect(screen.getByTestId("wallet-badge-empty-state")).toBeInTheDocument();
+    expect(screen.getByText("Wallet Disconnected")).toBeInTheDocument();
+    expect(screen.getByText("Connect your Stellar wallet to participate in the GrantFox campaign.")).toBeInTheDocument();
+  });
 });
