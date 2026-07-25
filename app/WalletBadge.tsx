@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { LiveRegion } from "../src/components/LiveRegion";
+import styles from "./WalletBadge.module.css";
 
 export type WalletState = "disconnected" | "connecting" | "connected" | "error" | "disconnecting";
 
@@ -34,6 +35,7 @@ export interface WalletBadgeProps {
 
 /**
  * WalletBadge displays current wallet status and announces state changes via an ARIA live region.
+ * Refactored for Issue #1072 with responsive breakpoint layout rules, design tokens, and WCAG accessibility.
  */
 export function WalletBadge({
   state = "disconnected",
@@ -109,18 +111,19 @@ export function WalletBadge({
     }
   };
 
-  const getStatusColor = () => {
+  const getDotStyleClass = () => {
     switch (state) {
       case "connected":
-        return "#10B981"; // green
+        return styles.dotConnected;
       case "connecting":
+        return styles.dotConnecting;
       case "disconnecting":
-        return "#F59E0B"; // amber / yellow
+        return styles.dotDisconnecting;
       case "error":
-        return "#EF4444"; // red
+        return styles.dotError;
       case "disconnected":
       default:
-        return "#9CA3AF"; // gray
+        return styles.dotDisconnected;
     }
   };
 
@@ -128,51 +131,33 @@ export function WalletBadge({
 
   return (
     <div
-      className={`wallet-badge wallet-badge--${state} ${className}`.trim()}
+      className={`wallet-badge wallet-badge--${state} ${styles.badge} ${isInteractive ? styles.badgeInteractive : ""} ${className}`.trim()}
       onClick={handleAction}
       onKeyDown={isInteractive ? handleKeyDown : undefined}
       role={isInteractive ? "button" : "region"}
       tabIndex={isInteractive ? 0 : undefined}
       aria-label={`Wallet status: ${state}`}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "0.5rem",
-        padding: "0.4rem 0.8rem",
-        borderRadius: "9999px",
-        border: "1px solid var(--border, #374151)",
-        backgroundColor: "var(--panel, #1F2937)",
-        color: "var(--foreground, #F9FAFB)",
-        fontSize: "0.875rem",
-        fontWeight: 500,
-        cursor: isInteractive ? "pointer" : "default",
-        userSelect: "none",
-        position: "relative",
-      }}
       data-testid="wallet-badge"
     >
       {/* Status Dot */}
       <span
-        className="wallet-badge__dot"
-        style={{
-          width: "8px",
-          height: "8px",
-          borderRadius: "50%",
-          backgroundColor: getStatusColor(),
-          display: "inline-block",
-        }}
+        className={`wallet-badge__dot ${styles.dot} ${getDotStyleClass()}`}
         aria-hidden="true"
       />
 
       {/* Main Content */}
-      <span className="wallet-badge__label">
+      <span className={`wallet-badge__label ${styles.label}`}>
         {state === "connecting" && (providerName ? `Connecting ${providerName}...` : "Connecting...")}
         {state === "disconnecting" && "Disconnecting..."}
         {state === "error" && (errorMessage || "Connection Error")}
         {state === "disconnected" && "Connect Wallet"}
         {state === "connected" && (
           <>
-            {providerName && <span style={{ opacity: 0.8, marginRight: "0.25rem" }}>{providerName}:</span>}
+            {providerName && (
+              <span className={`wallet-badge__provider-prefix ${styles.providerPrefix}`}>
+                {providerName}:
+              </span>
+            )}
             <span>{formattedAddress || "Connected"}</span>
           </>
         )}
@@ -181,14 +166,7 @@ export function WalletBadge({
       {/* Optional Network tag */}
       {state === "connected" && network && (
         <span
-          className="wallet-badge__network"
-          style={{
-            fontSize: "0.75rem",
-            padding: "0.1rem 0.4rem",
-            borderRadius: "4px",
-            backgroundColor: "rgba(255, 255, 255, 0.1)",
-            color: "var(--muted-light, #9CA3AF)",
-          }}
+          className={`wallet-badge__network ${styles.network}`}
         >
           {network}
         </span>
@@ -196,7 +174,7 @@ export function WalletBadge({
 
       {/* Optional Balance tag */}
       {state === "connected" && balance && (
-        <span className="wallet-badge__balance" style={{ fontWeight: 600 }}>
+        <span className={`wallet-badge__balance ${styles.balance}`}>
           {balance}
         </span>
       )}
@@ -205,28 +183,19 @@ export function WalletBadge({
       {state === "connected" && onDisconnect && (
         <button
           type="button"
-          className="wallet-badge__disconnect"
+          className={`wallet-badge__disconnect ${styles.disconnect}`}
           onClick={(e) => {
             e.stopPropagation();
             onDisconnect();
           }}
           aria-label="Disconnect wallet"
-          style={{
-            background: "none",
-            border: "none",
-            color: "var(--muted-light, #9CA3AF)",
-            cursor: "pointer",
-            fontSize: "0.75rem",
-            padding: "0 0.2rem",
-            marginLeft: "0.25rem",
-          }}
         >
           ✕
         </button>
       )}
 
       {/* ARIA Live Region Announcement */}
-      <LiveRegion message={srMessage} politeness={politeness} />
+      <LiveRegion message={srMessage} politeness={politeness} data-testid="live-region" />
     </div>
   );
 }
