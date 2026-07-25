@@ -30,12 +30,14 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
   (gzip/brotli for all responses).
 
 ### Added
-- `app/settings/notifications/page.tsx` — dedicated GrantFox FWC26
-  notifications page exposing per-category in-app/email toggles with a
-  focused save flow and responsive, accessible settings layout.
-- `app/components/PayoutSummary.tsx` — a refined GrantFox payout summary card
-  with tighter typography, spacing, and responsive layout for the campaign
-  surface while preserving dark-mode and accessibility token consistency.
+- MRU (most-recently-used) wallet ordering on the connect modal: the
+  provider a user picked last surfaces at the top of `WalletModal`,
+  persisted under the `streampay_mru_wallet` `localStorage` key via
+  `getMRUWalletId` / `setMRUWalletId` / `getSortedProviders` in
+  `app/state/walletPrefs.ts`. Stale ids and SSR are tolerated; the
+  connect flow never breaks because of a missing preference. Backed by
+  focused unit tests in `app/state/walletPrefs.test.ts` and documented in
+  `docs/mru-wallet-ordering.md`.
 - `lib/chaos.ts` — fault-injection middleware for chaos tests. Lets test
   suites inject latency, error responses, or request aborts at configurable
   rates (defaults disabled; opt in via `CHAOS_ENABLED=true` or programmatic
