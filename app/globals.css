@@ -2607,9 +2607,26 @@ a:hover {
     transform: translateX(-100%);
   }
   100% {
-    transform: translateX(350%);
+    transform: translateX(100%);
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .splash-screen {
+    transition: none !important;
+  }
+  .splash-orb,
+  .splash-logo-glow,
+  .splash-logo,
+  .splash-title,
+  .splash-tagline,
+  .splash-loader,
+  .splash-loader__bar {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
 
 /* ─── Stream Detail & Timeline Pages ──────────────────────────────────────── */
 
