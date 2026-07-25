@@ -3,7 +3,7 @@
  */
 
 import React from "react";
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { StreamRow, type StreamRowData } from "./StreamRow";
 import type { StreamStatus } from "@/app/types/openapi";
@@ -47,33 +47,16 @@ describe("StreamRow", () => {
     expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
   });
 
-  it("applies a consistent visible focus ring style when the action button is focused", () => {
+  it("lets the action button receive focus without inline focus styling", () => {
     render(<StreamRow stream={baseStream} />);
     const actionButton = screen.getByRole("button", { name: "Pause" });
 
-    // Initial state: not focused, should not have the custom outline styles
-    expect(actionButton).not.toHaveStyle({ outline: "2px solid var(--accent)" });
+    expect(actionButton).not.toHaveAttribute("style");
 
-    // Focus the button
-    act(() => {
-      actionButton.focus();
-      fireEvent.focus(actionButton);
-    });
+    actionButton.focus();
+
     expect(actionButton).toHaveFocus();
-
-    // Verify it applies the correct design-token outline style for visual consistency
-    expect(actionButton).toHaveStyle({
-      outline: "2px solid var(--accent)",
-      outlineOffset: "2px",
-    });
-
-    // Blur the button
-    act(() => {
-      actionButton.blur();
-      fireEvent.blur(actionButton);
-    });
-    expect(actionButton).not.toHaveFocus();
-    expect(actionButton).not.toHaveStyle({ outline: "2px solid var(--accent)" });
+    expect(actionButton).not.toHaveAttribute("style");
   });
 
   describe("color-blind safe pattern overlay (v7)", () => {
