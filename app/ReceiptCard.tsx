@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useCallback } from "react";
+import styles from "./ReceiptCard.module.css";
 
 const STATUS_LABELS: Record<string, string> = {
   active: "Active",
@@ -58,37 +59,19 @@ export function ReceiptCard({
 
   return (
     <article
-      className="receipt-doc"
-      style={{
-        backgroundColor: "var(--panel)",
-        color: "var(--foreground)",
-        border: "1px solid var(--border)",
-        borderRadius: "8px",
-        padding: "24px",
-        maxWidth: "400px",
-        fontFamily: "var(--font-sans, system-ui, sans-serif)",
-        boxShadow: "var(--shadow-soft)"
-      }}
+      className={styles.card}
       aria-label="Stream receipt card"
     >
-      <header className="receipt-header" style={{ marginBottom: "16px" }}>
-        <div className="receipt-brand" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <header className={styles.header}>
+        <div className={styles.brand}>
           <div>
-            <span className="receipt-brand__wordmark" style={{ fontWeight: 600, fontSize: "1.125rem" }}>StreamPay</span>
-            <span className="receipt-brand__tagline" style={{ marginLeft: "8px", color: "var(--muted)" }}>Receipt</span>
+            <span className={styles.brandWordmark}>StreamPay</span>
+            <span className={styles.brandTagline}>Receipt</span>
           </div>
           {network && (
             <span 
-              className="receipt-network-badge" 
+              className={`${styles.networkBadge} ${network === "mainnet" ? styles.networkMainnet : styles.networkTestnet}`}
               data-network={network}
-              style={{
-                fontSize: "0.75rem",
-                padding: "2px 8px",
-                borderRadius: "999px",
-                backgroundColor: network === "mainnet" ? "var(--system-success-bg)" : "var(--system-warning-bg)",
-                color: network === "mainnet" ? "var(--system-success-text)" : "var(--system-warning-text)",
-                border: `1px solid ${network === "mainnet" ? "var(--system-success-border)" : "var(--system-warning-border)"}`
-              }}
             >
               {networkLabel}
             </span>
@@ -96,32 +79,32 @@ export function ReceiptCard({
         </div>
       </header>
 
-      <section className="receipt-section" style={{ textAlign: "center", margin: "24px 0" }}>
-        <div style={{ fontSize: "2rem", fontWeight: 700, color: "var(--foreground)" }}>
-          {amount} <span style={{ fontSize: "1.25rem", color: "var(--muted)" }}>{assetCode}</span>
+      <section className={styles.amountSection}>
+        <div className={styles.amount}>
+          {amount} <span className={styles.assetCode}>{assetCode}</span>
         </div>
       </section>
 
-      <div className="receipt-divider" style={{ borderTop: "1px dashed var(--border)", margin: "16px 0" }}></div>
+      <div className={styles.divider}></div>
 
-      <dl className="receipt-kv" style={{ display: "grid", gridTemplateColumns: "1fr", gap: "12px", fontSize: "0.875rem" }}>
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <dt style={{ color: "var(--muted)" }}>Recipient</dt>
-          <dd data-testid="receipt-recipient" className="receipt-mono" style={{ fontFamily: "monospace", color: "var(--foreground)" }}>
+      <dl className={styles.kv}>
+        <div className={styles.kvRow}>
+          <dt className={styles.kvLabel}>Recipient</dt>
+          <dd data-testid="receipt-recipient" className={styles.kvValue}>
             {shownRecipient}
           </dd>
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <dt style={{ color: "var(--muted)" }}>Stream</dt>
-          <dd className="receipt-mono" style={{ fontFamily: "monospace", color: "var(--foreground)" }}>
+        <div className={styles.kvRow}>
+          <dt className={styles.kvLabel}>Stream</dt>
+          <dd className={styles.kvValue}>
             {streamId}
           </dd>
         </div>
       </dl>
 
-      <div className="receipt-divider" style={{ borderTop: "1px dashed var(--border)", margin: "16px 0" }}></div>
+      <div className={styles.divider}></div>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div className={styles.footer}>
         <div className="receipt-status">
           {statusLabel && (
             <span
@@ -140,14 +123,14 @@ export function ReceiptCard({
           )}
         </div>
 
-        <div className="receipt-actions" style={{ display: "flex", gap: "8px" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.75rem", color: "var(--muted)", cursor: "pointer" }}>
+        <div className={styles.actions}>
+          <label className={styles.maskLabel}>
             <input
               type="checkbox"
               checked={masked}
               onChange={(e) => setMasked(e.target.checked)}
               aria-label="Mask recipient address for privacy"
-              style={{ accentColor: "var(--accent)" }}
+              className={styles.maskInput}
             />
             Mask
           </label>
@@ -156,16 +139,7 @@ export function ReceiptCard({
             type="button"
             onClick={handleCopy}
             aria-label={copied ? "Share text copied" : "Copy share text"}
-            style={{
-              background: copied ? "var(--system-success-bg)" : "transparent",
-              color: copied ? "var(--system-success-text)" : "var(--accent)",
-              border: `1px solid ${copied ? "var(--system-success-border)" : "var(--accent)"}`,
-              borderRadius: "4px",
-              padding: "4px 8px",
-              fontSize: "0.75rem",
-              cursor: "pointer",
-              transition: "all 0.2s"
-            }}
+            className={`${styles.copyBtn} ${copied ? styles.copyBtnCopied : styles.copyBtnDefault}`}
           >
             {copied ? "Copied" : "Copy"}
           </button>
