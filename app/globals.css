@@ -576,6 +576,15 @@ a:hover {
   transition: none !important;
 }
 
+/* CSS-level guard for prefers-reduced-motion: even if the component hasn't
+   mounted yet or the JS hook hasn't fired, this media query ensures no
+   transition runs when the user has requested reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .stream-progress__fill {
+    transition: none !important;
+  }
+}
+
 /* ─── Stream List Layout ──────────────────────────────────────────────────── */
 
 .stream-list {
@@ -699,6 +708,18 @@ a:hover {
   position: relative;
   isolation: isolate;
   overflow: hidden;
+}
+
+/* Per-stream color stripe identity indicator */
+.stream-row__color-stripe {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: 1.25rem 0 0 1.25rem;
+  pointer-events: none;
+  z-index: 1;
 }
 
 .stream-row__primary {

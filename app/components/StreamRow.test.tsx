@@ -150,4 +150,50 @@ describe("StreamRow", () => {
       expect(remainingSpan).toHaveClass("tabular-nums");
     });
   });
+
+  describe("per-stream color stripe identity", () => {
+    it("renders the color stripe element", () => {
+      const { container } = render(<StreamRow stream={baseStream} />);
+      const stripe = container.querySelector(".stream-row__color-stripe");
+      expect(stripe).not.toBeNull();
+    });
+
+    it("applies aria-hidden to the color stripe", () => {
+      const { container } = render(<StreamRow stream={baseStream} />);
+      const stripe = container.querySelector(".stream-row__color-stripe");
+      expect(stripe).toHaveAttribute("aria-hidden", "true");
+    });
+
+    it("sets a deterministic background color based on stream ID", () => {
+      const { container } = render(<StreamRow stream={baseStream} />);
+      const stripe = container.querySelector(".stream-row__color-stripe") as HTMLElement;
+      const style = stripe.getAttribute("style") || "";
+      expect(style).toContain("background-color:");
+    });
+
+    it("produces the same color for the same stream ID", () => {
+      const { container: container1 } = render(<StreamRow stream={baseStream} />);
+      const { container: container2 } = render(<StreamRow stream={baseStream} />);
+      const stripe1 = container1.querySelector(".stream-row__color-stripe") as HTMLElement;
+      const stripe2 = container2.querySelector(".stream-row__color-stripe") as HTMLElement;
+      expect(stripe1.getAttribute("style")).toBe(stripe2.getAttribute("style"));
+    });
+
+    it("produces different colors for different stream IDs", () => {
+      const stream1 = makeMockStream("active");
+      const stream2 = makeMockStream("draft");
+      const { container: container1 } = render(<StreamRow stream={stream1} />);
+      const { container: container2 } = render(<StreamRow stream={stream2} />);
+      const stripe1 = container1.querySelector(".stream-row__color-stripe") as HTMLElement;
+      const stripe2 = container2.querySelector(".stream-row__color-stripe") as HTMLElement;
+      expect(stripe1.getAttribute("style")).not.toBe(stripe2.getAttribute("style"));
+    });
+
+    it.each(ALL_STATUSES)("renders color stripe for status=%s", (status) => {
+      const { container } = render(<StreamRow stream={makeMockStream(status)} />);
+      const stripe = container.querySelector(".stream-row__color-stripe");
+      expect(stripe).not.toBeNull();
+      expect(stripe).toHaveAttribute("aria-hidden", "true");
+    });
+  });
 });
