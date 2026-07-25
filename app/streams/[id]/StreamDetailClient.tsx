@@ -61,6 +61,13 @@ export function StreamDetailClient({
 }: StreamDetailClientProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<StreamPayError | null>(null);
+  const [isDestructiveOpen, setIsDestructiveOpen] = useState(false);
+
+  const actionSummary = STREAM_ACTION_SUMMARY[stream.id] || { 
+    amountLabel: stream.rate, 
+    destructiveAction: undefined, 
+    requiresTypedAmount: false 
+  };
 
   const isIncidentMode =
     process.env.NEXT_PUBLIC_DISABLE_ONCHAIN_OPERATIONS === "true";
