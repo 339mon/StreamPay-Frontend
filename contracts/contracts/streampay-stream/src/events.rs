@@ -338,3 +338,36 @@ pub fn fee_charged(
         (stream_id, fee_amount, fee_bps, collector.clone(), timestamp),
     );
 }
+
+/// Emitted when the admin successfully sweeps accumulated protocol fees into
+/// the treasury (fee collector address).
+///
+/// Topics: `("stream", "fees_swept")`.
+/// Data: `(streams_swept, total_amount, collector, caller, timestamp)`.
+///
+/// | Field           | Type      | Description                                        |
+/// |-----------------|-----------|----------------------------------------------------|
+/// | `streams_swept` | `u32`     | Number of streams that had a non-zero fee balance. |
+/// | `total_amount`  | `i128`    | Total tokens transferred to the fee collector.     |
+/// | `collector`     | `Address` | Destination of the swept funds.                    |
+/// | `caller`        | `Address` | Admin address that initiated the sweep.            |
+/// | `timestamp`     | `u64`     | Ledger timestamp at the time of the sweep.         |
+pub fn fees_swept(
+    env: &Env,
+    streams_swept: u32,
+    total_amount: i128,
+    collector: &Address,
+    caller: &Address,
+    timestamp: u64,
+) {
+    env.events().publish(
+        (symbol_short!("stream"), symbol_short!("swept")),
+        (
+            streams_swept,
+            total_amount,
+            collector.clone(),
+            caller.clone(),
+            timestamp,
+        ),
+    );
+}

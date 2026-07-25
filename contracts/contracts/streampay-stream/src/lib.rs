@@ -20,6 +20,7 @@
 mod allowlist;
 mod error;
 mod events;
+mod fee_sweep;
 mod fees;
 mod limits;
 mod multi;
@@ -29,6 +30,9 @@ mod storage;
 mod views;
 pub mod admin;
 mod withdrawer;
+
+#[cfg(test)]
+mod fee_sweep_test;
 
 pub use error::Error;
 use soroban_sdk::contracttype;
@@ -379,6 +383,63 @@ impl Contract {
         // Verify the stream actually exists before returning a fee value.
         get_existing_stream(&env, stream_id)?;
         Ok(fees::get_stream_fee_bps(&env, stream_id))
+    }
+
+    // ── Fee sweep entrypoint ──────────────────────────────────────────────────
+
+    /// Sweeps accumulated protocol fees from the given streams into the
+    /// configured fee collector (treasury) address.
+    ///
+    /// This is the primary mechanism for the protocol treasury to collect fees.
+    /// Rather than transferring each fee individually at withdrawal time, fees
+    /// are recorded on-chain per-stream and collected in batch here.
+    ///
+    /// ## Parameters
+    /// - `admin`      — Must match the admin set at initialisation.
+    /// - `stream_ids` — IDs of streams whose accumulated fee balances to sweep.
+    ///                  Streams with a zero balance or a missing stream row are
+    ///                  silently skipped.  Pass an empty list to sweep nothing
+    ///                  (returns `Error::SweepNoFees`).
+    ///
+    /// ## Returns
+    /// A [`SweepResult`] with `streams_swept` and `total_swept` populated.
+    ///
+    /// ## Errors
+    /// - [`Error::NotFound`]     — Contract not initialised, or no fee collector set.
+    /// - [`Error::Unauthorized`] — `admin` is not the stored admin address.
+    /// - [`Error::SweepNoFees`]  — All listed streams have a zero accumulated balance.
+    /// - [`Error::Overflow`]     — Aggregate fee total would overflow `i128`.
+    ///
+    /// ## Auth
+    /// Requires authorisation from `admin`.  An arbitrary caller cannot redirect
+    /// protocol funds.
+    ///
+    /// ## Security
+    /// - Admin-gated: only the stored admin can trigger a sweep.
+    /// - Double-sweep proof: each stream's balance is atomically zeroed before
+    ///   the token transfer; a second sweep call finds zero balances.
+    /// - Reentrancy-safe: Soroban executes invocations sequentially within a
+    ///   single ledger transaction; no re-entrant callback can occur.
+    /// - Overflow-safe: aggregate arithmetic uses `checked_add`.
+    /// - Partial-failure safe: Soroban rolls back all writes on any error.
+    pub fn sweep_fees(
+        env: Env,
+        admin: Address,
+        stream_ids: soroban_sdk::Vec<u64>,
+    ) -> Result<(u32, i128), Error> {
+        let r = fee_sweep::sweep_fees(&env, &admin, &stream_ids)?;
+        Ok((r.streams_swept, r.total_swept))
+    }
+
+    /// Returns the accumulated (un-swept) protocol fee balance for `stream_id`.
+    ///
+    /// Read-only; requires no auth.  Returns `0` if the stream has never had a
+    /// fee charged or has already been fully swept.
+    ///
+    /// Useful for off-chain tooling to determine which streams have outstanding
+    /// fee balances before calling [`Contract::sweep_fees`].
+    pub fn get_accrued_fees(env: Env, stream_id: u64) -> i128 {
+        fees::get_accumulated_fees(&env, stream_id)
     }
 
     /// Configures the **per-organisation** token allowlist for `org`.

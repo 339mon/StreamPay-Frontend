@@ -59,6 +59,11 @@ const INSTANCE_TTL_EXTEND_TO: u32 = 518_400; // ~1 month at 5-second ledgers
 const STREAM_FEE_TTL_MIN_REMAINING: u32 = 241_920; // ~2 weeks at 5-second ledgers
 /// Persistent-storage TTL target for per-stream fee-bps entries.
 const STREAM_FEE_TTL_EXTEND_TO: u32 = 1_555_200; // ~3 months at 5-second ledgers
+/// Persistent-storage TTL threshold for accumulated-fee balance entries.
+/// Matches the stream-row cadence so a fee balance cannot archive before its stream.
+const ACCUM_FEE_TTL_MIN_REMAINING: u32 = 241_920; // ~2 weeks at 5-second ledgers
+/// Persistent-storage TTL target for accumulated-fee balance entries.
+const ACCUM_FEE_TTL_EXTEND_TO: u32 = 1_555_200; // ~3 months at 5-second ledgers
 
 // ── Storage key discriminants ────────────────────────────────────────────────
 
@@ -68,7 +73,7 @@ const STREAM_FEE_TTL_EXTEND_TO: u32 = 1_555_200; // ~3 months at 5-second ledger
 /// so the fee module remains self-contained and easy to review.
 #[derive(Clone)]
 #[contracttype]
-enum FeeDataKey {
+pub(crate) enum FeeDataKey {
     /// Global default `fee_bps` applied when a stream has no per-stream
     /// override. Stored in instance storage; defaults to `0`.
     DefaultFeeBps,
@@ -78,6 +83,13 @@ enum FeeDataKey {
     /// storage alongside the stream row. Written at stream-creation time and
     /// read on every withdrawal.
     StreamFeeBps(u64),
+    /// Accumulated (un-swept) protocol fee balance for a stream, denominated in
+    /// the stream's token's smallest unit.  Written by the withdraw path every
+    /// time a fee is charged, and zeroed by `fee_sweep.rs` after each sweep.
+    ///
+    /// Stored in persistent storage with the same TTL cadence as the stream row
+    /// itself so it cannot archive while the stream is active.
+    AccumulatedFees(u64),
 }
 
 // ── Internal TTL helpers ─────────────────────────────────────────────────────
@@ -106,6 +118,20 @@ fn extend_stream_fee_ttl(env: &Env, stream_id: u64) {
     env.storage()
         .persistent()
         .extend_ttl(&FeeDataKey::StreamFeeBps(stream_id), threshold, target);
+}
+
+fn extend_accum_fee_ttl(env: &Env, stream_id: u64) {
+    let threshold = env
+        .ledger()
+        .sequence()
+        .saturating_add(ACCUM_FEE_TTL_MIN_REMAINING);
+    let target = env
+        .ledger()
+        .sequence()
+        .saturating_add(ACCUM_FEE_TTL_EXTEND_TO);
+    env.storage()
+        .persistent()
+        .extend_ttl(&FeeDataKey::AccumulatedFees(stream_id), threshold, target);
 }
 
 // ── Public API: validation ────────────────────────────────────────────────────
@@ -253,6 +279,65 @@ pub fn get_stream_fee_bps(env: &Env, stream_id: u64) -> u32 {
     } else {
         get_default_fee_bps(env)
     }
+}
+
+// ── Public API: accumulated fee balance storage ───────────────────────────────
+
+/// Adds `delta` to the accumulated fee balance for `stream_id`.
+///
+/// Called by the withdraw path each time a non-zero fee is charged.  The
+/// running balance accumulates until the treasury sweep zeroes it via
+/// [`clear_accumulated_fees`].
+///
+/// Uses checked arithmetic; returns [`Error::Overflow`] if the running total
+/// would exceed `i128::MAX`.
+///
+/// # Errors
+/// - [`Error::Overflow`] if `existing_balance + delta` would overflow `i128`.
+pub fn accrue_fees(env: &Env, stream_id: u64, delta: i128) -> Result<(), Error> {
+    if delta <= 0 {
+        return Ok(());
+    }
+    let existing: i128 = env
+        .storage()
+        .persistent()
+        .get(&FeeDataKey::AccumulatedFees(stream_id))
+        .unwrap_or(0i128);
+    let new_balance = existing.checked_add(delta).ok_or(Error::Overflow)?;
+    env.storage()
+        .persistent()
+        .set(&FeeDataKey::AccumulatedFees(stream_id), &new_balance);
+    extend_accum_fee_ttl(env, stream_id);
+    Ok(())
+}
+
+/// Returns the accumulated (un-swept) fee balance for `stream_id`.
+///
+/// Returns `0` when no fees have been charged or the balance has already been
+/// swept.  Extends the persistent storage TTL so the balance cannot archive
+/// while the stream is active.
+pub fn get_accumulated_fees(env: &Env, stream_id: u64) -> i128 {
+    let val: Option<i128> = env
+        .storage()
+        .persistent()
+        .get(&FeeDataKey::AccumulatedFees(stream_id));
+    if val.is_some() {
+        extend_accum_fee_ttl(env, stream_id);
+    }
+    val.unwrap_or(0i128)
+}
+
+/// Atomically zeroes the accumulated fee balance for `stream_id`.
+///
+/// Called by the sweep path **after** a successful token transfer to the fee
+/// collector.  Clearing happens in a separate write to `0` (rather than a
+/// `remove`) so the entry remains queryable after the sweep for audit
+/// purposes.  A subsequent call to [`get_accumulated_fees`] will return `0`.
+pub fn clear_accumulated_fees(env: &Env, stream_id: u64) {
+    env.storage()
+        .persistent()
+        .set(&FeeDataKey::AccumulatedFees(stream_id), &0i128);
+    extend_accum_fee_ttl(env, stream_id);
 }
 
 #[cfg(test)]
