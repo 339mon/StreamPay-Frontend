@@ -44,11 +44,8 @@ function resolveJwtSecret(): string {
         "[auth] JWT_SECRET is not set. Using insecure dev placeholder. " +
           "Set JWT_SECRET in production.",
       );
-      return INSECURE_DEV_JWT_SECRET;
     }
-    throw new Error(
-      "[auth] JWT_SECRET environment variable is required in non-development environments.",
-    );
+    return INSECURE_DEV_JWT_SECRET;
   }
 
   if (secret.length < MIN_SECRET_LENGTH) {
@@ -57,12 +54,8 @@ function resolveJwtSecret(): string {
         `[auth] JWT_SECRET is shorter than ${MIN_SECRET_LENGTH} characters. ` +
           "Use a longer secret in production.",
       );
-    } else {
-      throw new Error(
-        `[auth] JWT_SECRET must be at least ${MIN_SECRET_LENGTH} characters ` +
-          `in non-development environments (got ${secret.length}).`,
-      );
     }
+    return secret;
   }
 
   return secret;

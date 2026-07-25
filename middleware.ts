@@ -144,9 +144,6 @@ export async function middleware(request: NextRequest) {
     requestHeaders.set(CANARY_HEADER_NAME, 'true');
   }
 
-  const origin = request.headers.get('origin');
-  let isAllowed = false;
-
   // ------------------------------------------------------------------
   // 1. Request body size cap (O(1) — reads Content-Length)
   // ------------------------------------------------------------------
