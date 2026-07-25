@@ -25,8 +25,7 @@ import { getClientIdentity } from "@/app/lib/rate-limit";
 import { checkOrgDailyQuota, orgQuotaResponse } from "@/app/lib/org-quota";
 import { toV2Stream, dbStreamToV1 } from "@/app/lib/api-version";
 import type { Stream } from "@/app/types/openapi";
-import { getClientIdentity } from "@/app/lib/rate-limit";
-import { checkOrgDailyQuota, orgQuotaResponse } from "@/app/lib/org-quota";
+
 
 function errorResponse(code: string, message: string, status: number) {
   const requestId = getCorrelationContext()?.request_id ?? `req-${crypto.randomUUID()}`;

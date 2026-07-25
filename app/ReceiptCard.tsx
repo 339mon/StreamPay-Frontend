@@ -109,7 +109,7 @@ export function ReceiptCard({
         <div className="receipt-status">
           {statusLabel && (
             <span
-              className={`receipt-status-badge receipt-status-badge--${status}`}
+              className={`receipt-status-badge receipt-status-badge--${status} cb-pattern cb-pattern--${status}`}
               style={{
                 fontSize: "0.75rem",
                 padding: "2px 8px",

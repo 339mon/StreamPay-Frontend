@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { StreamProgress } from "./StreamProgress";
 
@@ -255,5 +255,60 @@ describe("StreamProgress aria-live announcements", () => {
     const region = screen.getByTestId("stream-progress-live");
     expect(region).toHaveAttribute("aria-live", "polite");
     expect(region).toHaveAttribute("role", "status");
+  });
+});
+
+// ── Empty state tests ───────────────────────────────────────────────────────
+
+describe("StreamProgress empty state", () => {
+  afterEach(() => {
+    // @ts-expect-error reset between tests
+    delete window.matchMedia;
+  });
+
+  it("renders empty state when status is empty", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="empty" />);
+
+    expect(screen.getByText("Stream Progress")).toBeInTheDocument();
+    expect(screen.getByText("No active stream found")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "There is no stream progress to track. Start a stream to see live accumulation."
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start a stream" })).toBeInTheDocument();
+  });
+
+  it("renders empty state when isEmpty prop is true", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="active" isEmpty={true} />);
+
+    expect(screen.getByText("Stream Progress")).toBeInTheDocument();
+    expect(screen.getByText("No active stream found")).toBeInTheDocument();
+  });
+
+  it("renders empty state with custom copy and handles action click", () => {
+    mockMatchMedia(false);
+    const onAction = jest.fn();
+    render(
+      <StreamProgress
+        status="empty"
+        emptyEyebrow="My Custom Eyebrow"
+        emptyTitle="My Custom Title"
+        emptyDescription="My Custom Description"
+        emptyActionLabel="My Custom Action"
+        onEmptyAction={onAction}
+      />
+    );
+
+    expect(screen.getByText("My Custom Eyebrow")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "My Custom Title" })).toBeInTheDocument();
+    expect(screen.getByText("My Custom Description")).toBeInTheDocument();
+
+    const button = screen.getByRole("button", { name: "My Custom Action" });
+    expect(button).toBeInTheDocument();
+    fireEvent.click(button);
+    expect(onAction).toHaveBeenCalledTimes(1);
   });
 });

@@ -97,6 +97,17 @@ describe("EmptyState", () => {
       expect(container.querySelector("section.empty-state")).toHaveClass("empty-state--streams");
     });
 
+    it("stream-progress variant renders the StreamProgressEmptyIllustration inside .empty-state__illustration", () => {
+      const { container } = render(<EmptyState {...DEFAULT_PROPS} variant="stream-progress" />);
+      const wrap = container.querySelector(".empty-state__illustration");
+      expect(wrap).not.toBeNull();
+      expect(wrap).toHaveAttribute("aria-hidden", "true");
+      const svg = wrap!.querySelector("svg");
+      expect(svg).not.toBeNull();
+      expect(svg!.innerHTML).toContain("var(--accent)");
+      expect(container.querySelector("section.empty-state")).toHaveClass("empty-state--stream-progress");
+    });
+
     it("generic variant omits the illustration entirely", () => {
       const { container } = render(<EmptyState {...DEFAULT_PROPS} variant="generic" />);
       expect(container.querySelector(".empty-state__illustration")).toBeNull();
