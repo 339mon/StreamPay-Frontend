@@ -3,7 +3,7 @@
  */
 
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { StreamRow, type StreamRowData } from "./StreamRow";
 import type { StreamStatus } from "@/app/types/openapi";
@@ -55,7 +55,10 @@ describe("StreamRow", () => {
     expect(actionButton).not.toHaveStyle({ outline: "2px solid var(--accent)" });
 
     // Focus the button
-    actionButton.focus();
+    act(() => {
+      actionButton.focus();
+      fireEvent.focus(actionButton);
+    });
     expect(actionButton).toHaveFocus();
 
     // Verify it applies the correct design-token outline style for visual consistency
@@ -65,7 +68,10 @@ describe("StreamRow", () => {
     });
 
     // Blur the button
-    actionButton.blur();
+    act(() => {
+      actionButton.blur();
+      fireEvent.blur(actionButton);
+    });
     expect(actionButton).not.toHaveFocus();
     expect(actionButton).not.toHaveStyle({ outline: "2px solid var(--accent)" });
   });
@@ -136,6 +142,29 @@ describe("StreamRow", () => {
       expect(article).toHaveClass("stream-row--compact");
       // Pattern overlay still renders in compact mode
       expect(container.querySelector(".stream-row__pattern")).not.toBeNull();
+    });
+  });
+
+  describe("tabular-nums font variant formatting (FWC26 Stellar Wave)", () => {
+    it("applies tabular-nums class to the Rate numeric display element", () => {
+      const { container } = render(<StreamRow stream={baseStream} />);
+      const rateDd = container.querySelector("dd.tabular-nums");
+      expect(rateDd).not.toBeNull();
+      expect(rateDd).toHaveTextContent(baseStream.rate);
+    });
+
+    it("applies tabular-nums class to the Burn-down container when amounts are present", () => {
+      const { container } = render(<StreamRow stream={baseStream} />);
+      const burndownDd = container.querySelector(".stream-row__burndown");
+      expect(burndownDd).not.toBeNull();
+      expect(burndownDd).toHaveClass("tabular-nums");
+    });
+
+    it("applies tabular-nums class to the remaining stream progress label", () => {
+      const { container } = render(<StreamRow stream={baseStream} />);
+      const remainingSpan = container.querySelector(".stream-progress__remaining");
+      expect(remainingSpan).not.toBeNull();
+      expect(remainingSpan).toHaveClass("tabular-nums");
     });
   });
 });

@@ -216,7 +216,7 @@ export function StreamProgress({
       <div className="stream-progress__meta" aria-hidden="true">
         <span className="stream-progress__label">{label}</span>
         {typeof totalAmount === "number" && typeof accruedAmount === "number" && totalAmount > 0 && (
-          <span className="stream-progress__remaining">
+          <span className="stream-progress__remaining tabular-nums">
             {Math.round(totalAmount - accruedAmount).toLocaleString()} remaining
           </span>
         )}

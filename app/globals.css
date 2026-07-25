@@ -368,6 +368,7 @@ body {
 @import "./styles/focus.css" layer(focus);
 @import "./styles/icons.css";
 @import "./styles/patterns.css" layer(patterns);
+@import "./styles/typography.css";
 
 button {
   font: inherit;

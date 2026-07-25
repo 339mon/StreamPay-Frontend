@@ -150,9 +150,9 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
         <div>
           <dt>Rate</dt>
           <dd
-            className={
+            className={`tabular-nums ${
               stream.status === "active" ? "stream-row__accrued--animated" : ""
-            }
+            }`.trim()}
           >
             {stream.rate}
           </dd>
@@ -170,7 +170,7 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
             <div>
               <dt>Burn-down</dt>
               <dd
-                className={`stream-row__burndown stream-row__burndown--${stream.status}`}
+                className={`stream-row__burndown stream-row__burndown--${stream.status} tabular-nums`}
               >
                 <MiniBurnDown
                   totalAmount={stream.totalAmount}
