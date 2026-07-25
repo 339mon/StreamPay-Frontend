@@ -905,6 +905,7 @@ impl Contract {
             status: StreamStatus::Active,
             paused_at: 0,
             total_paused_duration: 0,
+            fee_bps,
         };
 
         storage::set_stream(&env, id, &stream);
@@ -915,6 +916,8 @@ impl Contract {
             &stream.recipient,
             &stream.token,
             stream.total_amount,
+            fee_bps,
+            duration,
             now,
         );
 
@@ -988,13 +991,13 @@ impl Contract {
             status: StreamStatus::Draft,
             paused_at: 0,
             total_paused_duration: 0,
-            fee_bps,
+            fee_bps: 0,
         };
 
         storage::set_stream(&env, id, &stream);
         // Persist the per-stream fee_bps so it can be retrieved independently
         // from the stream row for read-only callers.
-        fees::set_stream_fee_bps(&env, id, fee_bps);
+        fees::set_stream_fee_bps(&env, id, 0);
         limits::increment_sender_stream_count(&env, &stream.sender);
         events::created(
             &env,
@@ -1003,6 +1006,8 @@ impl Contract {
             &stream.recipient,
             &stream.token,
             stream.total_amount,
+            0,
+            duration,
             now,
         );
 
