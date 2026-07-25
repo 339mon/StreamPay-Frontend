@@ -12,6 +12,16 @@ export const RATE_LIMITS = {
     limit: Number(process.env.RECONCILIATION_RATE_LIMIT ?? 30),
     windowMs: 60_000,
   },
+  /**
+   * Per-user limit for webhook ingest + metrics scrape
+   * (`GET|POST /api/webhooks`).  30 requests per minute protects the
+   * public receiver from abuse while remaining usable for legitimate
+   * delivery bursts. Override via `WEBHOOK_RATE_LIMIT`.
+   */
+  webhook: {
+    limit: Number(process.env.WEBHOOK_RATE_LIMIT ?? 30),
+    windowMs: 60_000,
+  },
 } as const;
 
 export type LimitType = keyof typeof RATE_LIMITS;
@@ -33,6 +43,8 @@ export const ORG_DAILY_STREAM_QUOTA = {
 
 export const ROUTE_LIMITS: Record<string, LimitType> = {
   "GET:/api/reconciliation": "reconciliation",
+  "GET:/api/webhooks": "webhook",
+  "POST:/api/webhooks": "webhook",
   "GET:/api/streams": "read",
   "GET:/api/streams/": "read",
   "GET:/api/activity": "read",

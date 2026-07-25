@@ -56,6 +56,9 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
   and the middleware dispatch surface.
 
 ### Security
+- Per-user rate limit on `GET|POST /api/webhooks`: 30 requests/min per
+  caller (API key / JWT wallet / IP), returning the standard `429`
+  envelope with `Retry-After`. Override via `WEBHOOK_RATE_LIMIT`.
 - Per-user rate limit on `POST /api/exports`: 5 requests/min per
   authenticated wallet, checked after JWT verification so forged tokens
   cannot spend a victim's budget, returning the standard `429` envelope with

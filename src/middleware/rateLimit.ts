@@ -63,3 +63,21 @@ export async function streamsRateLimit(
   recordRequest(url.pathname);
   return { allowed: true };
 }
+
+/**
+ * Per-user rate-limit guard for `GET|POST /api/webhooks`.
+ *
+ * Uses the dedicated `webhook` limit tier (see `RATE_LIMITS.webhook`).
+ * Returns `{ allowed: false, response }` with 429 + Retry-After when the
+ * caller's bucket is exhausted.
+ */
+export async function webhooksRateLimit(
+  request: Request,
+  method: "GET" | "POST" = "POST",
+): Promise<{ allowed: true; response?: undefined } | { allowed: false; response: NextResponse }> {
+  const blocked = await applyRateLimit(request, "webhooks", method);
+  if (blocked) {
+    return { allowed: false, response: blocked };
+  }
+  return { allowed: true };
+}
