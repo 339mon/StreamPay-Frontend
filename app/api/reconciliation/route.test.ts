@@ -4,7 +4,7 @@
  * Coverage
  * ─────────
  * • 200 with strong ETag and valid data (existing)
- * • 400 on invalid limit parameter (existing)
+ * • 422 on invalid query parameters (Zod validation)
  * • 304 Not Modified when ETag matches (existing)
  * • 429 when rate limit is exhausted (new)
  * • 429 resets after the retry window (new)
@@ -117,12 +117,34 @@ describe('GET /api/reconciliation – existing behaviour', () => {
     expect(etag).toMatch(/^"[a-f0-9]{64}"$/);
   });
 
-  it('validates limit parameter — 400 on invalid value', async () => {
+  it('validates limit parameter — 422 on invalid value', async () => {
     const res = await GET(makeRequest({ search: '?limit=invalid' }));
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
     const data = await res.json();
-    expect(data.error.code).toBe('INVALID_INPUT');
+    expect(data.error.code).toBe('VALIDATION_ERROR');
+    expect(data.error.details).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'limit' }),
+      ]),
+    );
+  });
+
+  it('validates status enum — 422 on unknown value', async () => {
+    const res = await GET(makeRequest({ search: '?status=nope' }));
+
+    expect(res.status).toBe(422);
+    const data = await res.json();
+    expect(data.error.code).toBe('VALIDATION_ERROR');
+    expect(data.error.details.some((d: { field: string }) => d.field === 'status')).toBe(true);
+  });
+
+  it('filters results when a valid status is provided', async () => {
+    const res = await GET(makeRequest({ search: '?status=completed' }));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.data).toHaveLength(1);
+    expect(data.data[0].status).toBe('completed');
   });
 
   it('returns 304 Not Modified when ETag matches', async () => {
