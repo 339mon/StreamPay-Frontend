@@ -7,6 +7,8 @@ directly from React components.
 
 ## Basic GET
 
+`GET /api/streams` now returns an `ETag` header and supports `If-None-Match` revalidation. A matching request returns `304 Not Modified` without re-sending the full payload.
+
 ```ts
 import { get } from '@/lib/apiClient';
 

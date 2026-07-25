@@ -1,44 +1,53 @@
-import { NextResponse } from 'next/server';
-import crypto from 'crypto';
+import { createHash } from "crypto";
 
-/**
- * Applies a strong ETag to a JSON response payload and handles the 
- * If-None-Match conditional request flow.
- * 
- * A strong validator ensures byte-for-byte identity of the resource representation.
- */
-export function withStrongEtag(
-  request: Request,
-  data: unknown,
-  status = 200,
-  extraHeaders: Record<string, string> = {}
-): NextResponse {
-  const body = JSON.stringify(data);
-  const hash = crypto.createHash('sha256').update(body).digest('hex');
-  const etag = `"${hash}"`;
-
-  const ifNoneMatch = request.headers.get('if-none-match');
-  if (ifNoneMatch) {
-    const clientEtags = ifNoneMatch.split(',').map((t) => t.trim());
-    if (clientEtags.includes(etag) || clientEtags.includes('*')) {
-      return new NextResponse(null, {
-        status: 304,
-        headers: {
-          ...extraHeaders,
-          etag,
-          'cache-control': 'public, max-age=0, must-revalidate',
-        },
-      });
-    }
+function sortKeys(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortKeys);
   }
 
-  return new NextResponse(body, {
-    status,
-    headers: {
-      ...extraHeaders,
-      'content-type': 'application/json',
-      etag,
-      'cache-control': 'public, max-age=0, must-revalidate',
-    },
-  });
+  if (value && typeof value === "object") {
+    return Object.keys(value as Record<string, unknown>)
+      .sort((left, right) => left.localeCompare(right))
+      .reduce<Record<string, unknown>>((accumulator, key) => {
+        accumulator[key] = sortKeys((value as Record<string, unknown>)[key]);
+        return accumulator;
+      }, {});
+  }
+
+  return value;
+}
+
+export function createStrongEtag(value: unknown): string {
+  const canonical = JSON.stringify(sortKeys(value));
+  const hash = createHash("sha256").update(canonical).digest("hex");
+  return `"${hash}"`;
+}
+
+function normaliseEtagToken(token: string): string {
+  return token.trim().replace(/^W\//i, "");
+}
+
+export function isIfNoneMatchMatch(etag: string, ifNoneMatchHeader: string | null): boolean {
+  if (!ifNoneMatchHeader) {
+    return false;
+  }
+
+  const normalisedEtag = normaliseEtagToken(etag);
+  return ifNoneMatchHeader
+    .split(",")
+    .map((token) => token.trim())
+    .some((token) => {
+      if (token === "*") {
+        return true;
+      }
+
+      return normaliseEtagToken(token) === normalisedEtag;
+    });
+}
+
+export function createCacheHeaders(etag: string): Record<string, string> {
+  return {
+    etag,
+    "cache-control": "public, max-age=0, must-revalidate",
+  };
 }
