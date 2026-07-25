@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { NextResponse } from "next/server";
 
 function sortKeys(value: unknown): unknown {
   if (Array.isArray(value)) {
@@ -50,4 +51,29 @@ export function createCacheHeaders(etag: string): Record<string, string> {
     etag,
     "cache-control": "public, max-age=0, must-revalidate",
   };
+}
+
+/**
+ * Convenience wrapper that computes a strong ETag for `data`, checks the
+ * incoming `If-None-Match` header, and returns either:
+ *  - `304 Not Modified` (empty body, ETag + Cache-Control headers) when the
+ *    client already holds a matching representation, or
+ *  - `200 OK` with the JSON-serialised `data` and ETag + Cache-Control headers.
+ */
+export function withStrongEtag(request: Request, data: unknown): NextResponse {
+  const etag = createStrongEtag(data);
+  const cacheHeaders = createCacheHeaders(etag);
+  const ifNoneMatch = request.headers?.get("if-none-match") ?? null;
+
+  if (isIfNoneMatchMatch(etag, ifNoneMatch)) {
+    return new NextResponse(null, {
+      status: 304,
+      headers: cacheHeaders,
+    });
+  }
+
+  return NextResponse.json(data, {
+    status: 200,
+    headers: cacheHeaders,
+  });
 }
