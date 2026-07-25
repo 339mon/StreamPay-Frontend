@@ -1,4 +1,4 @@
-import type { NextResponse } from "next/server";
+import type { NextRequest, NextResponse } from "next/server";
 import {
   checkRateLimit,
   getClientIdentity,
@@ -7,9 +7,15 @@ import {
 import type { ClientIdentity } from "@/app/lib/rate-limit";
 import { getLimitForRoute } from "@/app/lib/rate-limit-config";
 import { recordRequest, recordThrottle } from "@/app/lib/rate-limit-metrics";
+import {
+  checkIpRateLimit,
+  rateLimitResponse as walletIpRateLimitResponse,
+  WalletRateLimitType,
+  WalletRateLimitResult,
+} from "@/lib/rateLimitIp";
 
-export type { ClientIdentity };
-export { getClientIdentity };
+export type { ClientIdentity, WalletRateLimitType, WalletRateLimitResult };
+export { getClientIdentity, checkIpRateLimit, walletIpRateLimitResponse };
 
 function getRequestUrl(request: Request, fallbackPath: string): URL {
   try {
@@ -61,5 +67,27 @@ export async function streamsRateLimit(
   }
 
   recordRequest(url.pathname);
+  return { allowed: true };
+}
+
+/**
+ * Dedicated rate-limit guard for wallet authentication (/api/auth/wallet).
+ *
+ * Uses IP-based token bucket limiting:
+ * - "challenge" (GET): 20 req/min
+ * - "login" (POST): 5 req/min
+ *
+ * Returns a `NextResponse` with status 429 + Retry-After + x-request-id when throttled,
+ * or `{ allowed: true }` when permitted.
+ */
+export async function walletAuthRateLimit(
+  request: NextRequest,
+  limitType: WalletRateLimitType,
+): Promise<{ allowed: true } | { allowed: false; response: NextResponse }> {
+  const rateCheck = await checkIpRateLimit(request, limitType);
+  if (!rateCheck.allowed) {
+    const response = walletIpRateLimitResponse(rateCheck.retryAfter!, request);
+    return { allowed: false, response };
+  }
   return { allowed: true };
 }

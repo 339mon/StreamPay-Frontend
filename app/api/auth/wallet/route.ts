@@ -2,7 +2,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { createHash } from "crypto";
 import { errorResponse, ErrorCode } from "@/app/lib/errors/server";
 import { validateCsrfToken } from "@/app/lib/auth";
-import { checkIpRateLimit, rateLimitResponse } from "@/lib/rateLimitIp";
+import { checkIpRateLimit, walletIpRateLimitResponse as rateLimitResponse } from "@/src/middleware/rateLimit";
 import { getCorrelationContext, logger } from "@/app/lib/logger";
 import { logAccessEvent } from "@/src/middleware/accessLog";
 import {
