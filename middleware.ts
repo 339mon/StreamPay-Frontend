@@ -9,6 +9,7 @@ import {
   checkRequestBodySize,
   buildLimitsConfig,
 } from './lib/bodySize';
+import { getChaosConfig, applyChaos } from './lib/chaos';
 import { touchLastSeenFromRequest } from './lib/lastSeen';
 
 // ---------------------------------------------------------------------------
@@ -115,7 +116,7 @@ function shouldEnforceBodySizeLimit(request: NextRequest | Request): boolean {
     ? request.nextUrl.pathname
     : new URL(request.url).pathname;
 
-  return pathname === '/api/v2/streams' || pathname.startsWith('/api/v2/streams/') || pathname.startsWith('/api/webhooks');
+  return pathname.startsWith('/api/');
 }
 
 export async function middleware(request: NextRequest) {
@@ -172,27 +173,39 @@ export async function middleware(request: NextRequest) {
   // 2. CORS
   // ------------------------------------------------------------------
   const origin = request.headers.get('origin');
+  let originAllowed = false;
 
   if (origin) {
-    const originAllowed = isOriginAllowed(origin, allowedOrigins);
+    originAllowed = isOriginAllowed(origin, allowedOrigins);
 
     if (!originAllowed) {
-      const response = new NextResponse(null, { status: 204 });
+      const requestId = request.headers.get('x-request-id') ?? crypto.randomUUID();
+      const response = NextResponse.json(
+        {
+          error: {
+            code: 'CORS_ORIGIN_DISALLOWED',
+            message: `Origin '${origin}' is not allowed.`,
+            request_id: requestId,
+          },
+        },
+        { status: 403 }
+      );
+      response.headers.set(REQUEST_FINGERPRINT_HEADER, fingerprint);
       setCanaryHeader(response.headers, isCanary);
       return response;
     }
 
-    const headers = buildCorsHeaders(origin!);
-    setCanaryHeader(headers, isCanary);
+    // Allowed origin — handle preflight
+    if (request.method === 'OPTIONS') {
+      const headers = buildCorsHeaders(origin);
+      setCanaryHeader(headers, isCanary);
+      return new NextResponse(null, { status: 204, headers });
+    }
+  }
 
-    return new NextResponse(null, {
-      status: 204,
-      headers,
-    });
-
-    response.headers.set('Access-Control-Allow-Origin', origin);
-    response.headers.set('Vary', 'Origin');
-    return response;
+  // OPTIONS without origin — still return 204
+  if (request.method === 'OPTIONS') {
+    return new NextResponse(null, { status: 204 });
   }
 
   // ------------------------------------------------------------------
@@ -210,10 +223,10 @@ export async function middleware(request: NextRequest) {
 
   setCanaryHeader(response.headers, isCanary);
 
+  // Add CORS headers for allowed origins on non-preflight requests
   if (originAllowed) {
-    const headers = response.headers;
-    headers.set('Access-Control-Allow-Origin', origin!);
-    headers.set('Vary', 'Origin');
+    response.headers.set('Access-Control-Allow-Origin', origin!);
+    response.headers.set('Vary', 'Origin');
   }
 
   return response;
