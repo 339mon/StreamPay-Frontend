@@ -88,9 +88,9 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
 - The streams list now surfaces a distinct filtered-results empty state when the
   current view has no matches, with clearer guidance to clear filters and return
   to the broader streams list.
-- `StreamRow` now uses the shared keyboard focus-visible layer for its action
-  button, so the focus outline only appears for keyboard-style navigation and
-  stays consistent across themes.
+- `StreamTypeChip` now stacks its label and amount on narrow viewports and
+  switches to a horizontal layout at `30rem` and up, keeping the chip readable
+  without overflow while preserving the wide-screen presentation.
 
 ### Fixed
 - `GET /api/orgs/:orgId/members` and `POST /api/orgs/:orgId/members` now return

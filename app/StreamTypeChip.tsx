@@ -1,5 +1,6 @@
 import React from 'react';
 import '../src/styles/typography.css'; // Adjust path if needed
+import styles from './StreamTypeChip.module.css';
 
 /**
  * StreamTypeChip component.
@@ -15,9 +16,9 @@ export interface StreamTypeChipProps {
 
 export const StreamTypeChip: React.FC<StreamTypeChipProps> = ({ type, amount }) => {
   return (
-    <div className="stream-type-chip" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-      <span className="type" style={{ fontWeight: 'bold' }}>{type}</span>
-      <span className="amount tabular-nums" style={{ fontVariantNumeric: 'tabular-nums' }}>
+    <div className={styles.streamTypeChip}>
+      <span className={styles.type}>{type}</span>
+      <span className={`tabular-nums ${styles.amount}`}>
         {amount}
       </span>
     </div>
