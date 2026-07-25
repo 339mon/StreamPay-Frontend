@@ -152,7 +152,7 @@
 .maskLabel {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   font-size: 0.75rem;
   color: var(--muted);
   cursor: pointer;
@@ -163,6 +163,9 @@
 }
 
 .copyBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border-radius: 4px;
   padding: 4px 8px;
   font-size: 0.75rem;

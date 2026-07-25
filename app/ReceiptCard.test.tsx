@@ -88,4 +88,79 @@ describe("ReceiptCard", () => {
     expect(badge).toHaveClass("cb-pattern");
     expect(badge).toHaveClass("cb-pattern--withdrawn");
   });
+
+  it("renders keyboard shortcut hints by default", () => {
+    render(<ReceiptCard {...defaultProps} />);
+    
+    const maskKbd = screen.getByTestId("receipt-kbd-mask");
+    const copyKbd = screen.getByTestId("receipt-kbd-copy");
+
+    expect(maskKbd).toBeInTheDocument();
+    expect(maskKbd).toHaveTextContent("M");
+    expect(copyKbd).toBeInTheDocument();
+    expect(copyKbd).toHaveTextContent("C");
+  });
+
+  it("hides keyboard shortcut hints when showKbdHints is false", () => {
+    render(<ReceiptCard {...defaultProps} showKbdHints={false} />);
+    
+    expect(screen.queryByTestId("receipt-kbd-mask")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("receipt-kbd-copy")).not.toBeInTheDocument();
+  });
+
+  it("handles keyboard shortcut 'c' to copy share text", async () => {
+    const mockClipboard = {
+      writeText: jest.fn().mockResolvedValue(undefined),
+    };
+    Object.assign(navigator, {
+      clipboard: mockClipboard,
+    });
+
+    render(<ReceiptCard {...defaultProps} defaultMasked={false} />);
+    
+    fireEvent.keyDown(window, { key: "c" });
+
+    expect(mockClipboard.writeText).toHaveBeenCalledWith(
+      "StreamPay receipt stream-123456: 100.00 USDC to GB7ABCD...WXYZ"
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Copied")).toBeInTheDocument();
+    });
+  });
+
+  it("handles keyboard shortcut 'm' to toggle mask", () => {
+    const recipient = "GB7ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
+    render(<ReceiptCard {...defaultProps} recipient={recipient} />);
+    
+    const masked = maskAddress(recipient);
+    expect(screen.getByTestId("receipt-recipient")).toHaveTextContent(masked);
+
+    // Press 'm' to unmask
+    fireEvent.keyDown(window, { key: "m" });
+    expect(screen.getByTestId("receipt-recipient")).toHaveTextContent(recipient);
+
+    // Press 'm' to mask again
+    fireEvent.keyDown(window, { key: "M" });
+    expect(screen.getByTestId("receipt-recipient")).toHaveTextContent(masked);
+  });
+
+  it("does not trigger keyboard shortcuts when focused in text inputs", () => {
+    render(
+      <div>
+        <input data-testid="text-input" type="text" />
+        <ReceiptCard {...defaultProps} recipient="GB7ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890" />
+      </div>
+    );
+
+    const input = screen.getByTestId("text-input");
+    input.focus();
+
+    const masked = maskAddress("GB7ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890");
+    expect(screen.getByTestId("receipt-recipient")).toHaveTextContent(masked);
+
+    // Press 'm' while focused in input text
+    fireEvent.keyDown(input, { key: "m" });
+    // Mask should NOT toggle
+    expect(screen.getByTestId("receipt-recipient")).toHaveTextContent(masked);
+  });
 });
