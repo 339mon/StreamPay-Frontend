@@ -6,6 +6,8 @@ import { checkRateLimit, rateLimitResponse, type ClientIdentity } from "@/app/li
 import { getLimitForRoute } from "@/app/lib/rate-limit-config";
 import { recordRequest, recordThrottle } from "@/app/lib/rate-limit-metrics";
 import { withTimeout } from "@/src/middleware/timeout";
+import { withStrongEtag } from "@/src/middleware/etag";
+import { getCorrelationContext, logger } from "@/app/lib/logger";
 
 function getRequestUrl(request: Request): URL {
   try {
@@ -230,10 +232,20 @@ export async function GET(request: Request) {
           )
         : null;
 
-    return NextResponse.json({
+    const payload = {
       data: paginatedJobs,
       links: { self: `/api/exports?limit=${limit}` },
       meta: { hasNext, nextCursor, total: jobs.length },
+    };
+
+    logger.info("Exports listed successfully", {
+      count: paginatedJobs.length,
+      total: jobs.length,
+      limit,
+      request_id: getCorrelationContext()?.request_id,
     });
+
+    // Strong ETag / 304 for conditional GET (Issue #1120)
+    return withStrongEtag(request, payload);
   });
 }
