@@ -22,6 +22,22 @@ describe('StreamTypeChip', () => {
     expect(screen.getByText('12345')).toBeInTheDocument();
   });
 
+  it('exposes an accessible label for assistive technology', () => {
+    const { container } = render(<StreamTypeChip type="Video" amount={12345} />);
+    const chip = container.querySelector('.stream-type-chip') as HTMLElement;
+
+    expect(chip).toHaveAttribute('aria-label', 'Video 12345');
+    expect(chip).toHaveAttribute('role', 'group');
+  });
+
+  it('uses tokenized spacing and typography values in the stylesheet', () => {
+    expect(styleText).toContain('--stream-chip-padding-block');
+    expect(styleText).toContain('--stream-chip-padding-inline');
+    expect(styleText).toContain('--stream-chip-font-size');
+    expect(styleText).toContain('padding: var(--stream-chip-padding-block');
+    expect(styleText).toContain('gap: var(--stream-chip-gap');
+  });
+
   it('uses a stacked layout on narrow viewports and a row layout above the breakpoint', () => {
     expect(styleText).toContain('.streamTypeChip');
     expect(styleText).toContain('flex-direction: column');

@@ -45,9 +45,13 @@ export interface StreamTypeChipProps {
 export const StreamTypeChip: React.FC<StreamTypeChipProps> = ({ type, amount }) => {
   const prefersReducedMotion = usePrefersReducedMotion();
 
+  const chipLabel = `${type} ${amount}`;
+
   return (
     <div
       className={`${styles.streamTypeChip} stream-type-chip`}
+      role="group"
+      aria-label={chipLabel}
       tabIndex={0}
       data-reduced-motion={prefersReducedMotion}
       style={{
