@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { EmptyIllustration } from "./EmptyIllustration";
+import { StreamProgressEmptyIllustration } from "./StreamProgressEmptyIllustration";
 
-export type EmptyStateVariant = "streams" | "generic";
+export type EmptyStateVariant = "streams" | "generic" | "stream-progress";
 
 type EmptyStateProps = {
   eyebrow: string;
@@ -19,8 +20,8 @@ type EmptyStateProps = {
   guidanceSteps?: readonly string[];
   /**
    * Visual variant. `"streams"` (default) renders the v7 StreamRow ghost-row
-   * SVG illustration; `"generic"` omits the illustration for narrower or
-   * non-list contexts.
+   * SVG illustration; `"stream-progress"` renders the themed StreamProgress empty SVG;
+   * `"generic"` omits the illustration for narrower or non-list contexts.
    */
   variant?: EmptyStateVariant;
   /** Arbitrary supporting content rendered between copy and the CTA. */
@@ -59,7 +60,7 @@ export function EmptyState({
   const hasSupporting = Boolean(children) || hasGuidance;
   const outerClass = [
     "empty-state",
-    variant === "streams" ? "empty-state--streams" : "",
+    variant === "streams" ? "empty-state--streams" : variant === "stream-progress" ? "empty-state--stream-progress" : "",
     className,
   ]
     .filter(Boolean)
@@ -70,6 +71,13 @@ export function EmptyState({
       {variant === "streams" ? (
         <div className="empty-state__illustration" aria-hidden="true">
           <EmptyIllustration
+            className="empty-state__illustration-svg"
+            decorative
+          />
+        </div>
+      ) : variant === "stream-progress" ? (
+        <div className="empty-state__illustration" aria-hidden="true">
+          <StreamProgressEmptyIllustration
             className="empty-state__illustration-svg"
             decorative
           />
