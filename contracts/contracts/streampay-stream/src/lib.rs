@@ -2093,6 +2093,9 @@ mod admin_nonce_test;
 mod events_test;
 
 #[cfg(test)]
+mod err_stab;
+
+#[cfg(test)]
 mod fee_test;
 
 #[cfg(test)]

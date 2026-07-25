@@ -53,4 +53,8 @@ pub enum Error {
     NonceOutOfOrder = 15,
     /// 16: Recipient does not have a trustline for the token.
     RecipientTrustlineMissing = 16,
+    /// 17: Protocol fee exceeds the caller's `max_fee_bps` slippage guard.
+    FeeTooHigh = 17,
+    /// 18: Fee basis points value exceeds the maximum allowed (10 000).
+    InvalidFeeBps = 18,
 }
