@@ -11,6 +11,7 @@ import { fetchWithIdempotency } from "../../lib/apiClient";
 import { isStreamPayError } from "../lib/errors/mapper";
 import { formatErrorForDisplay } from "../lib/errors/handler";
 import type { StreamPayError } from "../lib/errors/types";
+import { LiveRegion } from "../../src/components/LiveRegion";
 
 export type StreamRowData = {
   id: string;
@@ -129,9 +130,7 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
       <div className="stream-row__pattern" aria-hidden="true" />
 
       {/* Dynamic polite status messenger announcement node layer for assistive tech */}
-      <div className="sr-only" aria-live="polite" role="status">
-        {srAnnouncement}
-      </div>
+      <LiveRegion message={srAnnouncement} />
 
       <div className="stream-row__primary">
         <div className="stream-row__identity">

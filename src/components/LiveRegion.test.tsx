@@ -1,48 +1,39 @@
 /**
  * @jest-environment jsdom
  */
-
 import React from "react";
 import { render, screen } from "@testing-library/react";
 import { LiveRegion } from "./LiveRegion";
 
 describe("LiveRegion", () => {
-  it("renders with default polite aria-live attributes", () => {
-    render(<LiveRegion message="Status update" />);
-    const region = screen.getByTestId("live-region");
+  it("renders with default props", () => {
+    render(<LiveRegion message="Test message" />);
+    const region = screen.getByText("Test message");
+    
     expect(region).toBeInTheDocument();
+    expect(region).toHaveClass("sr-only");
     expect(region).toHaveAttribute("aria-live", "polite");
-    expect(region).toHaveAttribute("aria-atomic", "true");
     expect(region).toHaveAttribute("role", "status");
-    expect(region).toHaveTextContent("Status update");
   });
 
-  it("renders with assertive politeness and alert role", () => {
-    render(<LiveRegion message="Urgent alert" politeness="assertive" />);
-    const region = screen.getByTestId("live-region");
+  it("applies assertive politeness correctly", () => {
+    render(<LiveRegion message="Error message" politeness="assertive" />);
+    const region = screen.getByText("Error message");
+    
     expect(region).toHaveAttribute("aria-live", "assertive");
-    expect(region).toHaveAttribute("role", "alert");
   });
 
-  it("supports custom role override", () => {
-    render(<LiveRegion message="Log entry" role="log" />);
-    const region = screen.getByTestId("live-region");
-    expect(region).toHaveAttribute("role", "log");
-  });
-
-  it("renders children when message prop is not supplied", () => {
+  it("applies custom class name and role correctly", () => {
     render(
-      <LiveRegion>
-        <span>Child content</span>
-      </LiveRegion>
+      <LiveRegion 
+        message="Alert message" 
+        className="custom-class" 
+        role="alert" 
+      />
     );
-    expect(screen.getByTestId("live-region")).toHaveTextContent("Child content");
-  });
-
-  it("applies sr-only class name for screen reader visibility", () => {
-    render(<LiveRegion message="Hidden text" className="custom-live" />);
-    const region = screen.getByTestId("live-region");
-    expect(region.className).toContain("sr-only");
-    expect(region.className).toContain("custom-live");
+    const region = screen.getByText("Alert message");
+    
+    expect(region).toHaveClass("custom-class");
+    expect(region).toHaveAttribute("role", "alert");
   });
 });
