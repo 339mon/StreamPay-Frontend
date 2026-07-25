@@ -26,10 +26,15 @@ describe("shared focus-visible layer", () => {
     expect(styleText).toContain(".stream-row__action");
   });
 
+  it("includes the StreamTypeChip in the keyboard-visible focus layer", () => {
+    expect(styleText).toContain(".stream-type-chip");
+  });
+
   it("hides the outline again for mouse/touch focus on the StreamProgress track", () => {
     const suppressionRule = styleText.split(":focus-visible {")[1] ?? "";
     expect(suppressionRule).toContain(".stream-progress__track");
     expect(suppressionRule).toContain(".stream-row__action");
+    expect(suppressionRule).toContain(".stream-type-chip");
     expect(styleText).toContain(":focus:not(:focus-visible)");
   });
 });

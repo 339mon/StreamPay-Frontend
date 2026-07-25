@@ -71,4 +71,21 @@ describe("ReceiptCard", () => {
       expect(screen.getByText("Copied")).toBeInTheDocument();
     });
   });
+
+  it("applies color-blind safe pattern classes to the status badge", () => {
+    const { container, rerender } = render(<ReceiptCard {...defaultProps} status="active" />);
+    let badge = container.querySelector(".receipt-status-badge");
+    expect(badge).toHaveClass("cb-pattern");
+    expect(badge).toHaveClass("cb-pattern--active");
+
+    rerender(<ReceiptCard {...defaultProps} status="draft" />);
+    badge = container.querySelector(".receipt-status-badge");
+    expect(badge).toHaveClass("cb-pattern");
+    expect(badge).toHaveClass("cb-pattern--draft");
+
+    rerender(<ReceiptCard {...defaultProps} status="withdrawn" />);
+    badge = container.querySelector(".receipt-status-badge");
+    expect(badge).toHaveClass("cb-pattern");
+    expect(badge).toHaveClass("cb-pattern--withdrawn");
+  });
 });

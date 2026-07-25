@@ -12,6 +12,7 @@ import { isStreamPayError } from "../lib/errors/mapper";
 import { formatErrorForDisplay } from "../lib/errors/handler";
 import type { StreamPayError } from "../lib/errors/types";
 import { LiveRegion } from "../../src/components/LiveRegion";
+import { colorFromId } from "../utils/colorFromId";
 
 export type StreamRowData = {
   id: string;
@@ -123,10 +124,19 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
       aria-labelledby={`${stream.id}-recipient`}
     >
       {/* Decorative color-blind safe pattern overlay. Purely visual so it
-          is hidden from assistive technology — state is already conveyed via
+          is hidden from assistive technology - state is already conveyed via
           the StatusBadge (glyph + label) and the StreamProgress (label +
           percentage). */}
       <div className="stream-row__pattern" aria-hidden="true" />
+
+      {/* Per-stream color stripe identity indicator.
+          Deterministic hue derived from the stream ID so users can visually
+          track a stream across page loads. Hidden from assistive tech. */}
+      <div
+        className="stream-row__color-stripe"
+        aria-hidden="true"
+        style={{ backgroundColor: colorFromId(stream.id) }}
+      />
 
       {/* Dynamic polite status messenger announcement node layer for assistive tech */}
       <LiveRegion message={srAnnouncement} />
