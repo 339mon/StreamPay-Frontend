@@ -64,4 +64,24 @@ describe("SplashScreen render", () => {
     });
     expect(screen.queryByRole("status", { name: /loading streampay/i })).toBeNull();
   });
+
+  it("registers preference for reduced motion", () => {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: jest.fn().mockImplementation(query => ({
+        matches: query === '(prefers-reduced-motion: reduce)',
+        media: query,
+        onchange: null,
+        addListener: jest.fn(),
+        removeListener: jest.fn(),
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+        dispatchEvent: jest.fn(),
+      })),
+    });
+    
+    render(<SplashScreen />);
+    // Just verifying that matchMedia is called, the CSS handles the rest
+    expect(window.matchMedia).toHaveBeenCalled();
+  });
 });
