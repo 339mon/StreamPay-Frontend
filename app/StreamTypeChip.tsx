@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import '../src/styles/typography.css'; // Adjust path if needed
 import styles from './StreamTypeChip.module.css';
-import { EmptyState } from '../src/components/EmptyState';
-import { StreamTypeChipEmptyIllustration } from './StreamTypeChipEmptyIllustration';
+import { KbdHint } from '../src/components/KbdHint';
 
 /**
  * Tracks the user's `prefers-reduced-motion` setting.
@@ -38,34 +37,12 @@ function usePrefersReducedMotion(): boolean {
  * When empty, renders a themed EmptyState with a helpful CTA (Issue #1085).
  */
 export interface StreamTypeChipProps {
-  /** The type of stream. Optional when rendering the empty state. */
-  type?: string;
-  /** The amount associated with the stream. Optional when empty. */
-  amount?: number;
-  /** Force the empty-state illustration + CTA. */
-  isEmpty?: boolean;
-  /** Empty-state title override. */
-  emptyTitle?: string;
-  /** Empty-state description override. */
-  emptyDescription?: string;
-  /** Empty-state CTA label. */
-  emptyCtaText?: string;
-  /** Empty-state CTA handler. */
-  onEmptyCtaClick?: () => void;
-  /** Additional CSS class names. */
-  className?: string;
+  type: string;
+  amount: number;
+  kbdHint?: string;
 }
 
-export const StreamTypeChip: React.FC<StreamTypeChipProps> = ({
-  type,
-  amount,
-  isEmpty = false,
-  emptyTitle,
-  emptyDescription,
-  emptyCtaText,
-  onEmptyCtaClick,
-  className = '',
-}) => {
+export const StreamTypeChip: React.FC<StreamTypeChipProps> = ({ type, amount, kbdHint }) => {
   const prefersReducedMotion = usePrefersReducedMotion();
   const showEmpty =
     isEmpty ||
@@ -107,6 +84,7 @@ export const StreamTypeChip: React.FC<StreamTypeChipProps> = ({
       <span className={`tabular-nums ${styles.amount}`}>
         {amount ?? 0}
       </span>
+      {kbdHint && <KbdHint shortcut={kbdHint} />}
     </div>
   );
 };
