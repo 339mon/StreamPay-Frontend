@@ -22,6 +22,20 @@ const createMockMedia = (matches: boolean) => {
   });
 };
 
+/**
+ * Creates a matchMedia mock that returns `mobile` for the viewport query
+ * and `prefersReduced` for the prefers-reduced-motion query.
+ */
+const createMockMediaMulti = (mobile: boolean, prefersReduced: boolean) => {
+  return (query: string) => ({
+    matches: query.includes("prefers-reduced-motion")
+      ? prefersReduced
+      : mobile,
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+  });
+};
+
 describe("NewStreamPage - Mobile Bottom Sheet Summary", () => {
   let originalMatchMedia: typeof window.matchMedia;
 
@@ -153,5 +167,72 @@ describe("NewStreamPage - Mobile Bottom Sheet Summary", () => {
 
     // Should still be on the edit form
     expect(screen.getByRole("heading", { name: /create stream/i })).toBeInTheDocument();
+  });
+});
+
+describe("NewStreamPage - Reduced Motion Fallback", () => {
+  let originalMatchMedia: typeof window.matchMedia;
+
+  beforeAll(() => {
+    originalMatchMedia = window.matchMedia;
+  });
+
+  afterAll(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  afterEach(() => {
+    // @ts-expect-error reset between tests
+    delete window.matchMedia;
+  });
+
+  it("does not use CSS animation when reduced motion is preferred", async () => {
+    window.matchMedia = createMockMediaMulti(true, true) as any;
+    render(<NewStreamPage />);
+
+    const recipientInput = screen.getByLabelText(/recipient address/i);
+    const amountInput = screen.getByLabelText(/amount/i);
+    const submitButton = screen.getByRole("button", { name: /create stream/i });
+
+    fireEvent.change(recipientInput, { target: { value: "GD72X2Y3B6V7XW5P4D8Q2Z9K0F1E3R5T7Y9U0I2O4P6A8S0D2F4G6H8J" } });
+    fireEvent.change(amountInput, { target: { value: "150" } });
+
+    fireEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("bottom-sheet-overlay")).toBeInTheDocument();
+    });
+
+    const overlay = screen.getByTestId("bottom-sheet-overlay");
+    expect(overlay.style.animation).toBe("");
+    expect(overlay.style.opacity).toBe("1");
+
+    const panel = overlay.querySelector("[role='dialog']") as HTMLElement;
+    expect(panel.style.animation).toBe("");
+    expect(panel.style.transform).toBe("translateY(0)");
+  });
+
+  it("uses CSS animation when reduced motion is not preferred", async () => {
+    window.matchMedia = createMockMediaMulti(true, false) as any;
+    render(<NewStreamPage />);
+
+    const recipientInput = screen.getByLabelText(/recipient address/i);
+    const amountInput = screen.getByLabelText(/amount/i);
+    const submitButton = screen.getByRole("button", { name: /create stream/i });
+
+    fireEvent.change(recipientInput, { target: { value: "GD72X2Y3B6V7XW5P4D8Q2Z9K0F1E3R5T7Y9U0I2O4P6A8S0D2F4G6H8J" } });
+    fireEvent.change(amountInput, { target: { value: "150" } });
+
+    fireEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("bottom-sheet-overlay")).toBeInTheDocument();
+    });
+
+    const overlay = screen.getByTestId("bottom-sheet-overlay");
+    expect(overlay.style.animation).toContain("sheetFadeIn");
+
+    const panel = overlay.querySelector("[role='dialog']") as HTMLElement;
+    expect(panel.style.animation).toContain("sheetSlideUp");
   });
 });

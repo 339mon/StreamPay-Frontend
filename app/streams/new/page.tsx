@@ -6,6 +6,7 @@ import { GasOnRecipientToggle } from '../../components/GasOnRecipientToggle';
 import { RecentRecipients } from './components/RecentRecipients';
 import { addRecentRecipient } from '../../state/recentRecipients';
 import { BottomSheet } from '../../components/BottomSheet';
+import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion';
 
 function shortenAddress(address: string): string {
   const trimmed = address.trim();
@@ -34,6 +35,8 @@ export default function NewStreamPage() {
 
   const [isMobile, setIsMobile] = useState(false);
   const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
+
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   // Detect mobile viewport using matchMedia
   useEffect(() => {
@@ -238,6 +241,7 @@ export default function NewStreamPage() {
         isOpen={isBottomSheetOpen}
         onClose={() => setIsBottomSheetOpen(false)}
         title="Review Stream Details"
+        reducedMotion={prefersReducedMotion}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <p style={{ color: 'var(--muted-light)', fontSize: 'var(--text-sm, 0.875rem)', margin: 0 }}>
