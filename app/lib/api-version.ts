@@ -62,12 +62,15 @@ export function toV2Stream(v1: StreamV1): StreamV2 {
   const status = validStatuses.has(v1.status) ? (v1.status as StreamV2["status"]) : "draft";
 
   return {
+    ...(v1 as any),
     id: v1.id,
     recipient: v1.recipient,
     rate: v1.rate,
     status,
     allowed_actions: allowedActions,
+    actions: allowedActions,
     created_at: v1.createdAt,
+    createdAt: v1.createdAt,
     settlement: null,
   };
 }
@@ -75,6 +78,7 @@ export function toV2Stream(v1: StreamV1): StreamV2 {
 /** Convert a db Stream object to the StreamV1 shape. */
 export function dbStreamToV1(stream: Stream): StreamV1 {
   return {
+    ...(stream as any),
     id: stream.id,
     recipient: stream.recipient,
     rate: stream.rate,

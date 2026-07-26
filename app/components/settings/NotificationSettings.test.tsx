@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, act } from '@testing-library/react';
 import { NotificationSettings } from './NotificationSettings';
 
 jest.mock('../PushOptIn', () => ({
@@ -45,15 +45,19 @@ describe('NotificationSettings', () => {
     expect(emailToggle).toHaveAttribute('aria-checked', 'true');
   });
 
-  it('renders the save action and calls the save handler when requested', () => {
+  it('renders the save action and calls the save handler when requested', async () => {
     jest.useFakeTimers();
     const onSave = jest.fn();
 
     render(<NotificationSettings showSaveButton onSave={onSave} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
-    jest.runAllTimers();
+
+    await act(async () => {
+      jest.advanceTimersByTime(1000);
+    });
 
     expect(onSave).toHaveBeenCalledTimes(1);
+    jest.useRealTimers();
   });
 });

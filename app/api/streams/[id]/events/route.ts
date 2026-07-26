@@ -161,15 +161,14 @@ export async function GET(
     walletAddress: actor.walletAddress,
   });
 
+  let cleanupFn: (() => void) | undefined;
+
   const streamResponse = new ReadableStream({
     start(controller) {
       let isClosed = false;
       let pingInterval: ReturnType<typeof setInterval> | undefined;
-      let cleanup: (() => void) | undefined;
 
-      const onAbort = () => cleanup?.();
-
-      cleanup = () => {
+      const cleanup = () => {
         if (isClosed) {
           return;
         }
@@ -197,6 +196,9 @@ export async function GET(
           tenant,
         });
       };
+      cleanupFn = cleanup;
+
+      const onAbort = () => cleanup();
 
       // Keep-alive ping interval (every 30 seconds)
       pingInterval = setInterval(() => {
@@ -258,7 +260,7 @@ export async function GET(
       request.signal.addEventListener("abort", onAbort, { once: true });
     },
     cancel() {
-      cleanup?.();
+      cleanupFn?.();
       logger.info("SSE connection cancelled", {
         streamId,
         actorId: actor.actorId,
