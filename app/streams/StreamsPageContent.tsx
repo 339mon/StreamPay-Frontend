@@ -4,8 +4,8 @@ import { useMemo, useState } from "react";
 import { StateTriad } from "../components/StateTriad";
 import { StreamRow, type StreamRowData } from "../components/StreamRow";
 import { Skeleton } from "../components/Skeleton";
-import { EmptyState } from "../components/EmptyState";
 import { PageError } from "../components/PageError";
+import { EmptyState } from "../components/EmptyState";
 import type { StateTriadState } from "../components/StateTriad";
 
 export type StreamsViewState = "loading" | "populated" | "empty" | "error";
@@ -128,6 +128,11 @@ export function StreamsPageContent({
   const isEmpty = state === "empty" || streams.length === 0;
   const isFilteredEmpty = emptyStateVariant === "filtered" && streams.length === 0 && state !== "empty";
   const primaryOnClick = onRetry ?? (() => {});
+
+  const [density, setDensity] = useState<DensityMode>("comfortable");
+  const primaryOnClick = () => {};
+  const viewState = state ?? "success";
+  const populatedCount = streamListCopy.populatedCount(streams.length);
 
   return (
     <main className="page-shell">

@@ -173,7 +173,6 @@ export async function middleware(request: NextRequest) {
   // ------------------------------------------------------------------
   // 3. CORS
   // ------------------------------------------------------------------
-  const corsOrigin = request.headers.get('origin');
   let originAllowed = false;
 
   if (corsOrigin) {

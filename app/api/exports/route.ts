@@ -27,7 +27,8 @@ const EXPORTS_TIMEOUT_MS =
   Number(process.env.EXPORTS_TIMEOUT_MS) || 15_000;
 
 function createErrorResponse(code: string, message: string, status: number) {
-  return NextResponse.json({ error: { code, message, request_id: "mock-request-id" } }, { status });
+  const context = getCorrelationContext();
+  return NextResponse.json({ error: { code, message, request_id: context?.request_id } }, { status });
 }
 
 function createAuditRecord(exportId: string, type: "export.requested" | "export.downloaded" | "export.expired", details?: Record<string, unknown>) {
