@@ -25,8 +25,8 @@ describe("lastSeen", () => {
 
     const updatedUser = users.get(walletAddress);
     expect(updatedUser?.last_seen).not.toBeNull();
-    expect(updatedUser?.last_seen).toBeGreaterThanOrEqual(beforeTime);
-    expect(updatedUser?.last_seen).toBeLessThanOrEqual(afterTime);
+    expect(updatedUser!.last_seen! >= beforeTime).toBe(true);
+    expect(updatedUser!.last_seen! <= afterTime).toBe(true);
   });
 
   test("creates minimal user and sets last_seen if user doesn't exist", () => {
@@ -44,8 +44,8 @@ describe("lastSeen", () => {
     expect(newUser?.email).toBeNull();
     expect(newUser?.display_name).toBe("");
     expect(newUser?.avatar_url).toBeNull();
-    expect(newUser?.created_at).toBeGreaterThanOrEqual(beforeTime);
-    expect(newUser?.created_at).toBeLessThanOrEqual(afterTime);
+    expect(newUser!.created_at! >= beforeTime).toBe(true);
+    expect(newUser!.created_at! <= afterTime).toBe(true);
     expect(newUser?.last_seen).toBe(newUser?.created_at);
   });
 });

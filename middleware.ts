@@ -14,6 +14,8 @@ import {
 import {
   checkRequestBodySize,
   buildLimitsConfig,
+  extractPathname,
+  isWebhookPath,
 } from './lib/bodySize';
 import {
   attachCsrfCookie,
@@ -23,6 +25,8 @@ import {
   isCsrfProtectedMethod,
   validateCsrfToken,
 } from './lib/csrf';
+import { getChaosConfig } from './lib/chaos';
+import { touchLastSeenFromRequest } from './lib/lastSeen';
 
 // ---------------------------------------------------------------------------
 // Request body size cap
@@ -144,9 +148,6 @@ export async function middleware(request: NextRequest) {
     requestHeaders.set(CANARY_HEADER_NAME, 'true');
   }
 
-  const origin = request.headers.get('origin');
-  let isAllowed = false;
-
   // ------------------------------------------------------------------
   // 1. Request body size cap (O(1) — reads Content-Length)
   // ------------------------------------------------------------------
@@ -160,12 +161,14 @@ export async function middleware(request: NextRequest) {
   // ------------------------------------------------------------------
   // 2. CSRF protection for state-changing requests
   // ------------------------------------------------------------------
-  if (isCsrfProtectedMethod(request.method)) {
+  const pathname = extractPathname(request);
+  if (isCsrfProtectedMethod(request.method) && !isWebhookPath(pathname)) {
     const cookieToken = getCsrfCookieValue(request);
     const headerToken = getCsrfHeaderValue(request);
     if (!validateCsrfToken(cookieToken, headerToken)) {
       const response = createCsrfForbiddenResponse(request);
       response.headers.set(REQUEST_FINGERPRINT_HEADER, fingerprint);
+      setCanaryHeader(response.headers, isCanary);
       return response;
     }
   }
@@ -230,6 +233,7 @@ export async function middleware(request: NextRequest) {
       headers: requestHeaders,
     },
   });
+  setCanaryHeader(response.headers, isCanary);
 
   if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') {
     const csrfResponse = attachCsrfCookie(response, request);
@@ -237,6 +241,7 @@ export async function middleware(request: NextRequest) {
       csrfResponse.headers.set('Access-Control-Allow-Origin', corsOrigin!);
       csrfResponse.headers.set('Vary', 'Origin');
     }
+    setCanaryHeader(csrfResponse.headers, isCanary);
     return csrfResponse;
   }
 

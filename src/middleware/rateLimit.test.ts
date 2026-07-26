@@ -1,5 +1,10 @@
+import { NextRequest } from "next/server";
 import { resetRateLimitStore, setRateLimitStore } from "@/app/lib/rate-limit-store";
-import { streamsRateLimit, webhooksRateLimit } from "./rateLimit";
+import {
+  applyRateLimit,
+  streamsRateLimit,
+  walletAuthRateLimit,
+} from "./rateLimit";
 
 describe("streamsRateLimit", () => {
   afterEach(() => {
@@ -169,54 +174,78 @@ describe("streamsRateLimit", () => {
   });
 });
 
-describe("webhooksRateLimit", () => {
+describe("applyRateLimit", () => {
   afterEach(() => {
     resetRateLimitStore();
   });
 
-  it("allows POST /api/webhooks when under the webhook limit", async () => {
-    const req = new Request("http://localhost/api/webhooks", { method: "POST" });
-    const result = await webhooksRateLimit(req, "POST");
+  it("returns null when request is within rate limit", async () => {
+    const req = new Request("http://localhost/api/activity");
+    const response = await applyRateLimit(req, "activity", "GET");
+
+    expect(response).toBeNull();
+  });
+
+  it("returns 429 response when request exceeds rate limit", async () => {
+    setRateLimitStore({
+      check: async () => ({
+        allowed: false,
+        remaining: 0,
+        resetAt: 1234567890,
+        retryAfter: 45,
+      }),
+    });
+
+    const req = new Request("http://localhost/api/activity");
+    const response = await applyRateLimit(req, "activity", "GET");
+
+    expect(response).not.toBeNull();
+    expect(response!.status).toBe(429);
+  });
+});
+
+describe("walletAuthRateLimit", () => {
+  afterEach(() => {
+    resetRateLimitStore();
+  });
+
+  it("allows challenge GET request when under IP limit", async () => {
+    const req = new NextRequest("http://localhost/api/auth/wallet?address=GCLH2SNM5MTV4TGNNOADLYOZJYIFBXTIDVSNW4XP3LEI2UQV2MZ46OD7", {
+      headers: { "x-forwarded-for": "198.51.100.1" },
+    });
+    const result = await walletAuthRateLimit(req, "challenge");
 
     expect(result.allowed).toBe(true);
-    expect(result.response).toBeUndefined();
   });
 
-  it("rejects POST /api/webhooks when the webhook limit is exceeded", async () => {
+  it("rejects login POST request when exceeding IP rate limit", async () => {
     setRateLimitStore({
       check: async () => ({
         allowed: false,
         remaining: 0,
-        resetAt: 1234567890,
-        retryAfter: 25,
+        resetAt: Date.now() + 60_000,
+        retryAfter: 30,
       }),
     });
 
-    const req = new Request("http://localhost/api/webhooks", { method: "POST" });
-    const result = await webhooksRateLimit(req, "POST");
-
-    expect(result.allowed).toBe(false);
-    expect(result.response!.status).toBe(429);
-    expect(result.response!.headers.get("Retry-After")).toBe("25");
-
-    const body = await result.response!.json();
-    expect(body.error.code).toBe("rate_limit_exceeded");
-  });
-
-  it("rejects GET /api/webhooks scrape when exhausted", async () => {
-    setRateLimitStore({
-      check: async () => ({
-        allowed: false,
-        remaining: 0,
-        resetAt: 1234567890,
-        retryAfter: 15,
-      }),
+    const req = new NextRequest("http://localhost/api/auth/wallet", {
+      method: "POST",
+      headers: {
+        "x-forwarded-for": "198.51.100.2",
+        "x-request-id": "req-test-wallet-limit",
+      },
     });
 
-    const req = new Request("http://localhost/api/webhooks");
-    const result = await webhooksRateLimit(req, "GET");
+    const result = await walletAuthRateLimit(req, "login");
 
     expect(result.allowed).toBe(false);
-    expect(result.response!.status).toBe(429);
+    if (!result.allowed) {
+      expect(result.response.status).toBe(429);
+      expect(result.response.headers.get("Retry-After")).toBe("30");
+      expect(result.response.headers.get("x-request-id")).toBe("req-test-wallet-limit");
+      const body = await result.response.json();
+      expect(body.error.code).toBe("rate_limit_exceeded");
+      expect(body.error.request_id).toBe("req-test-wallet-limit");
+    }
   });
 });

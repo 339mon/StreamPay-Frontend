@@ -299,6 +299,10 @@ export class WebhookDeliveryStore {
     return Array.from(this.dlq.values());
   }
 
+  getDLQEntries(): DLQEntry[] {
+    return this.getAllDLQEntries();
+  }
+
   /**
    * Get DLQ entries by status/date range for observability
    */

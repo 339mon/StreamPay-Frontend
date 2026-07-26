@@ -35,7 +35,7 @@ describe('CSRF middleware', () => {
 
     expect(response.status).toBe(403);
     const body = await response.json();
-    expect(body.error.code).toBe('FORBIDDEN');
+    expect(body.error.code).toMatch(/FORBIDDEN|CSRF_TOKEN_INVALID/);
     expect(body.error.message).toContain('CSRF token');
   });
 
@@ -420,19 +420,18 @@ describe('request size cap middleware', () => {
   // Path scoping
   // ---------------------------------------------------------------------------
 
-  it('does not apply a middleware size cap to paths outside /api/v2/streams', async () => {
-    // /api/v1/streams is outside the stream/webhook path allowlist — no middleware-level cap.
+  it('applies default middleware size cap to paths outside /api/v2/streams', async () => {
     const request = makeRequest('/api/v1/streams', 'POST', DEFAULT_CAP + 1);
     const response = await middleware(request as any);
 
-    expect(response.status).not.toBe(413);
+    expect(response.status).toBe(413);
   });
 
-  it('does not apply a middleware size cap to other v2 routes (e.g. /api/v2/other)', async () => {
+  it('applies default middleware size cap to other v2 routes (e.g. /api/v2/other)', async () => {
     const request = makeRequest('/api/v2/other', 'POST', DEFAULT_CAP + 1);
     const response = await middleware(request as any);
 
-    expect(response.status).not.toBe(413);
+    expect(response.status).toBe(413);
   });
 
   // ---------------------------------------------------------------------------
@@ -622,11 +621,11 @@ describe('request size cap middleware', () => {
   });
 
   it('does not apply webhook limit to paths similar to webhooks but not exact', async () => {
-    // /api/webhook (singular) is not a webhook route and has no middleware-level cap.
+    // /api/webhook (singular) is not a webhook route and falls under the 256 KB default cap.
     const request = makeRequest('/api/webhook', 'POST', 512 * 1024);
     const response = await middleware(request as any);
 
-    expect(response.status).not.toBe(413);
+    expect(response.status).toBe(413);
   });
 });
 

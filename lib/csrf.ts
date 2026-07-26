@@ -89,7 +89,7 @@ export function validateCsrfToken(cookieToken: string | null, headerToken: strin
 
 export function attachCsrfCookie(response: NextResponse, request: NextRequest | Request): NextResponse {
   const existingToken = getCsrfCookieValue(request);
-  if (existingToken) {
+  if (existingToken && /^[a-f0-9]{64}$/i.test(existingToken)) {
     return response;
   }
 
@@ -110,8 +110,8 @@ export function createCsrfForbiddenResponse(request: NextRequest | Request): Nex
   return NextResponse.json(
     {
       error: {
-        code: 'FORBIDDEN',
-        message: 'CSRF token missing or invalid.',
+        code: 'CSRF_TOKEN_INVALID',
+        message: 'CSRF token validation failed.',
         request_id: requestId,
       },
     },

@@ -39,8 +39,10 @@ export async function GET(request: Request, { params }: Context) {
     }
   }
 
+  const streamV2 = toV2Stream(dbStreamToV1(stream));
   const response = NextResponse.json({
-    data: toV2Stream(dbStreamToV1(stream)),
+    ...streamV2,
+    data: streamV2,
     links: { self: `/api/v2/streams/${id}` },
   });
 
@@ -67,4 +69,62 @@ export async function DELETE(_request: Request, { params }: Context) {
   }
   streamRepository.streams.delete(id);
   return new NextResponse(null, { status: 204 });
+}
+
+/** PATCH /api/v2/streams/:id */
+export async function PATCH(request: Request, context: { params: Promise<{ id: string }> | { id: string } }) {
+  const { streamRepository } = getStore();
+  const params = await context.params;
+  const id = params.id;
+  const stream = streamRepository.streams.get(id);
+  if (!stream) {
+    return errorResponse("NOT_FOUND", `Stream '${id}' not found`, 404);
+  }
+
+  let body: unknown;
+  try {
+    const text = await request.text();
+    if (!text || !text.trim()) {
+      body = {};
+    } else {
+      body = JSON.parse(text);
+    }
+  } catch {
+    return errorResponse("INVALID_REQUEST", "Request body must be valid JSON", 400);
+  }
+
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return errorResponse("INVALID_REQUEST", "Request body must be a JSON object", 400);
+  }
+
+  const { validatePatchStreamBody } = await import("@/app/lib/stream-validation");
+  const errors = validatePatchStreamBody(body);
+  if (errors.length > 0) {
+    const hasUnrecognized = errors.some((e) => e.code === "UNRECOGNIZED_KEYS");
+    const status = hasUnrecognized ? 400 : 422;
+    return NextResponse.json(
+      {
+        error: {
+          code: "VALIDATION_ERROR",
+          message: errors[0].message,
+          details: errors,
+        },
+      },
+      { status },
+    );
+  }
+
+  const patchData = body as Record<string, unknown>;
+  const updated = {
+    ...stream,
+    ...patchData,
+    updatedAt: new Date().toISOString(),
+  };
+  streamRepository.streams.set(id, updated as any);
+
+  const streamV2 = toV2Stream(dbStreamToV1(updated as any));
+  return NextResponse.json({
+    ...streamV2,
+    data: streamV2,
+  });
 }

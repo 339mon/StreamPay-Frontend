@@ -4,8 +4,8 @@ import { useMemo, useState } from "react";
 import { StateTriad } from "../components/StateTriad";
 import { StreamRow, type StreamRowData } from "../components/StreamRow";
 import { Skeleton } from "../components/Skeleton";
-import { PageError } from "../components/PageError";
 import { EmptyState } from "../components/EmptyState";
+import { PageError } from "../components/PageError";
 import type { StateTriadState } from "../components/StateTriad";
 
 export type StreamsViewState = "loading" | "populated" | "empty" | "error";
@@ -17,9 +17,15 @@ const streamListCopy = {
     "Track recipients, rates, statuses, and the next action from one scan-friendly streams list.",
   empty: {
     actionLabel: "Create Your First Stream",
-    description: "No streams yet. Create one to start paying collaborators and vendors on a steady schedule.",
+    description: "Define a recipient, cadence, and amount in minutes.",
     eyebrow: "Streams",
-    title: "Your streams list is empty",
+    title: "Start your first stream",
+    guidanceStepsTitle: "What you'll set up",
+    guidanceSteps: [
+      "Choose a collaborator or vendor to pay",
+      "Set your stream rate and schedule",
+      "Deposit initial escrow balance to begin streaming",
+    ],
   },
   filtered: {
     actionLabel: "Clear filters",
@@ -74,6 +80,10 @@ type StreamsPageContentProps = {
   errorMessage?: string;
   /** Handler bound to the error-state "Try again" button and top-level CTAs. */
   onRetry?: () => void;
+  /** Alias callback for primary CTA action */
+  onRetryAction?: () => void;
+  /** Initial density layout mode */
+  initialDensity?: DensityMode;
   /** Switches the empty-state copy to the filtered-results variant when the current list is empty. */
   emptyStateVariant?: "default" | "filtered";
   /** Optional callback for the filtered empty state CTA. */
@@ -92,12 +102,13 @@ type StreamsPageContentProps = {
  */
 function StreamListSkeleton({ count = 3 }: { count?: number }) {
   return (
-    <div role="status" aria-live="polite" className="stream-list-loading">
+    <div role="status" aria-live="polite" aria-label="Loading streams" className="stream-list-loading">
       <p className="skeleton-heading-label">Loading your streams…</p>
       <div className="stream-list" aria-hidden="true">
         {Array.from({ length: count }).map((_, i) => (
           <article
             key={i}
+            data-testid="stream-row-skeleton"
             className="stream-row stream-row--skeleton"
             style={{ animationDelay: `${i * 80}ms` }}
           >
@@ -121,18 +132,46 @@ export function StreamsPageContent({
   streams = mockStreams,
   errorMessage = "There was a problem fetching your streams. Check your connection and try again.",
   onRetry,
+  onRetryAction,
+  initialDensity = "comfortable",
   emptyStateVariant = "default",
   onClearFilters,
 }: StreamsPageContentProps) {
-  const [density, setDensity] = useState<DensityMode>("comfortable");
-  const isEmpty = state === "empty" || streams.length === 0;
-  const isFilteredEmpty = emptyStateVariant === "filtered" && streams.length === 0 && state !== "empty";
-  const primaryOnClick = onRetry ?? (() => {});
+  const [density, setDensity] = useState<DensityMode>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("streampay-density");
+        if (stored === "compact" || stored === "cozy" || stored === "comfortable") {
+          return stored === "compact" ? "compact" : "comfortable";
+        }
+      } catch {}
+    }
+    return initialDensity;
+  });
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
-  const [density, setDensity] = useState<DensityMode>("comfortable");
-  const primaryOnClick = () => {};
-  const viewState = state ?? "success";
-  const populatedCount = streamListCopy.populatedCount(streams.length);
+  const availableTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of streams) {
+      s.tags?.forEach((t) => set.add(t));
+    }
+    return Array.from(set);
+  }, [streams]);
+
+  const filteredStreams = useMemo(() => {
+    if (!selectedTag) return streams;
+    return streams.filter((s) => s.tags?.includes(selectedTag));
+  }, [streams, selectedTag]);
+
+  const isFilteredEmpty =
+    (emptyStateVariant === "filtered" || selectedTag !== null) &&
+    filteredStreams.length === 0 &&
+    state !== "empty";
+
+  const isEmpty = state === "empty" || (state !== "loading" && state !== "error" && filteredStreams.length === 0);
+  const viewState = state === "loading" ? "loading" : state === "error" ? "error" : isEmpty ? "empty" : "success";
+  const populatedCount = streamListCopy.populatedCount(filteredStreams.length);
+  const primaryOnClick = onRetryAction ?? onRetry;
 
   return (
     <main className="page-shell">
@@ -153,25 +192,37 @@ export function StreamsPageContent({
           <button className="button button--secondary" type="button">
             {streamListCopy.exportCta}
           </button>
-          <div className="density-toggle" aria-label="Streams list density">
-            <span className="density-toggle__label">Density</span>
-            <button
-              type="button"
-              className={`density-toggle__switch ${
-                density === "compact" ? "density-toggle__switch--compact" : ""
-              }`}
-              role="switch"
-              aria-checked={density === "compact"}
-              onClick={() =>
-                setDensity((d) => (d === "compact" ? "comfortable" : "compact"))
-              }
-            >
-              <span className="density-toggle__thumb" aria-hidden="true" />
-              <span className="sr-only">
-                {density === "compact" ? "Compact density" : "Comfortable density"}
-              </span>
-            </button>
-          </div>
+          {viewState === "success" && (
+            <div className="density-toggle" role="radiogroup" aria-label="List density">
+              <span className="density-toggle__label">Density</span>
+              <button
+                type="button"
+                role="radio"
+                aria-label="Cozy"
+                aria-checked={density !== "compact"}
+                className={`density-option ${density !== "compact" ? "is-active" : ""}`}
+                onClick={() => {
+                  setDensity("comfortable");
+                  try { localStorage.setItem("streampay-density", "cozy"); } catch {}
+                }}
+              >
+                Cozy
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-label="Compact"
+                aria-checked={density === "compact"}
+                className={`density-option ${density === "compact" ? "is-active" : ""}`}
+                onClick={() => {
+                  setDensity("compact");
+                  try { localStorage.setItem("streampay-density", "compact"); } catch {}
+                }}
+              >
+                Compact
+              </button>
+            </div>
+          )}
           <button className="button button--primary" type="button" onClick={primaryOnClick}>
             {streamListCopy.primaryCta}
           </button>
@@ -194,6 +245,21 @@ export function StreamsPageContent({
           ) : null}
         </div>
 
+        {viewState === "success" && availableTags.length > 0 && (
+          <div role="group" aria-label="Filter by tag" className="tag-filter-group">
+            {availableTags.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                className={`tag-chip ${selectedTag === tag ? "is-active" : ""}`}
+                onClick={() => setSelectedTag((prev) => (prev === tag ? null : tag))}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        )}
+
         {state === "loading" ? (
           <StreamListSkeleton />
         ) : state === "error" ? (
@@ -211,11 +277,12 @@ export function StreamsPageContent({
             description={isFilteredEmpty ? streamListCopy.filtered.description : streamListCopy.empty.description}
             eyebrow={isFilteredEmpty ? streamListCopy.filtered.eyebrow : streamListCopy.empty.eyebrow}
             title={isFilteredEmpty ? streamListCopy.filtered.title : streamListCopy.empty.title}
-            onAction={isFilteredEmpty ? onClearFilters : undefined}
+            guidanceSteps={isFilteredEmpty ? undefined : streamListCopy.empty.guidanceSteps}
+            onAction={isFilteredEmpty ? (onClearFilters ?? (() => setSelectedTag(null))) : primaryOnClick}
           />
         ) : (
-          <section aria-label="Streams list" className="stream-list">
-            {streams.map((stream) => (
+          <section aria-label="Streams list" className={`stream-list ${density === "compact" ? "stream-list--compact" : ""}`}>
+            {filteredStreams.map((stream) => (
               <StreamRow
                 key={stream.id}
                 stream={stream}
