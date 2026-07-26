@@ -3,6 +3,166 @@ info:
   title: StreamPay API
   version: 2.0.0
 paths:
+  /api/webhooks:
+    get:
+      summary: Scrape Prometheus metrics
+      description: |
+        Returns the shared Prometheus text exposition including webhook and
+        other registered series.
+      responses:
+        '200':
+          description: Prometheus metrics payload
+          content:
+            text/plain:
+              examples:
+                metricsSample:
+                  summary: Sample Prometheus text output
+                  value: |
+                    # HELP webhook_requests_total Total number of webhook requests received
+                    # TYPE webhook_requests_total counter
+                    webhook_requests_total{status="200",event_type="payment.received"} 3
+        '500':
+          description: Metrics generation failed
+          content:
+            application/json:
+              examples:
+                serverError:
+                  summary: Internal error generating metrics
+                  value:
+                    error: Internal Server Error
+    post:
+      summary: Receive a webhook event
+      description: |
+        Accepts inbound webhook events. Records Prometheus counter/histogram
+        metrics labeled by status and event_type.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            examples:
+              paymentReceived:
+                summary: Payment received event
+                value:
+                  eventType: payment.received
+                  id: evt_001
+                  payload:
+                    amount: "10.00"
+                    asset: USDC
+      responses:
+        '200':
+          description: Event accepted
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+              description: Correlation ID for structured logging
+          content:
+            application/json:
+              examples:
+                accepted:
+                  summary: Webhook processed successfully
+                  value:
+                    success: true
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              examples:
+                missingEventType:
+                  summary: eventType is required
+                  value:
+                    error:
+                      code: INVALID_INPUT
+                      message: eventType is required
+                      request_id: req_01HZ9ABCDEF
+        '500':
+          description: Processing failure
+          content:
+            application/json:
+              examples:
+                internalError:
+                  summary: Unexpected processing error
+                  value:
+                    error:
+                      code: INTERNAL_ERROR
+                      message: Internal Server Error
+                      request_id: req_01HZ9ABCDEF
+  /api/webhooks/dlq:
+    post:
+      summary: Receive a dead-letter-queue webhook event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            examples:
+              deadLetter:
+                summary: Failed payment event for reprocessing
+                value:
+                  event: payment.failed
+                  id: evt_dlq_001
+      responses:
+        '200':
+          description: Event accepted
+          content:
+            application/json:
+              examples:
+                received:
+                  summary: DLQ event acknowledged
+                  value:
+                    received: true
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              examples:
+                badRequest:
+                  summary: Invalid DLQ payload
+                  value:
+                    error:
+                      code: BAD_REQUEST
+                      message: Bad input.
+                      request_id: req_01HZ9ABCDEF
+  /api/webhooks/deliveries:
+    get:
+      summary: List webhook delivery attempts
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Delivery list
+          content:
+            application/json:
+              examples:
+                deliveriesList:
+                  summary: Empty delivery page
+                  value:
+                    deliveries: []
+                    cursor: null
+                    limit: 20
+        '400':
+          description: Invalid query
+          content:
+            application/json:
+              examples:
+                invalidLimit:
+                  summary: Limit out of range
+                  value:
+                    error:
+                      code: BAD_REQUEST
+                      message: limit must be between 1 and 100.
+                      request_id: req_01HZ9ABCDEF
   /api/reconciliation:
     get:
       summary: Retrieve public reconciliation overview
