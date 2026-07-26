@@ -1,5 +1,5 @@
 import { resetRateLimitStore, setRateLimitStore } from "@/app/lib/rate-limit-store";
-import { streamsRateLimit } from "./rateLimit";
+import { streamsRateLimit, webhooksRateLimit } from "./rateLimit";
 
 describe("streamsRateLimit", () => {
   afterEach(() => {
@@ -166,5 +166,57 @@ describe("streamsRateLimit", () => {
       expect(result1.allowed).toBe(true);
       expect(result2.allowed).toBe(true);
     });
+  });
+});
+
+describe("webhooksRateLimit", () => {
+  afterEach(() => {
+    resetRateLimitStore();
+  });
+
+  it("allows POST /api/webhooks when under the webhook limit", async () => {
+    const req = new Request("http://localhost/api/webhooks", { method: "POST" });
+    const result = await webhooksRateLimit(req, "POST");
+
+    expect(result.allowed).toBe(true);
+    expect(result.response).toBeUndefined();
+  });
+
+  it("rejects POST /api/webhooks when the webhook limit is exceeded", async () => {
+    setRateLimitStore({
+      check: async () => ({
+        allowed: false,
+        remaining: 0,
+        resetAt: 1234567890,
+        retryAfter: 25,
+      }),
+    });
+
+    const req = new Request("http://localhost/api/webhooks", { method: "POST" });
+    const result = await webhooksRateLimit(req, "POST");
+
+    expect(result.allowed).toBe(false);
+    expect(result.response!.status).toBe(429);
+    expect(result.response!.headers.get("Retry-After")).toBe("25");
+
+    const body = await result.response!.json();
+    expect(body.error.code).toBe("rate_limit_exceeded");
+  });
+
+  it("rejects GET /api/webhooks scrape when exhausted", async () => {
+    setRateLimitStore({
+      check: async () => ({
+        allowed: false,
+        remaining: 0,
+        resetAt: 1234567890,
+        retryAfter: 15,
+      }),
+    });
+
+    const req = new Request("http://localhost/api/webhooks");
+    const result = await webhooksRateLimit(req, "GET");
+
+    expect(result.allowed).toBe(false);
+    expect(result.response!.status).toBe(429);
   });
 });

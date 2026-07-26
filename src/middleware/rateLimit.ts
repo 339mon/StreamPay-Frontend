@@ -65,23 +65,19 @@ export async function streamsRateLimit(
 }
 
 /**
- * Convenience wrapper for per-route rate limiting.
+ * Per-user rate-limit guard for `GET|POST /api/webhooks`.
  *
- * Applies the rate limit for the given route key and returns the 429 response
- * if the caller's bucket is exhausted, or `null` if the request is allowed.
- *
- * @param request  Incoming request (used for identity resolution).
- * @param routeKey Route slug used to look up the rate-limit configuration
- *                 (e.g. `"reconciliation"`, `"webhooks"`).
- * @returns `null` when allowed, or a `NextResponse` with status 429.
+ * Uses the dedicated `webhook` limit tier (see `RATE_LIMITS.webhook`).
+ * Returns `{ allowed: false, response }` with 429 + Retry-After when the
+ * caller's bucket is exhausted.
  */
-export async function applyRateLimit(
+export async function webhooksRateLimit(
   request: Request,
-  routeKey: string,
-): Promise<NextResponse | null> {
-  const result = await streamsRateLimit(request, "GET", `/api/${routeKey}`);
-  if (!result.allowed) {
-    return result.response;
+  method: "GET" | "POST" = "POST",
+): Promise<{ allowed: true; response?: undefined } | { allowed: false; response: NextResponse }> {
+  const blocked = await applyRateLimit(request, "webhooks", method);
+  if (blocked) {
+    return { allowed: false, response: blocked };
   }
-  return null;
+  return { allowed: true };
 }
