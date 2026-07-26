@@ -240,6 +240,70 @@ impl Contract {
 
         Ok(amount)
     }
+
+    /// Pauses an active stream and freezes accrual.
+    ///
+    /// Only the stream sender may pause an active stream. Accrual is frozen
+    /// at the current ledger timestamp.
+    pub fn pause_stream(env: Env, stream_id: u64) -> Result<Stream, Error> {
+        require_not_paused(&env)?;
+        let mut stream = get_existing_stream(&env, stream_id)?;
+        stream.sender.require_auth();
+
+        if stream.status != StreamStatus::Active {
+            return Err(Error::InvalidState);
+        }
+
+        let now = env.ledger().timestamp();
+        let accrued = withdrawable_amount(&env, &stream)
+            .checked_add(stream.released_amount)
+            .ok_or(Error::InvalidAmount)?;
+
+        stream.status = StreamStatus::Paused;
+        stream.last_update = now;
+
+        // Store intermediate accrued balance in total_amount adjustment context if needed,
+        // or shift end_time upon resume. Here we freeze accrual by recording last_update
+        // and updating status to Paused.
+        env.storage()
+            .persistent()
+            .set(&DataKey::Stream(stream_id), &stream);
+
+        Ok(stream)
+    }
+
+    /// Resumes a paused stream, extending the end_time by the paused duration to preserve unstreamed balance.
+    ///
+    /// Only the stream sender may resume a paused stream.
+    pub fn resume_stream(env: Env, stream_id: u64) -> Result<Stream, Error> {
+        require_not_paused(&env)?;
+        let mut stream = get_existing_stream(&env, stream_id)?;
+        stream.sender.require_auth();
+
+        if stream.status != StreamStatus::Paused {
+            return Err(Error::InvalidState);
+        }
+
+        let now = env.ledger().timestamp();
+        let pause_duration = now.saturating_sub(stream.last_update);
+
+        stream.status = StreamStatus::Active;
+        stream.start_time = stream
+            .start_time
+            .checked_add(pause_duration)
+            .ok_or(Error::InvalidTimeRange)?;
+        stream.end_time = stream
+            .end_time
+            .checked_add(pause_duration)
+            .ok_or(Error::InvalidTimeRange)?;
+        stream.last_update = now;
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Stream(stream_id), &stream);
+
+        Ok(stream)
+    }
 }
 
 fn next_stream_id(env: &Env) -> u64 {
@@ -257,15 +321,24 @@ fn get_existing_stream(env: &Env, stream_id: u64) -> Result<Stream, Error> {
 }
 
 fn withdrawable_amount(env: &Env, stream: &Stream) -> i128 {
-    if stream.status != StreamStatus::Active || stream.start_time == 0 {
+    if stream.start_time == 0 || stream.duration == 0 {
         return 0;
     }
 
-    let now = env.ledger().timestamp();
-    let elapsed = min(now, stream.end_time) - stream.start_time;
-    let accrued = (stream.total_amount * elapsed as i128) / stream.duration as i128;
+    let effective_now = match stream.status {
+        StreamStatus::Active => env.ledger().timestamp(),
+        StreamStatus::Paused => stream.last_update,
+        _ => return 0,
+    };
 
-    accrued - stream.released_amount
+    if effective_now <= stream.start_time {
+        return 0;
+    }
+
+    let elapsed = min(effective_now, stream.end_time).saturating_sub(stream.start_time);
+    let accrued = (stream.total_amount.saturating_mul(elapsed as i128)) / (stream.duration as i128);
+
+    accrued.saturating_sub(stream.released_amount)
 }
 
 fn require_admin(env: &Env, caller: &Address) -> Result<(), Error> {

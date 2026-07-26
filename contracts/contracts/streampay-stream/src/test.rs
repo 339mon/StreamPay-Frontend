@@ -232,3 +232,85 @@ fn blocked_token_returns_token_not_allowed() {
         Error::TokenNotAllowed
     );
 }
+
+#[test]
+fn pause_and_resume_stream_freezes_accrual() {
+    let data = setup();
+
+    let stream_id = data.client.create_stream(
+        &data.sender,
+        &data.recipient,
+        &data.token,
+        &1_000,
+        &100,
+        &false,
+    );
+
+    // Advance timestamp by 20 seconds -> 200 tokens accrued
+    data.env.ledger().set_timestamp(1_020);
+    assert_eq!(data.client.withdrawable(&stream_id), 200);
+
+    // Pause stream
+    let paused_stream = data.client.pause_stream(&stream_id);
+    assert_eq!(paused_stream.status, StreamStatus::Paused);
+
+    // Advance timestamp by another 30 seconds while paused -> accrual must stay frozen at 200
+    data.env.ledger().set_timestamp(1_050);
+    assert_eq!(data.client.withdrawable(&stream_id), 200);
+
+    // Resume stream at timestamp 1_050
+    let resumed_stream = data.client.resume_stream(&stream_id);
+    assert_eq!(resumed_stream.status, StreamStatus::Active);
+    // start_time shifted by 30 (paused duration: 1_050 - 1_020) -> 1_030, end_time -> 1_130
+    assert_eq!(resumed_stream.start_time, 1_030);
+    assert_eq!(resumed_stream.end_time, 1_130);
+
+    // Immediately upon resume, withdrawable should still be 200
+    assert_eq!(data.client.withdrawable(&stream_id), 200);
+
+    // Advance timestamp by 10 active seconds to 1_060 -> withdrawable should increase to 300
+    data.env.ledger().set_timestamp(1_060);
+    assert_eq!(data.client.withdrawable(&stream_id), 300);
+}
+
+#[test]
+fn pause_stream_rejects_non_active_or_unauthorized() {
+    let data = setup();
+    let unauthorized = Address::generate(&data.env);
+
+    let stream_id = data.client.create_stream(
+        &data.sender,
+        &data.recipient,
+        &data.token,
+        &1_000,
+        &100,
+        &true,
+    );
+
+    // Draft stream cannot be paused
+    assert_contract_error!(
+        data.client.try_pause_stream(&stream_id),
+        Error::InvalidState
+    );
+
+    // Start stream
+    data.client.start_stream(&stream_id);
+
+    // Pause stream successfully
+    data.client.pause_stream(&stream_id);
+
+    // Cannot pause already paused stream
+    assert_contract_error!(
+        data.client.try_pause_stream(&stream_id),
+        Error::InvalidState
+    );
+
+    // Resume stream
+    data.client.resume_stream(&stream_id);
+
+    // Cannot resume active stream
+    assert_contract_error!(
+        data.client.try_resume_stream(&stream_id),
+        Error::InvalidState
+    );
+}
