@@ -22,6 +22,15 @@ describe('StreamTypeChip', () => {
     expect(screen.getByText('12345')).toBeInTheDocument();
   });
 
+  it('renders the keyboard hint when provided', () => {
+    render(<StreamTypeChip type="Video" amount={12345} kbdHint="V" />);
+    
+    const kbdElement = screen.getByText('V');
+    expect(kbdElement).toBeInTheDocument();
+    expect(kbdElement.tagName).toBe('KBD');
+    expect(kbdElement).toHaveAttribute('aria-label', 'Keyboard shortcut: V');
+  });
+
   it('uses a stacked layout on narrow viewports and a row layout above the breakpoint', () => {
     expect(styleText).toContain('.streamTypeChip');
     expect(styleText).toContain('flex-direction: column');

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import '../src/styles/typography.css'; // Adjust path if needed
 import styles from './StreamTypeChip.module.css';
+import { KbdHint } from '../src/components/KbdHint';
 
 /**
  * Tracks the user's `prefers-reduced-motion` setting.
@@ -40,9 +41,10 @@ function usePrefersReducedMotion(): boolean {
 export interface StreamTypeChipProps {
   type: string;
   amount: number;
+  kbdHint?: string;
 }
 
-export const StreamTypeChip: React.FC<StreamTypeChipProps> = ({ type, amount }) => {
+export const StreamTypeChip: React.FC<StreamTypeChipProps> = ({ type, amount, kbdHint }) => {
   const prefersReducedMotion = usePrefersReducedMotion();
 
   return (
@@ -59,6 +61,7 @@ export const StreamTypeChip: React.FC<StreamTypeChipProps> = ({ type, amount }) 
       <span className={`tabular-nums ${styles.amount}`}>
         {amount}
       </span>
+      {kbdHint && <KbdHint shortcut={kbdHint} />}
     </div>
   );
 };

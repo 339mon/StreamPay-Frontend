@@ -1,0 +1,21 @@
+.kbdHint {
+  background-color: var(--kbd-bg, #f4f4f5);
+  border: 1px solid var(--kbd-border, #d4d4d8);
+  border-radius: 4px;
+  color: var(--kbd-text, #3f3f46);
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.125rem 0.25rem;
+  margin-left: 0.5rem;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  .kbdHint {
+    background-color: var(--kbd-bg-dark, #27272a);
+    border-color: var(--kbd-border-dark, #3f3f46);
+    color: var(--kbd-text-dark, #e4e4e7);
+  }
+}
