@@ -3,34 +3,54 @@ info:
   title: StreamPay API
   version: 2.0.0
 paths:
-  /api/auth/wallet:
+  /api/webhooks:
     get:
-      summary: Issue a wallet authentication challenge
+      summary: Scrape Prometheus metrics
       description: |
-        Returns a one-time nonce the client must sign with their Stellar
-        private key, then submit to `POST /api/auth/wallet`.
-      parameters:
-        - name: address
-          in: query
-          required: true
-          description: Stellar public key (G…, 56 characters).
-          schema:
-            type: string
-            pattern: '^G[A-Z2-7]{55}$'
-            example: GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG
+        Returns the shared Prometheus text exposition including webhook and
+        other registered series.
       responses:
         '200':
-          description: Challenge issued
+          description: Prometheus metrics payload
+          content:
+            text/plain:
+              examples:
+                metricsSample:
+                  summary: Sample Prometheus text output
+                  value: |
+                    # HELP webhook_requests_total Total number of webhook requests received
+                    # TYPE webhook_requests_total counter
+                    webhook_requests_total{status="200",event_type="payment.received"} 3
+        '500':
+          description: Metrics generation failed
           content:
             application/json:
               examples:
-                walletChallenge:
-                  summary: Successful challenge issuance
+                serverError:
+                  summary: Internal error generating metrics
                   value:
-                    challenge: streampay_auth_1716000000000_x7k2m
-                    expires_at: '2024-01-15T10:05:00.000Z'
-        '400':
-          description: Missing or invalid address
+                    error: Internal Server Error
+    post:
+      summary: Receive a webhook event
+      description: |
+        Accepts inbound webhook events. Records Prometheus counter/histogram
+        metrics labeled by status and event_type.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            examples:
+              paymentReceived:
+                summary: Payment received event
+                value:
+                  eventType: payment.received
+                  id: evt_001
+                  payload:
+                    amount: "10.00"
+                    asset: USDC
+      responses:
+        '200':
+          description: Event accepted
           headers:
             X-Correlation-ID:
               schema:
@@ -39,118 +59,109 @@ paths:
           content:
             application/json:
               examples:
-                missingAddress:
-                  summary: Address query parameter missing
+                accepted:
+                  summary: Webhook processed successfully
                   value:
-                    error:
-                      code: BAD_REQUEST
-                      message: address query parameter is required.
-                      request_id: req_01HZ9ABCDEF
-        '422':
-          description: Validation error
+                    success: true
+        '400':
+          description: Invalid input
           content:
             application/json:
               examples:
-                validationError:
-                  summary: Invalid Stellar address
+                missingEventType:
+                  summary: eventType is required
                   value:
                     error:
-                      code: VALIDATION_ERROR
-                      message: One or more query parameters are invalid.
+                      code: INVALID_INPUT
+                      message: eventType is required
                       request_id: req_01HZ9ABCDEF
-                      details:
-                        - field: address
-                          code: INVALID_ADDRESS
-                          message: address must be a valid Stellar public key.
-        '429':
-          description: IP rate limit exceeded
+        '500':
+          description: Processing failure
           content:
             application/json:
               examples:
-                rateLimited:
-                  summary: Too many challenge requests
+                internalError:
+                  summary: Unexpected processing error
                   value:
                     error:
-                      code: rate_limit_exceeded
-                      message: Too many requests. Please try again later.
+                      code: INTERNAL_ERROR
+                      message: Internal Server Error
                       request_id: req_01HZ9ABCDEF
+  /api/webhooks/dlq:
     post:
-      summary: Verify a signed challenge and issue a bearer token
-      description: |
-        Wallet login endpoint. Rate-limited to mitigate brute-force attempts.
+      summary: Receive a dead-letter-queue webhook event
       requestBody:
         required: true
         content:
           application/json:
             examples:
-              verifySignature:
-                summary: Signed challenge payload
+              deadLetter:
+                summary: Failed payment event for reprocessing
                 value:
-                  address: GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG
-                  challenge: streampay_auth_1716000000000_x7k2m
-                  signature: dGVzdHNpZ25hdHVyZQ==
+                  event: payment.failed
+                  id: evt_dlq_001
       responses:
         '200':
-          description: Token issued
+          description: Event accepted
           content:
             application/json:
               examples:
-                walletToken:
-                  summary: Successful token issuance
+                received:
+                  summary: DLQ event acknowledged
                   value:
-                    token: tok_R0FCQzEyMzQ1Njc4OTA
-                    expires_at: '2024-01-16T10:00:00.000Z'
+                    received: true
         '400':
-          description: Invalid request body
+          description: Bad request
           content:
             application/json:
               examples:
-                invalidBody:
-                  summary: Malformed JSON body
+                badRequest:
+                  summary: Invalid DLQ payload
                   value:
                     error:
                       code: BAD_REQUEST
-                      message: Request body must be valid JSON.
+                      message: Bad input.
                       request_id: req_01HZ9ABCDEF
-        '401':
-          description: Signature verification failed
+  /api/webhooks/deliveries:
+    get:
+      summary: List webhook delivery attempts
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Delivery list
           content:
             application/json:
               examples:
-                unauthorized:
-                  summary: Invalid signature
+                deliveriesList:
+                  summary: Empty delivery page
                   value:
-                    error:
-                      code: UNAUTHORIZED
-                      message: Challenge signature verification failed.
-                      request_id: req_01HZ9ABCDEF
-        '422':
-          description: Validation error
+                    deliveries: []
+                    cursor: null
+                    limit: 20
+        '400':
+          description: Invalid query
           content:
             application/json:
               examples:
-                validationError:
-                  summary: Missing required fields
+                invalidLimit:
+                  summary: Limit out of range
                   value:
                     error:
-                      code: VALIDATION_ERROR
-                      message: One or more fields are invalid.
-                      request_id: req_01HZ9ABCDEF
-                      details:
-                        - field: signature
-                          code: MISSING_FIELD
-                          message: signature is required.
-        '429':
-          description: IP rate limit exceeded
-          content:
-            application/json:
-              examples:
-                rateLimited:
-                  summary: Too many login attempts
-                  value:
-                    error:
-                      code: rate_limit_exceeded
-                      message: Too many requests. Please try again later.
+                      code: BAD_REQUEST
+                      message: limit must be between 1 and 100.
                       request_id: req_01HZ9ABCDEF
   /api/reconciliation:
     get:
