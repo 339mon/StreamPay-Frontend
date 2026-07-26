@@ -1,11 +1,16 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { GasOnRecipientToggle } from '../../components/GasOnRecipientToggle';
 import { RecentRecipients } from './components/RecentRecipients';
 import { addRecentRecipient } from '../../state/recentRecipients';
 import { BottomSheet } from '../../components/BottomSheet';
+import {
+  getWizardDraft,
+  saveWizardDraft,
+  clearWizardDraft,
+} from '../../state/wizardDraft';
 
 function shortenAddress(address: string): string {
   const trimmed = address.trim();
@@ -16,13 +21,22 @@ function shortenAddress(address: string): string {
 /**
  * New Stream page (single-recipient).
  *
- * Includes the gas-on-recipient toggle so the creator can explicitly
- * decide who bears the Stellar transaction fee, with the cost surfaced
- * inline before submission (#528).
+ * ### Save draft (#863)
+ * All form fields are written to localStorage on every change via
+ * `saveWizardDraft()`.  On mount, `getWizardDraft()` restores a
+ * previously saved draft so work-in-progress survives navigation,
+ * accidental tab closes, and page refreshes.
  *
- * GrantFox campaign update:
- * Intercepts form submission on mobile viewports (< 768px) to display a
- * bottom-sheet summary screen before final submission.
+ * A "Saved draft" banner is shown when a draft was restored, giving
+ * the user clear feedback that their previous input is back. A
+ * "Discard draft" control lets them start clean.
+ *
+ * The draft is cleared with `clearWizardDraft()` on successful
+ * stream creation so stale state is never re-loaded.
+ *
+ * ### Mobile bottom-sheet (#528)
+ * Intercepts form submission on mobile viewports (< 768 px) to display
+ * a bottom-sheet summary before final submission.
  */
 export default function NewStreamPage() {
   const [recipient, setRecipient] = useState('');
@@ -35,7 +49,45 @@ export default function NewStreamPage() {
   const [isMobile, setIsMobile] = useState(false);
   const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
 
-  // Detect mobile viewport using matchMedia
+  /**
+   * Whether a saved draft was restored on mount.  When true, a banner
+   * is displayed so the user knows their previous work has been recovered.
+   */
+  const [draftRestored, setDraftRestored] = useState(false);
+
+  /* ── Restore draft on mount ─────────────────────────────────────── */
+  useEffect(() => {
+    const draft = getWizardDraft();
+    if (draft) {
+      setRecipient(draft.recipient);
+      setAmount(draft.amount);
+      setToken(draft.token);
+      setGasOnRecipient(draft.gasOnRecipient);
+      setDraftRestored(true);
+    }
+  }, []);
+
+  /* ── Persist draft on every field change ────────────────────────── */
+  // Wrapped in useCallback so lint is happy; the identity is stable per render
+  const persistDraft = useCallback(() => {
+    saveWizardDraft({ recipient, amount, token, gasOnRecipient });
+  }, [recipient, amount, token, gasOnRecipient]);
+
+  useEffect(() => {
+    persistDraft();
+  }, [persistDraft]);
+
+  /* ── Discard draft ───────────────────────────────────────────────── */
+  const handleDiscardDraft = () => {
+    clearWizardDraft();
+    setRecipient('');
+    setAmount('');
+    setToken('XLM');
+    setGasOnRecipient(false);
+    setDraftRestored(false);
+  };
+
+  /* ── Mobile detection ────────────────────────────────────────────── */
   useEffect(() => {
     const mediaQuery = window.matchMedia('(max-width: 767px)');
     setIsMobile(mediaQuery.matches);
@@ -57,12 +109,15 @@ export default function NewStreamPage() {
     }
   }, [isMobile]);
 
+  /* ── Stream creation ─────────────────────────────────────────────── */
   const performCreateStream = async () => {
     setIsSubmitting(true);
     setIsBottomSheetOpen(false);
     // TODO: call stream creation API with { recipient, amount, token, gasOnRecipient }
     await new Promise((resolve) => setTimeout(resolve, 800));
     addRecentRecipient(recipient);
+    // Clear the draft now that creation has succeeded
+    clearWizardDraft();
     setIsSubmitting(false);
     setSuccess(true);
   };
@@ -86,6 +141,7 @@ export default function NewStreamPage() {
     fontSize: 'var(--text-base)',
   };
 
+  /* ── Success screen ──────────────────────────────────────────────── */
   if (success) {
     return (
       <main className="page-shell">
@@ -112,6 +168,31 @@ export default function NewStreamPage() {
           </p>
         </div>
       </section>
+
+      {/* ── Saved-draft banner ────────────────────────────────────── */}
+      {draftRestored && (
+        <section
+          aria-live="polite"
+          className="draft-banner"
+          data-testid="draft-restored-banner"
+          role="status"
+        >
+          <span className="draft-banner__icon" aria-hidden="true">📝</span>
+          <p className="draft-banner__message">
+            <strong>Draft restored</strong> — your previous inputs have been
+            recovered. Continue where you left off, or{' '}
+            <button
+              type="button"
+              className="draft-banner__discard"
+              onClick={handleDiscardDraft}
+              data-testid="discard-draft-btn"
+            >
+              discard draft
+            </button>
+            .
+          </p>
+        </section>
+      )}
 
       <section style={{ maxWidth: '560px', margin: '0 auto 1.5rem', padding: '0 1.5rem' }}>
         <div
@@ -314,4 +395,3 @@ export default function NewStreamPage() {
     </main>
   );
 }
-
