@@ -1,325 +1,186 @@
-# `streampay-stream`
+# StreamPay Stream Smart Contract
 
-Soroban contract workspace documentation for the StreamPay stream contract crate.
+Linear payment streams on Stellar/Soroban.
 
-## Status
+## Entrypoints
 
-This crate is currently a scaffold. The implemented public ABI is the Soroban starter `hello` method in [src/lib.rs](./src/lib.rs), while the frontend already expects a richer stream contract model via [lib/onChainClient.ts](../../../lib/onChainClient.ts) and [types.ts](../../../types.ts).
+| Entrypoint | Mutating | Required Authorizer | Description |
+| :--- | :--- | :--- | :--- |
+| `initialize` | Yes | `admin` | Initialises the contract with an admin and pause state. |
+| `init_with_token_allowlist` | Yes | `admin` | Atomic deployment-time initialisation + per-token allowlist; equivalent to `initialize` followed by one `set_token_allowed(allowed = true)` per token, committed in a single transaction. |
+| `set_paused` | Yes | `admin` | Sets the global emergency pause flag. |
+| `set_admin` | Yes | `admin` | Transfers the admin role to a new address. |
+| `set_token_allowed` | Yes | `admin` | Allows or blocks a token for future stream creation. |
+| `create_stream` | Yes | `sender` | Creates a stream and escrows funds from the sender. |
+| `start_stream` | Yes | `stream.sender` | Activates a draft stream, anchoring its time bounds. |
+| `pause` | Yes | `stream.sender` | Freezes accrual for an active stream. |
+| `resume` | Yes | `stream.sender` | Resumes a paused stream, extending the end time. |
+| `cancel_stream` | Yes | `stream.sender` | Ends a stream early, refunding unvested funds to sender. |
+| `withdraw` | Yes | `stream.recipient` | Withdraws vested funds to the recipient. |
+| `settle` | Yes | `stream.recipient` | Ends a stream and releases all remaining funds to recipient. |
+| `get_stream` | No | None | Returns the stream record. |
+| `withdrawable` | No | None | Returns the currently withdrawable amount. |
+| `stream_balance` | No | None | Returns the vested balance at the current time. |
+| `stream_snapshot` | No | None | Captures a `StreamSnapshot` (vested, released, locked, withdrawable, status) at a given ledger timestamp. |
+| `diff_snapshots` | No | None | Computes the field-by-field `SnapshotDiff` delta between two `StreamSnapshot` values from the same stream. |
+| `list_streams` | No | None | Returns a paginated page of all streams ordered by ID. |
+| `list_streams_by_sender` | No | None | Returns a paginated page of streams filtered by sender address. |
+| `list_streams_by_recipient` | No | None | Returns a paginated page of streams filtered by recipient address. |
+| `list_streams_by_status` | No | None | Returns a paginated page of streams filtered by status. |
+| `list_streams_recipient_status` | No | None | Returns a paginated page of streams filtered by recipient and status (compound). |
+| `list_streams_sender_status` | No | None | Returns a paginated page of streams filtered by sender and status (compound). |
 
-Use this README as both:
+## Paginated Stream Enumeration
 
-- the source of truth for what the crate exposes today
-- the handoff guide for the target stream ABI that will replace the frontend mock
+All `list_streams*` entrypoints share the same cursor-based pagination contract:
 
-## Contract Architecture
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `start_after` | `Option<u64>` | Exclusive cursor: return streams with `id > start_after`. Pass `None` to start from stream ID 1. |
+| `limit` | `u64` | Maximum results to return. Capped at 100 ([`MAX_PAGE_SIZE`]). |
 
-### Current implementation
+**Return type — `StreamPage`:**
 
-The crate currently contains:
-
-- one contract type: `Contract`
-- one public entrypoint: `hello(env: Env, to: String) -> Vec<String>`
-- one unit test in [src/test.rs](./src/test.rs)
-- no persisted stream storage
-- no events
-- no custom error enum
-- no escrow or lifecycle enforcement yet
-
-### Target StreamPay model
-
-The frontend types and reconciliation code indicate the intended contract shape:
-
-- a `Stream` record keyed by stream ID
-- escrow-backed balances where released value is derived from time and settlement activity
-- lifecycle statuses aligned with `ContractStreamStatus` in [types.ts](../../../types.ts):
-  - `DRAFT`
-  - `ACTIVE`
-  - `PAUSED`
-  - `SETTLED`
-  - `ENDED`
-  - `CANCELLED`
-
-Until the Rust contract implements those semantics, treat the sections below labeled "target" as integration guidance, not as deployed behavior.
-
-## Lifecycle State Machine
-
-### Current state machine
-
-There is no stream lifecycle state machine in the current crate. The only callable path is `hello`.
-
-### Target state machine
-
-The frontend model suggests this intended progression:
-
-```text
-DRAFT -> ACTIVE -> PAUSED -> ACTIVE
-ACTIVE -> SETTLED
-ACTIVE -> ENDED
-PAUSED -> ENDED
-ACTIVE|PAUSED -> CANCELLED
 ```
-
-Recommended invariants for the eventual contract:
-
-- released amount must never exceed total amount
-- escrow balance must never become negative
-- settlement and withdrawal paths must be idempotent when retried
-- terminal states should reject additional release activity
-
-## Escrow Model
-
-### Current implementation
-
-No escrow model is implemented in the current scaffold.
-
-### Target model
-
-The frontend contract adapter expects the contract to surface values equivalent to:
-
-| Field | Meaning |
-| --- | --- |
-| `total_amount` | Total escrowed amount for the stream |
-| `released_amount` | Amount already released or settled to the recipient |
-| `velocity` | Streaming rate used to derive releasable value |
-| `last_update_timestamp` | Last ledger timestamp used to compute stream state |
-| `recipient_address` | Stellar recipient account |
-| `status` | Lifecycle status enum |
-
-Those fields align with the TypeScript `OnChainStream` interface in [types.ts](../../../types.ts).
-
-## Public ABI
-
-### Implemented ABI
-
-The only public entrypoint implemented today is:
-
-| Entrypoint | Params | Returns | Notes |
-| --- | --- | --- | --- |
-| `hello` | `env: Env`, `to: String` | `Vec<String>` | Returns `["Hello", to]` |
-
-#### Parameters
-
-| Name | Type | Description |
-| --- | --- | --- |
-| `env` | `Env` | Soroban execution environment |
-| `to` | `String` | Greeting recipient |
-
-#### Events
-
-No contract events are emitted by the current implementation.
-
-#### Errors
-
-No contract-specific error enum is defined by the current implementation.
-
-### Target ABI for frontend replacement
-
-The frontend mock in [lib/onChainClient.ts](../../../lib/onChainClient.ts) and the mapper in [mapping.ts](../../../mapping.ts) imply the contract read surface should eventually provide a stream object shaped like:
-
-```ts
-interface OnChainStream {
-  id: string;
-  recipient_address: string;
-  total_amount: bigint;
-  released_amount: bigint;
-  velocity: bigint;
-  last_update_timestamp: number;
-  status: ContractStreamStatus;
+StreamPage {
+    streams:     Vec<Stream>,   // ordered by ascending stream ID
+    next_cursor: Option<u64>,   // None → last page; Some(id) → pass as start_after
 }
 ```
 
-Recommended target entrypoints for the real contract, once implemented:
+**Paginating through all streams:**
 
-| Entrypoint | Purpose |
-| --- | --- |
-| `create_stream` | Initialize stream storage and escrow funding |
-| `get_stream` | Read a stream by ID for frontend consumption |
-| `pause_stream` | Pause accrual or settlement |
-| `resume_stream` | Resume an active stream |
-| `settle_stream` | Realize releasable value into released balance |
-| `cancel_stream` | Stop a stream and return remaining escrow |
-| `withdraw_released` | Withdraw already released value |
+```rust
+let mut cursor: Option<u64> = None;
+loop {
+    let page = client.list_streams(&cursor, &20);
+    for stream in page.streams.iter() { /* ... */ }
+    cursor = page.next_cursor;
+    if cursor.is_none() { break; }
+}
+```
 
-These target methods are not implemented in the current crate and are documented here so the frontend integration path is explicit.
+View functions:
+- Never require auth.
+- Are never blocked by the global pause flag.
+- Never mutate state or extend TTLs (reads use `peek_next_stream_id` which is side-effect-free).
+- Are bounded by `MAX_PAGE_SIZE = 100` to prevent excessive resource use.
 
-## Build And Test
+## Lifecycle events
 
-From the workspace root:
+All state-changing entrypoints emit a structured Soroban contract event
+**after** the successful mutation and any token transfer. Failed calls emit
+no events.
+
+Every stream-level event uses a two-topic layout:
+
+```
+topic[0] = Symbol("stream")
+topic[1] = Symbol("<event_name>")
+data     = vec-encoded payload fields
+```
+
+| Event | Emitted by | Payload fields |
+|-------|-----------|----------------|
+| `created`   | `create_stream`       | `stream_id`, `sender`, `recipient`, `token`, `total_amount`, `timestamp` |
+| `started`   | `start_stream`        | `stream_id`, `start_time`, `end_time`, `timestamp` |
+| `paused`    | `pause`               | `stream_id`, `sender`, `pause_time`, `timestamp` |
+| `resumed`   | `resume`              | `stream_id`, `sender`, `end_time`, `timestamp` |
+| `withdrawn` | `withdraw`            | `stream_id`, `recipient`, `amount`, `timestamp` |
+| `settled`   | `withdraw` (full) or `settle` | `stream_id`, `recipient`, `total_amount`, `timestamp` |
+| `cancelled` | `cancel_stream`       | `stream_id`, `cancelled_by`, `returned_amount`, `released_amount`, `timestamp` |
+| `amended`   | `amend_stream`        | `stream_id`, `amended_by`, `new_rate_per_second`, `new_end_time`, `timestamp` |
+| `upgraded`  | `upgrade`             | `new_wasm_hash` (topics: `"StreamPay"/"upgraded"`) |
+
+When a `withdraw` fully drains the stream it emits two events in order:
+`withdrawn` then `settled`.
+
+Admin utility events (`set_pause`, `set_admin`, `set_token`) use
+`symbol_short!` two-tuples — see `src/events.rs` for the exact encoding.
+
+## Development
 
 ```bash
-cd contracts
+# Build
+cargo build --target wasm32-unknown-unknown --release
+
+# Test
 cargo test
+
+# Coverage gate (≥ 95 % lines / regions / functions)
+make coverage
 ```
 
-From the crate directory:
+## CI gas budget gate
+
+The repository now includes a dedicated GitHub Actions gate at
+`.github/workflows/gas.yml` for the GrantFox campaign.  The job compiles the
+criterion benchmark harness and then compares the optimized WASM footprint
+against the budget manifest at `contracts/gas-budget.json`.
+
+The gate is intentionally conservative:
+
+- it uses a stable, deterministic build path;
+- it compares the current optimized WASM size to a checked-in baseline;
+- it fails when the contract grows by more than `5%`.
+
+Reviewers should update `contracts/gas-budget.json` only when they are
+intentionally changing the contract footprint and have confirmed the new
+size budget is still acceptable.
+
+## Benchmark harness
+
+Criterion benchmarks live in `benches/entrypoints.rs`.  There is one
+`BenchmarkGroup` per public entrypoint; each group has sub-benchmarks for
+representative pre-conditions (e.g. partial vs. full withdrawal).
+
+The Soroban in-process test host is used so results are stable and
+deterministic — no network or ledger overhead.
 
 ```bash
-cd contracts/contracts/streampay-stream
-make test
+# Build the benchmark binary without running it (also what CI does)
+make bench-compile
+
+# Run all groups and open the HTML report
+make bench
+open target/criterion/report/index.html
+
+# Run a single group (substring match)
+make bench-withdraw
+make bench-create
+make bench-read      # get_stream, withdrawable, stream_balance, ...
+make bench-lifecycle # pause, resume, settle, cancel_stream, amend_stream
+make bench-admin     # initialize, set_paused, set_admin, ...
+
+# Save a baseline before a refactor, then compare afterwards
+make bench-baseline NAME=before-refactor
+# ... make changes ...
+make bench-compare  NAME=before-refactor
 ```
 
-### Verified in this branch
+**Reading results:** Criterion reports a lower/upper confidence interval for
+each measurement.  A red regression flag in the HTML report means the new run
+is statistically slower at the configured confidence level (95 %).  Run
+benchmarks on a quiet machine — shared CI runners have high timing variance.
 
-```text
-$ cd contracts && cargo test
-running 1 test
-test test::test ... ok
-
-test result: ok. 1 passed; 0 failed
-```
-
-### Build commands
-
-Preferred Soroban CLI path:
-
-```bash
-cd contracts/contracts/streampay-stream
-stellar contract build
-```
-
-Rust fallback path:
-
-```bash
-cd contracts
-cargo build --target wasm32v1-none --release -p streampay-stream
-```
-
-Verification note:
-
-- `cargo test` passed locally on 2026-05-26
-- `cargo build --target wasm32v1-none --release -p streampay-stream` was attempted locally and failed because the `wasm32v1-none` target is not installed in this environment
-- `stellar contract build` could not be executed locally because the `stellar` CLI is not installed, and `cargo install stellar-cli --locked` failed during this session due `crates.io` DNS resolution errors
-
-## Makefile Targets
-
-The crate Makefile currently exposes:
-
-| Target | Command |
-| --- | --- |
-| `make build` | `stellar contract build` |
-| `make test` | `cargo test` |
-| `make fmt` | `cargo fmt --all` |
-| `make clean` | `cargo clean` |
-
-## Deployment
-
-### Prerequisites
-
-- Stellar CLI installed
-- deployer key configured in your Stellar CLI profile
-- testnet or mainnet account funded
-- wasm artifact built successfully
-
-### Testnet deploy
-
-```bash
-cd contracts/contracts/streampay-stream
-
-stellar contract build
-
-stellar contract deploy \
-  --wasm target/wasm32v1-none/release/streampay_stream.wasm \
-  --source <DEPLOYER_KEY_ALIAS_OR_SECRET> \
-  --rpc-url https://soroban-testnet.stellar.org \
-  --network-passphrase "Test SDF Network ; September 2015"
-```
-
-Record the returned contract ID in the addresses section below.
-
-### Mainnet deploy
-
-```bash
-cd contracts/contracts/streampay-stream
-
-stellar contract build
-
-stellar contract deploy \
-  --wasm target/wasm32v1-none/release/streampay_stream.wasm \
-  --source <DEPLOYER_KEY_ALIAS_OR_SECRET> \
-  --rpc-url https://mainnet.sorobanrpc.com \
-  --network-passphrase "Public Global Stellar Network ; September 2015"
-```
-
-### Post-deploy checks
-
-- save the emitted contract ID
-- verify the contract can be queried from the intended RPC
-- update frontend config with the correct network-to-contract mapping
-- replace the mock adapter in [lib/onChainClient.ts](../../../lib/onChainClient.ts)
-
-## Frontend Integration Guide
-
-### Current mock adapter
-
-[lib/onChainClient.ts](../../../lib/onChainClient.ts) currently returns hard-coded `OnChainStream` objects:
-
-- `id`
-- `recipient_address`
-- `total_amount`
-- `released_amount`
-- `velocity`
-- `last_update_timestamp`
-- `status`
-
-### Replacement plan
-
-1. Add the deployed contract ID and RPC URL to frontend config.
-2. Create a Soroban RPC client in `lib/onChainClient.ts`.
-3. Invoke a read entrypoint such as `get_stream`.
-4. Decode Soroban values into the `OnChainStream` shape.
-5. Map the returned status into `ContractStreamStatus`.
-6. Preserve bigint handling for amount fields.
-
-### Mapping to `OnChainStream`
-
-| Contract value | TypeScript field | Type |
-| --- | --- | --- |
-| stream ID | `id` | `string` |
-| recipient account | `recipient_address` | `string` |
-| total escrow | `total_amount` | `bigint` |
-| released amount | `released_amount` | `bigint` |
-| rate | `velocity` | `bigint` |
-| update timestamp | `last_update_timestamp` | `number` |
-| lifecycle enum | `status` | `ContractStreamStatus` |
-
-### Mapping to `ContractStreamStatus`
-
-The frontend enum currently expects:
-
-| Contract enum | Frontend enum |
-| --- | --- |
-| `DRAFT` | `ContractStreamStatus.DRAFT` |
-| `ACTIVE` | `ContractStreamStatus.ACTIVE` |
-| `PAUSED` | `ContractStreamStatus.PAUSED` |
-| `SETTLED` | `ContractStreamStatus.SETTLED` |
-| `ENDED` | `ContractStreamStatus.ENDED` |
-| `CANCELLED` | `ContractStreamStatus.CANCELLED` |
-
-If the Rust contract uses numeric discriminants instead of strings, keep the mapping centralized in `lib/onChainClient.ts` so the rest of the app stays unchanged.
-
-## Addresses And Config
-
-Populate these after deployment:
-
-| Network | Contract ID | Notes |
-| --- | --- | --- |
-| Local | `TBD` | Optional local sandbox deployment |
-| Testnet | `TBD` | Update after first successful deploy |
-| Mainnet | `TBD` | Update only after production rollout approval |
-
-Suggested frontend env keys:
-
-```bash
-NEXT_PUBLIC_STREAMPAY_STREAM_CONTRACT_ID_TESTNET=
-NEXT_PUBLIC_STREAMPAY_STREAM_CONTRACT_ID_MAINNET=
-NEXT_PUBLIC_STELLAR_RPC_URL=
-NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE=
-```
-
-## Security Notes
-
-- Do not hard-code deployer secrets in source control.
-- Treat contract IDs as environment-specific configuration, not constants scattered through the app.
-- Keep status decoding strict; reject unknown enum values instead of silently coercing them.
-- Preserve bigint precision for amounts. Do not convert on-chain values through JavaScript `number`.
-- For irreversible flows such as settlement, cancellation, or withdrawal, keep retry logic idempotent and log contract invocation failures with correlation IDs.
+| Group | Sub-benchmark | What is measured |
+| :--- | :--- | :--- |
+| `initialize` | `initialize` | Admin write + paused-flag write |
+| `init_with_token_allowlist` | `three_tokens` | Admin + 3 × allowlist writes |
+| `set_paused` | `pause` / `unpause` | Admin lookup + flag write |
+| `set_admin` | `set_admin` | Admin lookup + key overwrite |
+| `set_token_allowed` | `allow` / `block` | Admin lookup + allowlist write |
+| `set_max_streams_per_sender` | `set_max_streams_per_sender` | Admin lookup + instance write |
+| `max_streams_per_sender` | `max_streams_per_sender` | Single instance read |
+| `sender_stream_count` | `zero_streams` / `one_stream` | Single persistent read |
+| `get_stream` | `get_stream` | Persistent read + TTL extend |
+| `withdrawable` | `at_midpoint` / `at_end` | Linear-interpolation math |
+| `stream_balance` | `at_midpoint` / `at_end` | Vested-amount calculation |
+| `create_stream` | `create_stream` | Token transfer + stream write + event |
+| `start_stream` | `start_stream` | Stream read + timestamp write + event |
+| `withdraw` | `partial` / `full_settle` | Token transfer + stream write + events |
+| `pause` | `pause` | Stream read + status write + event |
+| `resume` | `resume` | Stream read + checked arithmetic + write |
+| `settle` | `full_payout` / `zero_payout` | Token transfer (optional) + finalization |
+| `cancel_stream` | `mid_stream` / `at_start` | Token return + stream finalization |
+| `amend_stream` | `extend_end_time` | Stream read + end-time update + event |

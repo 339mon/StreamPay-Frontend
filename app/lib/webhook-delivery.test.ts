@@ -1,4 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+// @ts-nocheck
+const vi = {
+  fn: (impl?: any) => jest.fn(impl),
+  spyOn: (obj: any, prop: string) => jest.spyOn(obj, prop),
+  clearAllMocks: () => jest.clearAllMocks(),
+  stubGlobal: (name: string, value: any) => {
+    (global as any)[name] = value;
+  }
+};
 import {
   WebhookDeliveryClient,
   calculateNextRetryDelay,
@@ -11,7 +19,7 @@ import {
 } from '@/app/lib/webhook-delivery';
 import { WebhookDeliveryWorker } from '@/app/lib/webhook-delivery-worker';
 import { webhookDeliveryStore } from '@/app/lib/webhook-delivery-store';
-import { logger, withCorrelationContext } from '@/app/lib/logger';
+import { logger, setCorrelationContext } from '@/app/lib/logger';
 
 describe('Webhook Delivery System', () => {
   beforeEach(() => {
@@ -341,10 +349,9 @@ describe('Webhook Delivery System', () => {
     let event: WebhookEvent;
 
     beforeEach(() => {
-      withCorrelationContext({
+      setCorrelationContext({
         correlation_id: 'test-correlation-123',
         request_id: 'req-123',
-        trace_id: 'trace-123',
       });
       worker = new WebhookDeliveryWorker(3);
       endpoint = {

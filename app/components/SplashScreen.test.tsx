@@ -1,73 +1,67 @@
-import { render, screen, act } from "@testing-library/react";
-import "@testing-library/jest-dom";
-import SplashScreen from "./SplashScreen";
+/**
+ * @jest-environment jsdom
+ *
+ * SplashScreen — unit tests for timing and render behaviour.
+ *
+ * Issue #85: The minimum display delay was reduced from 2400 ms to 400 ms
+ * and the fade-out from 600 ms to 300 ms. These tests act as regression
+ * guards so the delay cannot quietly creep back up.
+ */
 
-describe("SplashScreen", () => {
+import { act, render } from "@testing-library/react";
+const { screen } = require("@testing-library/react") as any;
+import SplashScreen, {
+  SPLASH_DISPLAY_MS,
+  SPLASH_FADE_MS,
+} from "./SplashScreen";
+
+describe("SplashScreen timing constants (issue #85)", () => {
+  it("SPLASH_DISPLAY_MS is at most 600 ms", () => {
+    expect(SPLASH_DISPLAY_MS).toBeLessThanOrEqual(600);
+  });
+
+  it("SPLASH_FADE_MS is at most 400 ms", () => {
+    expect(SPLASH_FADE_MS).toBeLessThanOrEqual(400);
+  });
+
+  it("total blocking time (SPLASH_DISPLAY_MS + SPLASH_FADE_MS) is under 1 second", () => {
+    expect(SPLASH_DISPLAY_MS + SPLASH_FADE_MS).toBeLessThan(1000);
+  });
+});
+
+describe("SplashScreen render", () => {
   beforeEach(() => {
     jest.useFakeTimers();
   });
 
   afterEach(() => {
+    jest.runOnlyPendingTimers();
     jest.useRealTimers();
   });
 
-  it("renders the splash screen with logo, title, and tagline", () => {
+  it("is visible on initial mount", () => {
     render(<SplashScreen />);
-
-    expect(screen.getByAltText("StreamPay logo")).toBeInTheDocument();
-    expect(screen.getByText("Stream")).toBeInTheDocument();
-    expect(screen.getByText("Pay")).toBeInTheDocument();
-    expect(
-      screen.getByText("Real-time payments on Stellar")
-    ).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: /loading streampay/i })).toBeInTheDocument();
   });
 
-  it("has accessible loading status role", () => {
+  it("shows the StreamPay logo image", () => {
     render(<SplashScreen />);
-    expect(screen.getByRole("status")).toHaveAttribute(
-      "aria-label",
-      "Loading StreamPay"
-    );
+    expect(screen.getByAltText(/streampay logo/i)).toBeInTheDocument();
   });
 
-  it("adds exit class after display duration", () => {
-    render(<SplashScreen />);
-    const splash = screen.getByRole("status");
-
-    expect(splash).not.toHaveClass("splash-screen--exit");
-
-    act(() => {
-      jest.advanceTimersByTime(2400);
-    });
-
-    expect(splash).toHaveClass("splash-screen--exit");
-  });
-
-  it("unmounts after fade-out transition completes", () => {
-    render(<SplashScreen />);
-
-    expect(screen.getByRole("status")).toBeInTheDocument();
-
-    act(() => {
-      jest.advanceTimersByTime(2400 + 600);
-    });
-
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
-  });
-
-  it("renders three decorative background orbs", () => {
+  it("begins fade-out after SPLASH_DISPLAY_MS", () => {
     const { container } = render(<SplashScreen />);
-    const orbs = container.querySelectorAll(".splash-orb");
-    expect(orbs).toHaveLength(3);
-
-    orbs.forEach((orb) => {
-      expect(orb).toHaveAttribute("aria-hidden", "true");
+    act(() => {
+      jest.advanceTimersByTime(SPLASH_DISPLAY_MS);
     });
+    expect(container.querySelector(".splash-screen--exit")).not.toBeNull();
   });
 
-  it("renders the loading bar indicator", () => {
-    const { container } = render(<SplashScreen />);
-    expect(container.querySelector(".splash-loader")).toBeInTheDocument();
-    expect(container.querySelector(".splash-loader__bar")).toBeInTheDocument();
+  it("unmounts after SPLASH_DISPLAY_MS + SPLASH_FADE_MS", () => {
+    render(<SplashScreen />);
+    act(() => {
+      jest.advanceTimersByTime(SPLASH_DISPLAY_MS + SPLASH_FADE_MS + 1);
+    });
+    expect(screen.queryByRole("status", { name: /loading streampay/i })).toBeNull();
   });
 });

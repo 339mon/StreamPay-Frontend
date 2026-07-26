@@ -1,0 +1,47 @@
+.streamTypeChip {
+  align-items: flex-start;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  max-width: 100%;
+  cursor: pointer;
+  transition: transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease;
+}
+
+.streamTypeChip:hover {
+  transform: translateY(-1px);
+  opacity: 0.9;
+}
+
+.streamTypeChip:active {
+  transform: translateY(0);
+}
+
+.type {
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.amount {
+  line-height: 1.2;
+}
+
+@media (min-width: 30rem) {
+  .streamTypeChip {
+    align-items: center;
+    flex-direction: row;
+    gap: 0.5rem;
+  }
+
+  .type,
+  .amount {
+    white-space: nowrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .streamTypeChip {
+    transition: none !important;
+    transform: none !important;
+  }
+}

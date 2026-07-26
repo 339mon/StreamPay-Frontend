@@ -1,0 +1,42 @@
+
+@layer focus {
+  /* Keyboard users get a high-contrast ring that stays visible across themes. */
+  :where(
+    button,
+    a,
+    input,
+    select,
+    textarea,
+    summary,
+    [role="button"],
+    [tabindex]:not([tabindex="-1"]),
+    .card--clickable,
+    .stream-row__action,
+    .stream-progress__track,
+    .stream-type-chip
+  ):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 2px var(--background);
+  }
+
+  /* Preserve the browser's native focus behavior for mouse and touch interactions. */
+  :where(
+    button,
+    a,
+    input,
+    select,
+    textarea,
+    summary,
+    [role="button"],
+    [tabindex]:not([tabindex="-1"]),
+    .card--clickable,
+    .stream-row__action,
+    .stream-progress__track,
+    .stream-type-chip
+  ):focus:not(:focus-visible) {
+    outline: none;
+    box-shadow: none;
+  }
+}
+

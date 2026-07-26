@@ -1,7 +1,14 @@
-import { EmptyState } from "../components/EmptyState";
-import { StreamRow, type StreamRowData } from "../components/StreamRow";
+"use client";
 
-export type StreamsViewState = "empty" | "loading" | "populated";
+import { useMemo, useState } from "react";
+import { StateTriad } from "../components/StateTriad";
+import { StreamRow, type StreamRowData } from "../components/StreamRow";
+import { Skeleton } from "../components/Skeleton";
+import type { StateTriadState } from "../components/StateTriad";
+
+export type StreamsViewState = "loading" | "populated" | "empty" | "error";
+
+export type DensityMode = "comfortable" | "compact";
 
 const streamListCopy = {
   description:
@@ -12,10 +19,18 @@ const streamListCopy = {
     eyebrow: "Streams",
     title: "Your streams list is empty",
   },
+  filtered: {
+    actionLabel: "Clear filters",
+    description:
+      "No streams match your current filters. Try clearing one filter or widening your search to bring more streams back into view.",
+    eyebrow: "Streams",
+    title: "No streams match your current filters",
+  },
   heading: "Streams",
-  loadingLabel: "Loading streams",
-  populatedCount: "3 active records",
+  loadingLabel: "Loading your streams…",
+  populatedCount: (n: number) => `${n} active record${n === 1 ? "" : "s"}`,
   primaryCta: "Create Stream",
+  exportCta: "Export History",
 } as const;
 
 export const mockStreams: StreamRowData[] = [
@@ -26,6 +41,7 @@ export const mockStreams: StreamRowData[] = [
     recipient: "Ada Creative Studio",
     schedule: "Pays every 30 days",
     status: "active",
+    tags: ["design", "vendor"],
   },
   {
     id: "stream-kemi",
@@ -34,6 +50,7 @@ export const mockStreams: StreamRowData[] = [
     recipient: "Kemi Onboarding Support",
     schedule: "Draft stream ready to launch",
     status: "draft",
+    tags: ["onboarding"],
   },
   {
     id: "stream-yusuf",
@@ -42,55 +59,71 @@ export const mockStreams: StreamRowData[] = [
     recipient: "Yusuf QA Partnership",
     schedule: "Ended yesterday with funds available",
     status: "ended",
+    tags: ["qa", "vendor"],
   },
 ];
 
 type StreamsPageContentProps = {
+  /** Initial page-level state (overrides auto-detection). */
   state?: StreamsViewState;
+  /** List of streams to render (when state==='populated' or auto-empty). */
   streams?: StreamRowData[];
+  /** Error headline copy (when state==='error'). */
+  errorMessage?: string;
+  /** Handler bound to the error-state "Try again" button and top-level CTAs. */
+  onRetry?: () => void;
+  /** Switches the empty-state copy to the filtered-results variant when the current list is empty. */
+  emptyStateVariant?: "default" | "filtered";
+  /** Optional callback for the filtered empty state CTA. */
+  onClearFilters?: () => void;
 };
 
-function StreamListSkeleton() {
+/**
+ * Placeholder skeleton rendered during the `loading` state.
+ *
+ * Produces 3 stacked "ghost rows" whose layout mirrors a populated StreamRow,
+ * so the perceived page height is stable before data arrives. Uses the
+ * standard `<Skeleton>` component so shimmer + color tokens stay consistent.
+ *
+ * Label above the rows carries `role="status"` so it's announced politely
+ * rather than interrupting assistive tech.
+ */
+function StreamListSkeleton({ count = 3 }: { count?: number }) {
   return (
-    <section aria-label={streamListCopy.loadingLabel} className="stream-list">
-      {Array.from({ length: 3 }).map((_, index) => (
-        <article
-          aria-hidden="true"
-          className="stream-row stream-row--skeleton"
-          data-testid="stream-row-skeleton"
-          key={`stream-skeleton-${index + 1}`}
-        >
-          <div className="stream-row__primary">
-            <div className="stream-row__skeleton-block">
-              <div className="skeleton skeleton--title" />
-              <div className="skeleton skeleton--text" />
+    <div role="status" aria-live="polite" className="stream-list-loading">
+      <p className="skeleton-heading-label">Loading your streams…</p>
+      <div className="stream-list" aria-hidden="true">
+        {Array.from({ length: count }).map((_, i) => (
+          <article
+            key={i}
+            className="stream-row stream-row--skeleton"
+            style={{ animationDelay: `${i * 80}ms` }}
+          >
+            <div className="stream-row__meta">
+              <Skeleton variant="title" width="45%" className="stream-row__skeleton-title" />
+              <Skeleton variant="text" width="30%" />
             </div>
-            <div className="skeleton skeleton--badge" />
-          </div>
-
-          <div className="stream-row__meta stream-row__meta--skeleton">
-            <div>
-              <div className="skeleton skeleton--label" />
-              <div className="skeleton skeleton--value" />
+            <div className="stream-row__indicators">
+              <Skeleton variant="badge" width="4.25rem" height="1.5rem" />
+              <Skeleton variant="button" width="5.5rem" height="2rem" />
             </div>
-            <div>
-              <div className="skeleton skeleton--label" />
-              <div className="skeleton skeleton--value" />
-            </div>
-          </div>
-
-          <div className="skeleton skeleton--button" />
-        </article>
-      ))}
-    </section>
+          </article>
+        ))}
+      </div>
+    </div>
   );
 }
 
 export function StreamsPageContent({
-  state = "populated",
+  state,
   streams = mockStreams,
+  errorMessage = "There was a problem fetching your streams. Check your connection and try again.",
+  onRetry,
+  emptyStateVariant = "default",
+  onClearFilters,
 }: StreamsPageContentProps) {
   const isEmpty = state === "empty" || streams.length === 0;
+  const isFilteredEmpty = emptyStateVariant === "filtered" && streams.length === 0 && state !== "empty";
 
   return (
     <main className="page-shell">
@@ -100,11 +133,37 @@ export function StreamsPageContent({
           <h1 className="page-hero__title">Manage every stream from one list.</h1>
           <p className="page-hero__description">{streamListCopy.description}</p>
         </div>
-        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: "0.75rem",
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
           <button className="button button--secondary" type="button">
-            Export History
+            {streamListCopy.exportCta}
           </button>
-          <button className="button button--primary" type="button">
+          <div className="density-toggle" aria-label="Streams list density">
+            <span className="density-toggle__label">Density</span>
+            <button
+              type="button"
+              className={`density-toggle__switch ${
+                density === "compact" ? "density-toggle__switch--compact" : ""
+              }`}
+              role="switch"
+              aria-checked={density === "compact"}
+              onClick={() =>
+                setDensity((d) => (d === "compact" ? "comfortable" : "compact"))
+              }
+            >
+              <span className="density-toggle__thumb" aria-hidden="true" />
+              <span className="sr-only">
+                {density === "compact" ? "Compact density" : "Comfortable density"}
+              </span>
+            </button>
+          </div>
+          <button className="button button--primary" type="button" onClick={primaryOnClick}>
             {streamListCopy.primaryCta}
           </button>
         </div>
@@ -117,25 +176,42 @@ export function StreamsPageContent({
               Streams overview
             </h2>
             <p className="section-heading__description">
-              Recipient, rate, status, and the primary next action stay visible at a glance.
+              Recipient, rate, status, and the primary next action stay visible at
+              a glance.
             </p>
           </div>
-          {state === "populated" && <p className="section-heading__meta">{streamListCopy.populatedCount}</p>}
+          {viewState === "success" ? (
+            <p className="section-heading__meta">{populatedCount}</p>
+          ) : null}
         </div>
 
         {state === "loading" ? (
           <StreamListSkeleton />
+        ) : state === "error" ? (
+          <PageError
+            heading="Couldn't load your streams"
+            message={
+              errorMessage ??
+              "There was a problem fetching your streams. Check your connection and try again."
+            }
+            onRetry={onRetry}
+          />
         ) : isEmpty ? (
           <EmptyState
-            actionLabel={streamListCopy.empty.actionLabel}
-            description={streamListCopy.empty.description}
-            eyebrow={streamListCopy.empty.eyebrow}
-            title={streamListCopy.empty.title}
+            actionLabel={isFilteredEmpty ? streamListCopy.filtered.actionLabel : streamListCopy.empty.actionLabel}
+            description={isFilteredEmpty ? streamListCopy.filtered.description : streamListCopy.empty.description}
+            eyebrow={isFilteredEmpty ? streamListCopy.filtered.eyebrow : streamListCopy.empty.eyebrow}
+            title={isFilteredEmpty ? streamListCopy.filtered.title : streamListCopy.empty.title}
+            onAction={isFilteredEmpty ? onClearFilters : undefined}
           />
         ) : (
           <section aria-label="Streams list" className="stream-list">
             {streams.map((stream) => (
-              <StreamRow key={stream.id} stream={stream} />
+              <StreamRow
+                key={stream.id}
+                stream={stream}
+                density={density === "compact" ? "compact" : undefined}
+              />
             ))}
           </section>
         )}
@@ -143,3 +219,9 @@ export function StreamsPageContent({
     </main>
   );
 }
+
+/*
+ * Forward reference for convenience: callers importing this file can also
+ * import the skeleton rendering for Storybook / design-QA previews.
+ */
+export { StreamListSkeleton };
