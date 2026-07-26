@@ -3,6 +3,8 @@ import '../src/styles/typography.css'; // Adjust path if needed
 import styles from './StreamTypeChip.module.css';
 import './styles/patterns.css';
 
+import Skeleton from '../src/components/Skeleton';
+
 /**
  * Tracks the user's `prefers-reduced-motion` setting.
  */
@@ -43,26 +45,18 @@ export type StreamStatus =
 /**
  * StreamTypeChip component.
  * Displays a stream type and an amount using tabular figures for better alignment.
- *
- * Accessibility: when `status` is provided the chip receives a SVG-texture
- * overlay (via `cb-pattern--<status>`) so that users with colour-vision
- * deficiency (protanopia / deuteranopia / tritanopia / achromatopsia) can
- * distinguish stream statuses by geometric shape in addition to colour.
- *
- * @param type   - The stream type label (e.g. "Video", "Audio").
- * @param amount - The amount associated with the stream.
- * @param status - Optional stream lifecycle status. When provided, applies the
- *                 matching `cb-pattern--<status>` class from patterns.css.
+ * 
+ * @param {string} type - The type of stream.
+ * @param {number} amount - The amount associated with the stream.
+ * @param {boolean} isLoading - Whether the chip is loading.
  */
 export interface StreamTypeChipProps {
   type: string;
   amount: number;
-  /** Optional stream lifecycle status used to apply a color-blind-safe
-   *  texture pattern overlay on the chip. */
-  status?: StreamStatus;
+  isLoading?: boolean;
 }
 
-export const StreamTypeChip: React.FC<StreamTypeChipProps> = ({ type, amount, status }) => {
+export const StreamTypeChip: React.FC<StreamTypeChipProps> = ({ type, amount, isLoading = false }) => {
   const prefersReducedMotion = usePrefersReducedMotion();
   const showEmpty =
     isEmpty ||
@@ -91,6 +85,25 @@ export const StreamTypeChip: React.FC<StreamTypeChipProps> = ({ type, amount, st
   const chipLabel = `${type} ${amount}`;
 
   const patternClass = status ? `cb-pattern--${status}` : '';
+
+  if (isLoading) {
+    return (
+      <div
+        className={`${styles.streamTypeChip} stream-type-chip`}
+        data-reduced-motion={prefersReducedMotion}
+        style={{
+          transition: prefersReducedMotion ? 'none' : 'transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease',
+          transform: prefersReducedMotion ? 'none' : undefined,
+          cursor: 'default',
+        }}
+        aria-busy="true"
+        aria-live="polite"
+      >
+        <Skeleton width={60} height={20} />
+        <Skeleton width={40} height={20} />
+      </div>
+    );
+  }
 
   return (
     <div
