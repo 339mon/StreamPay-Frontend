@@ -96,5 +96,44 @@ describe('StreamTypeChip', () => {
       expect(chip.style.transform).toBe('none');
     });
   });
+
+  describe('aria-live announcements', () => {
+    it('renders a LiveRegion with data-testid stream-type-chip-live', () => {
+      render(<StreamTypeChip type="Video" amount={12345} />);
+      expect(screen.getByTestId('stream-type-chip-live')).toBeInTheDocument();
+    });
+
+    it('has empty announcement on initial render (no false positive)', () => {
+      render(<StreamTypeChip type="Video" amount={12345} />);
+      const region = screen.getByTestId('stream-type-chip-live');
+      expect(region).toHaveTextContent('');
+      expect(region).toHaveAttribute('aria-live', 'polite');
+      expect(region).toHaveAttribute('role', 'status');
+    });
+
+    it('announces type change via aria-live region', () => {
+      const { rerender } = render(<StreamTypeChip type="Video" amount={12345} />);
+      rerender(<StreamTypeChip type="Audio" amount={12345} />);
+      expect(screen.getByTestId('stream-type-chip-live')).toHaveTextContent(
+        'Stream type changed to Audio'
+      );
+    });
+
+    it('announces amount change via aria-live region', () => {
+      const { rerender } = render(<StreamTypeChip type="Video" amount={12345} />);
+      rerender(<StreamTypeChip type="Video" amount={999} />);
+      expect(screen.getByTestId('stream-type-chip-live')).toHaveTextContent(
+        'Stream amount updated to 999'
+      );
+    });
+
+    it('announces combined type and amount when both change', () => {
+      const { rerender } = render(<StreamTypeChip type="Video" amount={12345} />);
+      rerender(<StreamTypeChip type="Audio" amount={50} />);
+      expect(screen.getByTestId('stream-type-chip-live')).toHaveTextContent(
+        'Stream type Audio, amount 50'
+      );
+    });
+  });
 });
 
