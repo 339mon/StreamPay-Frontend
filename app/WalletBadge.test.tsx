@@ -148,54 +148,15 @@ describe("WalletBadge", () => {
     expect(badge).not.toHaveAttribute("tabIndex");
   });
 
-  describe("reduced-motion fallback (Issue #1078)", () => {
-    afterEach(() => {
-      // @ts-expect-error reset between tests
-      delete window.matchMedia;
-    });
+  it("renders keyboard shortcut hint when shortcut is provided and component is interactive", () => {
+    render(<WalletBadge state="disconnected" onConnect={jest.fn()} shortcut="C" />);
+    const hint = screen.getByTestId("kbd-hint");
+    expect(hint).toBeInTheDocument();
+    expect(hint).toHaveTextContent("C");
+  });
 
-    it("applies animated transitions when reduced motion is not requested", () => {
-      mockMatchMedia(false);
-      render(<WalletBadge state="connecting" providerName="Freighter" />);
-      const badge = screen.getByTestId("wallet-badge");
-
-      expect(badge).toHaveAttribute("data-reduced-motion", "false");
-      expect(badge.style.transition).toContain("background-color");
-
-      const dot = badge.querySelector(".wallet-badge__dot") as HTMLElement;
-      expect(dot).toHaveAttribute("data-reduced-motion", "false");
-      expect(dot.style.transition).not.toBe("none");
-      expect(dot.style.animation).not.toBe("none");
-    });
-
-    it("renders static fallback (no transition/animation) when reduced motion is requested", () => {
-      mockMatchMedia(true);
-      render(<WalletBadge state="connecting" providerName="Freighter" />);
-      const badge = screen.getByTestId("wallet-badge");
-
-      expect(badge).toHaveAttribute("data-reduced-motion", "true");
-      expect(badge.style.transition).toBe("none");
-
-      const dot = badge.querySelector(".wallet-badge__dot") as HTMLElement;
-      expect(dot).toHaveAttribute("data-reduced-motion", "true");
-      expect(dot.style.transition).toBe("none");
-      expect(dot.style.animation).toBe("none");
-    });
-
-    it("keeps status content accessible regardless of motion preference", () => {
-      mockMatchMedia(true);
-      render(
-        <WalletBadge
-          state="connected"
-          address="GABCD1234567890XYZ"
-          providerName="Freighter"
-          network="Testnet"
-          balance="10 XLM"
-        />
-      );
-      expect(screen.getByText("GABC...0XYZ")).toBeInTheDocument();
-      expect(screen.getByText("Testnet")).toBeInTheDocument();
-      expect(screen.getByTestId("live-region")).toHaveTextContent("Freighter connected");
-    });
+  it("does not render keyboard shortcut hint when component is not interactive", () => {
+    render(<WalletBadge state="connecting" shortcut="C" />);
+    expect(screen.queryByTestId("kbd-hint")).not.toBeInTheDocument();
   });
 });

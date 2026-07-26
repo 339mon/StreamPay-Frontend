@@ -1,21 +1,16 @@
-.kbdHint {
-  background-color: var(--kbd-bg, #f4f4f5);
-  border: 1px solid var(--kbd-border, #d4d4d8);
-  border-radius: 4px;
-  color: var(--kbd-text, #3f3f46);
-  display: inline-block;
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15rem 0.35rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 600;
   line-height: 1;
-  padding: 0.125rem 0.25rem;
-  margin-left: 0.5rem;
+  color: var(--muted-light, #9ca3af);
+  background-color: var(--panel-elevated, #27272a);
+  border: 1px solid var(--border, #374151);
+  border-radius: 4px;
   box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
-}
-
-@media (prefers-color-scheme: dark) {
-  .kbdHint {
-    background-color: var(--kbd-bg-dark, #27272a);
-    border-color: var(--kbd-border-dark, #3f3f46);
-    color: var(--kbd-text-dark, #e4e4e7);
-  }
+  margin-left: 0.5rem;
 }

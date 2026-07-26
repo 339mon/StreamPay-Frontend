@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { LiveRegion } from "../src/components/LiveRegion";
-import { EmptyState } from "../src/components/EmptyState";
+import { KbdHint } from "../src/components/KbdHint";
 import styles from "./WalletBadge.module.css";
 
 export type WalletState = "disconnected" | "connecting" | "connected" | "error" | "disconnecting";
@@ -18,6 +18,8 @@ export interface WalletBadgeProps {
   network?: string;
   /** Formatted balance string (e.g. "100.00 XLM") */
   balance?: string;
+  /** Keyboard shortcut hint */
+  shortcut?: string;
   /** Error details if state === "error" */
   errorMessage?: string;
   /** Callback triggered when user clicks connect */
@@ -79,6 +81,7 @@ export function WalletBadge({
   providerName,
   network,
   balance,
+  shortcut,
   errorMessage,
   onConnect,
   onDisconnect,
@@ -248,6 +251,11 @@ export function WalletBadge({
         <span className={`wallet-badge__balance ${styles.balance}`}>
           {balance}
         </span>
+      )}
+
+      {/* Keyboard Shortcut Hint */}
+      {shortcut && isInteractive && (
+        <KbdHint shortcut={shortcut} className={`wallet-badge__kbd ${styles.kbdHint}`} />
       )}
 
       {/* Disconnect Action Button */}
