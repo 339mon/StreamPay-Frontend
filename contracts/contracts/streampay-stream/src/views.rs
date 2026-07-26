@@ -359,6 +359,24 @@ pub fn list_streams_by_sender_and_status(
     }
 }
 
+/// Returns a bitmask of the contract's supported capabilities.
+///
+/// This read-only view allows off-chain indexers and dApps to programmatically
+/// discover which features are enabled in the currently deployed contract version.
+///
+/// # Capabilities Map
+/// - `1 << 0` (0x01): Basic linear streaming
+/// - `1 << 1` (0x02): Paginated stream enumeration (this module)
+/// - `1 << 2` (0x04): Multi-recipient split streams
+/// - `1 << 3` (0x08): Protocol fee configuration and sweeps
+/// - `1 << 4` (0x10): Per-organisation token allowlists
+///
+/// # Returns
+/// A `u32` bitmask where a set bit indicates the capability is supported.
+pub fn capabilities(_env: &Env) -> u32 {
+    0x1F // 1 | 2 | 4 | 8 | 16
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -626,6 +644,15 @@ mod tests {
 
             assert_eq!(page.streams.len(), 0);
             assert_eq!(page.next_cursor, None);
+        });
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let (env, contract_id) = setup_env();
+        env.as_contract(&contract_id, || {
+            let caps = capabilities(&env);
+            assert_eq!(caps, 0x1F);
         });
     }
 }
