@@ -10,8 +10,9 @@ use soroban_sdk::{contractevent, symbol_short, Address, BytesN, Env, Symbol};
 
 /// Emitted when a new stream is created (topic: `"stream"`, sub-topic: `"created"`).
 ///
-/// Contains the stream's ID, sender, recipient, token address, total amount, and
-/// the ledger timestamp at creation.
+/// Contains the stream's ID, sender, recipient, token address, total amount,
+/// per-stream fee (in basis points), stream duration in seconds, and the
+/// ledger timestamp at creation.
 #[contractevent(topics = ["stream", "created"], data_format = "vec")]
 pub struct StreamCreated {
     pub stream_id: u64,
@@ -19,6 +20,8 @@ pub struct StreamCreated {
     pub recipient: Address,
     pub token: Address,
     pub total_amount: i128,
+    pub fee_bps: u32,
+    pub duration: u64,
     pub timestamp: u64,
 }
 
@@ -141,6 +144,8 @@ pub fn created(
     recipient: &Address,
     token: &Address,
     total_amount: i128,
+    fee_bps: u32,
+    duration: u64,
     timestamp: u64,
 ) {
     StreamCreated {
@@ -149,6 +154,8 @@ pub fn created(
         recipient: recipient.clone(),
         token: token.clone(),
         total_amount,
+        fee_bps,
+        duration,
         timestamp,
     }
     .publish(env);
