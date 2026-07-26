@@ -811,6 +811,53 @@ a:hover {
   justify-self: start;
 }
 
+/* ─── Swipe to Cancel (mobile) ─────────────────────────────────────────── */
+.stream-row {
+  touch-action: pan-y;
+  will-change: transform;
+}
+
+.stream-row--swiping {
+  transition: transform 0.15s ease-out;
+}
+
+.stream-row__cancel-reveal {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 1.5rem;
+  border-radius: 1.25rem;
+  background: var(--system-error-bg);
+  z-index: -1;
+  pointer-events: none;
+}
+
+.stream-row__cancel-label {
+  color: var(--system-error-text);
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0;
+  transition: opacity 0.15s ease-out;
+}
+
+.stream-row__cancel-reveal[data-swipe-active="true"] .stream-row__cancel-label {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stream-row--swiping {
+    transition: none !important;
+  }
+
+  .stream-row__cancel-label {
+    transition: none !important;
+  }
+}
+
 .stream-row__receipt-link {
   color: var(--muted-light);
   font-size: 0.75rem;

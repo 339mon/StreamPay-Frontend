@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import type { StreamStatus } from "@/app/types/openapi";
 import { StatusBadge } from "./StatusBadge";
 import { StreamProgress } from "./StreamProgress";
@@ -13,6 +13,9 @@ import { formatErrorForDisplay } from "../lib/errors/handler";
 import type { StreamPayError } from "../lib/errors/types";
 import { LiveRegion } from "../../src/components/LiveRegion";
 import { colorFromId } from "../utils/colorFromId";
+
+const SWIPE_CANCEL_THRESHOLD = 80;
+const SWIPE_CANCEL_MAX = 160;
 
 export type StreamRowData = {
   id: string;
@@ -43,11 +46,20 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
   const [error, setError] = useState<StreamPayError | null>(null);
   const [isIncidentMode] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
-  // Local notification state for polite screen reader announcements (#219)
   const [srAnnouncement, setSrAnnouncement] = useState("");
+  const [swipeOffset, setSwipeOffset] = useState(0);
 
-  // Ref hook to preserve active keyboard focus target parameters across button re-renders
   const actionButtonRef = useRef<HTMLButtonElement>(null);
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const isSwiping = useRef(false);
+  const hasTriggered = useRef(false);
+
+  const canSwipeCancel =
+    stream.nextAction.toLowerCase() === "cancel" &&
+    stream.status !== "cancelled" &&
+    stream.status !== "ended" &&
+    stream.status !== "withdrawn";
 
   const handleDismissError = () => {
     setError(null);
@@ -69,7 +81,7 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
 
     setIsProcessing(true);
     setError(null);
-    setSrAnnouncement(""); // Reset prior announcements
+    setSrAnnouncement("");
 
     try {
       const actionRoute = stream.nextAction.toLowerCase();
@@ -84,11 +96,9 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
         }),
       });
 
-      // Clear layout alerts and assign semantic live region announcement string values
       const successMessage = `${stream.nextAction} operation completed successfully for ${stream.recipient}.`;
       setSrAnnouncement(successMessage);
 
-      // Preserve active interactive element focus ring natively within the DOM tree
       setTimeout(() => {
         actionButtonRef.current?.focus();
       }, 0);
@@ -111,34 +121,91 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
     }
   };
 
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      if (!canSwipeCancel) return;
+      touchStartX.current = e.touches[0].clientX;
+      touchStartY.current = e.touches[0].clientY;
+      isSwiping.current = false;
+      hasTriggered.current = false;
+    },
+    [canSwipeCancel],
+  );
+
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent) => {
+      if (!canSwipeCancel || hasTriggered.current) return;
+      const dx = e.touches[0].clientX - touchStartX.current;
+      const dy = e.touches[0].clientY - touchStartY.current;
+
+      if (!isSwiping.current) {
+        if (Math.abs(dy) > Math.abs(dx)) return;
+        if (dx >= 0) return;
+        isSwiping.current = true;
+      }
+
+      const offset = Math.min(0, Math.max(-SWIPE_CANCEL_MAX, dx));
+      setSwipeOffset(offset);
+    },
+    [canSwipeCancel],
+  );
+
+  const handleTouchEnd = useCallback(() => {
+    if (!canSwipeCancel || hasTriggered.current) {
+      setSwipeOffset(0);
+      return;
+    }
+    isSwiping.current = false;
+
+    if (swipeOffset < -SWIPE_CANCEL_THRESHOLD) {
+      hasTriggered.current = true;
+      setSwipeOffset(-SWIPE_CANCEL_MAX);
+      handleAction();
+    } else {
+      setSwipeOffset(0);
+    }
+  }, [canSwipeCancel, swipeOffset]);
+
+  const swipeStyle =
+    canSwipeCancel && swipeOffset !== 0
+      ? { transform: `translateX(${swipeOffset}px)` }
+      : undefined;
+
   return (
     <article
       className={[
         "stream-row",
         `stream-row--${stream.status}`,
         density === "compact" ? "stream-row--compact" : "",
+        canSwipeCancel && swipeOffset < 0 ? "stream-row--swiping" : "",
       ]
         .filter(Boolean)
         .join(" ")}
       data-status={stream.status}
       aria-labelledby={`${stream.id}-recipient`}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      style={swipeStyle}
     >
-      {/* Decorative color-blind safe pattern overlay. Purely visual so it
-          is hidden from assistive technology - state is already conveyed via
-          the StatusBadge (glyph + label) and the StreamProgress (label +
-          percentage). */}
+      {canSwipeCancel && (
+        <div
+          className="stream-row__cancel-reveal"
+          aria-hidden="true"
+          data-swipe-active={swipeOffset < -SWIPE_CANCEL_THRESHOLD}
+        >
+          <span className="stream-row__cancel-label">Cancel</span>
+        </div>
+      )}
+
       <div className="stream-row__pattern" aria-hidden="true" />
 
-      {/* Per-stream color stripe identity indicator.
-          Deterministic hue derived from the stream ID so users can visually
-          track a stream across page loads. Hidden from assistive tech. */}
       <div
         className="stream-row__color-stripe"
         aria-hidden="true"
         style={{ backgroundColor: colorFromId(stream.id) }}
       />
 
-      {/* Dynamic polite status messenger announcement node layer for assistive tech */}
       <LiveRegion message={srAnnouncement} />
 
       <div className="stream-row__primary">
@@ -169,8 +236,6 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
           <dt>Status</dt>
           <dd>{stream.status}</dd>
         </div>
-        {/* Compact burn-down sparkline — only meaningful when we have on-chain
-            amounts and the stream is in a flowing/active-ish state. */}
         {typeof stream.totalAmount === "number" &&
           typeof stream.accruedAmount === "number" &&
           stream.totalAmount > 0 &&
@@ -189,7 +254,6 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
           )}
       </div>
 
-      {/* Burn-down progress bar — only rendered for non-draft streams */}
       {stream.status !== "draft" && (
         <StreamProgress
           status={stream.status}
