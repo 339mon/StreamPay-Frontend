@@ -163,6 +163,82 @@ paths:
                       code: BAD_REQUEST
                       message: limit must be between 1 and 100.
                       request_id: req_01HZ9ABCDEF
+  /api/webhooks/health:
+    get:
+      summary: Webhook delivery system health
+      description: |
+        Returns the health status of the webhook delivery system along with
+        subscription and delivery statistics. Supports request correlation
+        tracking via x-correlation-id header.
+      responses:
+        '200':
+          description: Health status retrieved
+          content:
+            application/json:
+              examples:
+                healthy:
+                  summary: All systems healthy
+                  value:
+                    status: ok
+                    checked_at: '2026-07-26T12:00:00.000Z'
+                    subscriptions:
+                      total: 42
+                      active: 42
+                      degraded: 0
+                      disabled: 0
+                    delivery_stats:
+                      total: 1500
+                      delivered: 1498
+                      failed: 2
+                      pending: 0
+                      dlq: 0
+                      success_rate_pct: 99.87
+                degraded:
+                  summary: Some subscriptions degraded or DLQ depth > 0
+                  value:
+                    status: degraded
+                    checked_at: '2026-07-26T12:00:00.000Z'
+                    subscriptions:
+                      total: 42
+                      active: 40
+                      degraded: 2
+                      disabled: 0
+                    delivery_stats:
+                      total: 1500
+                      delivered: 1490
+                      failed: 8
+                      pending: 2
+                      dlq: 3
+                      success_rate_pct: 99.33
+                unhealthy:
+                  summary: More than 50% of subscriptions degraded or disabled
+                  value:
+                    status: unhealthy
+                    checked_at: '2026-07-26T12:00:00.000Z'
+                    subscriptions:
+                      total: 10
+                      active: 3
+                      degraded: 4
+                      disabled: 3
+                    delivery_stats:
+                      total: 200
+                      delivered: 120
+                      failed: 50
+                      pending: 30
+                      dlq: 15
+                      success_rate_pct: 60
+        '500':
+          description: Failed to retrieve health stats
+          content:
+            application/json:
+              examples:
+                internalError:
+                  summary: Unexpected error retrieving health
+                  value:
+                    error:
+                      code: INTERNAL_SERVER_ERROR
+                      message: Failed to retrieve webhook health stats.
+                      request_id: req_01HZ9ABCDEF
   /api/reconciliation:
     get:
       summary: Retrieve public reconciliation overview

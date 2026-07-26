@@ -70,4 +70,54 @@ describe('OpenAPI examples /api/webhooks', () => {
       }),
     );
   });
+
+  it('declares /api/webhooks/health with GET', () => {
+    const health = spec.paths['/api/webhooks/health'];
+    expect(health).toBeDefined();
+    expect(health.get).toBeDefined();
+  });
+
+  it('/api/webhooks/health healthy example has expected shape', () => {
+    const health = spec.paths['/api/webhooks/health'].get;
+    const example =
+      health.responses['200'].content['application/json'].examples.healthy
+        .value;
+    expect(example.status).toBe('ok');
+    expect(example).toHaveProperty('checked_at');
+    expect(example.subscriptions).toEqual(
+      expect.objectContaining({
+        total: expect.any(Number),
+        active: expect.any(Number),
+        degraded: expect.any(Number),
+        disabled: expect.any(Number),
+      }),
+    );
+    expect(example.delivery_stats).toEqual(
+      expect.objectContaining({
+        total: expect.any(Number),
+        delivered: expect.any(Number),
+        failed: expect.any(Number),
+        pending: expect.any(Number),
+        dlq: expect.any(Number),
+        success_rate_pct: expect.any(Number),
+      }),
+    );
+  });
+
+  it('/api/webhooks/health degraded example returns degraded status', () => {
+    const health = spec.paths['/api/webhooks/health'].get;
+    const example =
+      health.responses['200'].content['application/json'].examples.degraded
+        .value;
+    expect(example.status).toBe('degraded');
+  });
+
+  it('/api/webhooks/health 500 error uses INTERNAL_SERVER_ERROR envelope', () => {
+    const health = spec.paths['/api/webhooks/health'].get;
+    const example =
+      health.responses['500'].content['application/json'].examples
+        .internalError.value;
+    expect(example.error.code).toBe('INTERNAL_SERVER_ERROR');
+    expect(example.error.request_id).toMatch(/^req_/);
+  });
 });
