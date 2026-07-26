@@ -43,9 +43,10 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
   (gzip/brotli for all responses).
 
 ### Added
-- Prometheus metrics on `GET|POST /api/exports`: `export_requests_total`
-  (counter) and `export_request_duration_seconds` (histogram), labeled by
-  `status` and `method`, registered in `src/metrics/registry.ts`.
+- Cursor pagination on `GET /api/reconciliation` over stable
+  `(created_at, id)` ordering with `meta.nextCursor` / `meta.hasNext`.
+  Malformed cursors return `422 INVALID_CURSOR`. Documented in
+  `docs/api/reconciliation-cursor.md`.
 - MRU (most-recently-used) wallet ordering on the connect modal: the
   provider a user picked last surfaces at the top of `WalletModal`,
   persisted under the `streampay_mru_wallet` `localStorage` key via
