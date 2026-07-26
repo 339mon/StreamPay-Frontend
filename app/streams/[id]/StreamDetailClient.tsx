@@ -61,10 +61,12 @@ export function StreamDetailClient({
 }: StreamDetailClientProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<StreamPayError | null>(null);
+  const [isDestructiveOpen, setIsDestructiveOpen] = useState(false);
 
   const isIncidentMode =
     process.env.NEXT_PUBLIC_DISABLE_ONCHAIN_OPERATIONS === "true";
   const nextAction = ACTION_MAP[stream.status] || "Action";
+  const actionSummary = STREAM_ACTION_SUMMARY[stream.id] ?? { amountLabel: "" };
 
   const handleDismissError = () => {
     setError(null);

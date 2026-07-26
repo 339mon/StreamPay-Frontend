@@ -36,10 +36,12 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { StreamStatus } from "@/app/types/openapi";
 import { LiveRegion } from "./LiveRegion";
 import { EmptyState } from "./EmptyState";
+import { KbdHint } from "@/src/components/KbdHint";
+import type { KbdShortcut } from "@/src/components/KbdHint";
 
 // ── Reduced-motion ─────────────────────────────────────────────────────────────
 
@@ -202,6 +204,20 @@ export function StreamProgress({
   const label   = deriveLabel(status, percent);
   const prefersReducedMotion = usePrefersReducedMotion();
 
+  // ── Keyboard shortcut hints ────────────────────────────────────────────────
+  const [showHints, setShowHints] = useState(false);
+  const toggleHints = useCallback(() => setShowHints((prev) => !prev), []);
+
+  const shortcuts: KbdShortcut[] = [];
+  if (status === "active" || status === "paused") {
+    shortcuts.push({ keys: ["Space"], description: "Pause / resume" });
+  }
+  if (status === "draft") {
+    shortcuts.push({ keys: ["Enter"], description: "Start stream" });
+  }
+  shortcuts.push({ keys: ["Esc"], description: "Deselect" });
+  shortcuts.push({ keys: ["Ctrl", "K"], description: "Command palette" });
+
   // ── ARIA live announcements ────────────────────────────────────────────────
   const [srAnnouncement, setSrAnnouncement] = useState("");
   const prevStatusRef = useRef<StreamStatus | null>(null);
@@ -315,6 +331,28 @@ export function StreamProgress({
           <span className="stream-progress__remaining tabular-nums">
             {Math.round(totalAmount - accruedAmount).toLocaleString()} remaining
           </span>
+        )}
+      </div>
+
+      {/* Keyboard shortcut hints — hidden by default, toggled via button */}
+      <div className="stream-progress__hints" aria-hidden="true">
+        <button
+          type="button"
+          className="stream-progress__hints-toggle"
+          onClick={toggleHints}
+          aria-expanded={showHints}
+          data-testid="stream-progress-kbd-toggle"
+        >
+          <span className="stream-progress__hints-icon" aria-hidden="true">
+            {showHints ? "▾" : "▸"}
+          </span>
+          Keyboard shortcuts
+        </button>
+        {showHints && (
+          <KbdHint
+            shortcuts={shortcuts}
+            data-testid="stream-progress-kbd-hints"
+          />
         )}
       </div>
     </div>
