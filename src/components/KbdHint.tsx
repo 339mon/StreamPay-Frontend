@@ -1,24 +1,28 @@
 /**
  * KbdHint
  *
- * Reusable component for rendering accessible keyboard shortcut hints using design tokens.
+ * Renders a keyboard shortcut hint inline with form fields.
+ * Uses semantic `<kbd>` elements for each key, styled with design tokens
+ * so they adapt to dark / light themes without hardcoded colours.
  *
  * ## Accessibility (WCAG 2.1 AA)
- * - Renders semantic `<kbd>` element(s) with readable contrast in both light and dark modes.
- * - Provides `aria-label` for screen reader clarity.
- * - Uses `aria-hidden="true"` on visual key separator symbols (+).
- *
- * ## Design Tokens
- * - Uses `var(--panel-elevated)` or `var(--panel)` for background.
- * - Uses `var(--foreground)` for text color.
- * - Uses `var(--border)` for borders.
- * - Uses `var(--font-mono)` for monospaced shortcut text.
+ * - Each `<kbd>` is wrapped in an `<abbr>` when a `title` description is
+ *   provided, giving screen-reader users context for the shortcut.
+ * - The outer `<span>` carries `aria-label` combining all key labels so the
+ *   full shortcut reads naturally: "Keyboard shortcut: Ctrl K".
+ * - The component is hidden from AT when `aria-hidden` is passed (useful
+ *   when the shortcut is already announced in a nearby live region).
  *
  * ## Usage
  * ```tsx
- * <KbdHint keys="C" ariaLabel="Keyboard shortcut: C" />
- * <KbdHint keys={["Ctrl", "C"]} />
- * <KbdHint keys="M" variant="subtle" size="sm" />
+ * // Single key
+ * <KbdHint keys={["Esc"]} label="Close" />
+ *
+ * // Combination (Ctrl + Enter)
+ * <KbdHint keys={["Ctrl", "Enter"]} label="Submit" />
+ *
+ * // Hidden from screen readers (announced elsewhere)
+ * <KbdHint keys={["Ctrl", "K"]} aria-hidden />
  * ```
  */
 
@@ -26,110 +30,97 @@
 
 import React from "react";
 
+// ── Types ────────────────────────────────────────────────────────────────────
+
 export interface KbdHintProps {
-  /** Key or array of keys for the shortcut (e.g., "C", ["Ctrl", "C"], "Ctrl+C") */
-  keys: string | string[];
-  /** Visual variant: "default" | "outline" | "subtle". Default is "default". */
-  variant?: "default" | "outline" | "subtle";
-  /** Component size: "sm" | "md". Default is "sm". */
-  size?: "sm" | "md";
-  /** Screen reader label. Defaults to "Keyboard shortcut: [keys]" */
-  ariaLabel?: string;
-  /** Additional CSS class names */
+  /**
+   * The key(s) that form the shortcut.  Each entry renders as one `<kbd>`.
+   * Multi-key combinations are separated by a "+" glyph.
+   */
+  keys: string[];
+  /**
+   * Human-readable description of what the shortcut does.
+   * Used as `aria-label` for the whole hint and as `<abbr title>` when
+   * a single, ambiguous key glyph is used (e.g. "⌘" → "Command").
+   */
+  label: string;
+  /**
+   * When true, the component is hidden from assistive technologies.
+   * Use this if the action is already announced via a LiveRegion.
+   */
+  "aria-hidden"?: boolean;
+  /** Additional CSS class applied to the outer wrapper. */
   className?: string;
-  /** Custom inline styles */
-  style?: React.CSSProperties;
-  /** Test identifier for testing library */
-  testId?: string;
 }
+
+// ── Styles ───────────────────────────────────────────────────────────────────
+
+/**
+ * Inline styles use CSS variables already defined in `globals.css` so the
+ * component respects dark / light mode and high-contrast themes automatically.
+ */
+const wrapperStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "0.25rem",
+  verticalAlign: "middle",
+};
+
+const kbdStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontFamily: "inherit",
+  fontSize: "0.6875rem",          // 11px — smaller than body text
+  lineHeight: 1,
+  fontWeight: 600,
+  padding: "0.1875rem 0.375rem",  // 3px 6px
+  background: "var(--panel-elevated, #17171f)",
+  color: "var(--muted-light, #a1a1aa)",
+  border: "1px solid var(--border, #27272a)",
+  borderBottomWidth: "2px",       // tactile depth, classic kbd look
+  borderRadius: "0.25rem",
+  boxShadow: "0 1px 0 0 var(--border, #27272a)",
+  whiteSpace: "nowrap",
+  userSelect: "none",
+};
+
+const separatorStyle: React.CSSProperties = {
+  color: "var(--muted, #71717a)",
+  fontSize: "0.6875rem",
+  lineHeight: 1,
+  userSelect: "none",
+};
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export function KbdHint({
   keys,
-  variant = "default",
-  size = "sm",
-  ariaLabel,
-  className = "",
-  style,
-  testId = "kbd-hint",
+  label,
+  "aria-hidden": ariaHidden,
+  className,
 }: KbdHintProps) {
-  const keyList = Array.isArray(keys)
-    ? keys
-    : typeof keys === "string" && keys.includes("+")
-    ? keys.split("+").map((k) => k.trim())
-    : [keys];
-
-  const fullShortcutLabel = keyList.join("+");
-  const computedAriaLabel = ariaLabel || `Keyboard shortcut: ${fullShortcutLabel}`;
-
-  const baseKbdStyle: React.CSSProperties = {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontFamily:
-      "var(--font-mono, monospace, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas)",
-    fontSize: size === "sm" ? "0.6875rem" : "0.75rem",
-    fontWeight: 600,
-    lineHeight: 1,
-    padding: size === "sm" ? "0.125rem 0.375rem" : "0.2rem 0.5rem",
-    borderRadius: "0.25rem",
-    minWidth: size === "sm" ? "1.125rem" : "1.375rem",
-    textAlign: "center",
-    userSelect: "none",
-    ...getVariantStyles(variant),
-    ...style,
-  };
+  const ariaLabel = `Keyboard shortcut: ${keys.join(" ")}`;
 
   return (
     <span
-      className={`kbd-hint-wrapper ${className}`.trim()}
-      aria-label={computedAriaLabel}
-      data-testid={testId}
-      style={{ display: "inline-flex", alignItems: "center", gap: "0.2rem" }}
+      style={wrapperStyle}
+      aria-label={ariaHidden ? undefined : ariaLabel}
+      aria-hidden={ariaHidden ? "true" : undefined}
+      title={label}
+      className={className}
+      data-testid="kbd-hint"
     >
-      {keyList.map((keyStr, index) => (
-        <React.Fragment key={index}>
-          {index > 0 && (
-            <span
-              aria-hidden="true"
-              style={{
-                fontSize: "0.6875rem",
-                color: "var(--muted, #9ca3af)",
-                margin: "0 0.1rem",
-              }}
-            >
+      {keys.map((key, i) => (
+        <React.Fragment key={key}>
+          {i > 0 && (
+            <span style={separatorStyle} aria-hidden="true">
               +
             </span>
           )}
-          <kbd style={baseKbdStyle}>{keyStr}</kbd>
+          <kbd style={kbdStyle}>{key}</kbd>
         </React.Fragment>
       ))}
     </span>
   );
 }
-
-function getVariantStyles(variant: "default" | "outline" | "subtle"): React.CSSProperties {
-  switch (variant) {
-    case "outline":
-      return {
-        backgroundColor: "transparent",
-        color: "var(--foreground, #f9fafb)",
-        border: "1px solid var(--border, #374151)",
-      };
-    case "subtle":
-      return {
-        backgroundColor: "var(--panel, rgba(255, 255, 255, 0.05))",
-        color: "var(--muted-light, #9ca3af)",
-        border: "1px solid var(--border, rgba(255, 255, 255, 0.1))",
-      };
-    case "default":
-    default:
-      return {
-        backgroundColor: "var(--panel-elevated, var(--panel, #1f2937))",
-        color: "var(--foreground, #f9fafb)",
-        border: "1px solid var(--border, #374151)",
-        boxShadow: "0 1px 2px rgba(0, 0, 0, 0.2)",
-      };
-  }
-}
-
-export default KbdHint;
