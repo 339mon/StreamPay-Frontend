@@ -2,6 +2,16 @@
 
 import { GET, POST } from "./route";
 import { resetDb, getStore } from "@/app/lib/db";
+import { runWithTimeout, TimeoutError } from "@/app/lib/with-timeout";
+
+jest.mock("@/app/lib/with-timeout", () => {
+  const actual = jest.requireActual("@/app/lib/with-timeout");
+  return {
+    ...actual,
+    runWithTimeout: jest.fn(actual.runWithTimeout),
+  };
+});
+
 import { resetRateLimitStore, setRateLimitStore } from "@/app/lib/rate-limit-store";
 import { _resetAllowlistForTesting, addAllowedToken } from "@/app/lib/token-allowlist";
 import type { Stream } from "@/app/types/openapi";
@@ -51,6 +61,16 @@ afterEach(() => {
 });
 
 describe("GET /api/streams", () => {
+  describe("timeout", () => {
+    it("returns 504 when handler exceeds timeout", async () => {
+      (runWithTimeout as jest.Mock).mockRejectedValueOnce(new TimeoutError());
+      const res = await GET(getRequest());
+      expect(res.status).toBe(504);
+      const body = await res.json();
+      expect(body.error.code).toBe("GATEWAY_TIMEOUT");
+    });
+  });
+
   describe("rate limiting", () => {
     it("returns 200 when under rate limit", async () => {
       const res = await GET(getRequest());
@@ -215,6 +235,16 @@ describe("GET /api/streams", () => {
 });
 
 describe("POST /api/streams", () => {
+  describe("timeout", () => {
+    it("returns 504 when handler exceeds timeout", async () => {
+      (runWithTimeout as jest.Mock).mockRejectedValueOnce(new TimeoutError());
+      const res = await POST(postRequest({ recipient: VALID_RECIPIENT, rate: "50", schedule: "month" }));
+      expect(res.status).toBe(504);
+      const body = await res.json();
+      expect(body.error.code).toBe("GATEWAY_TIMEOUT");
+    });
+  });
+
   describe("rate limiting", () => {
     it("returns 201 when under rate limit", async () => {
       const res = await POST(postRequest({ recipient: VALID_RECIPIENT, rate: "50", schedule: "month" }));

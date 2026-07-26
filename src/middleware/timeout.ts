@@ -57,6 +57,13 @@ export const WALLET_CHALLENGE_TIMEOUT_MS =
 export const WALLET_VERIFY_TIMEOUT_MS =
   Number(process.env.AUTH_WALLET_VERIFY_TIMEOUT_MS) || 5_000;
 
+/**
+ * Default wall-clock budget for /api/streams.
+ * Override via the `STREAMS_TIMEOUT_MS` environment variable.
+ */
+export const STREAMS_TIMEOUT_MS =
+  Number(process.env.STREAMS_TIMEOUT_MS) || 5_000;
+
 // ── Core helper ───────────────────────────────────────────────────────────────
 
 /**

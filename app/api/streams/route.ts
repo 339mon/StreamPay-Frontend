@@ -17,6 +17,7 @@ import {
 } from "@/app/lib/stream-validation";
 import type { Stream } from "@/app/types/openapi";
 import { createCacheHeaders, createStrongEtag, isIfNoneMatchMatch } from "@/src/middleware/etag";
+import { withTimeout, STREAMS_TIMEOUT_MS } from "@/src/middleware/timeout";
 
 function errorResponse(code: string, message: string, status: number) {
   return createErrorResponse(code, message, status);
@@ -40,6 +41,7 @@ function getHeader(request: Request, name: string): string | null {
 }
 
 export async function GET(request: Request) {
+  return withTimeout(STREAMS_TIMEOUT_MS, request, async (signal) => {
   const { streamRepository } = getStore();
   const rateLimitResult = await streamsRateLimit(request, "GET", "/api/streams");
   if (!rateLimitResult.allowed) {
@@ -129,9 +131,11 @@ export async function GET(request: Request) {
     response.headers.set(name, value);
   }
   return response;
+  });
 }
 
 export async function POST(request: Request) {
+  return withTimeout(STREAMS_TIMEOUT_MS, request, async (signal) => {
   const { idempotencyStore, streamRepository } = getStore();
   const rateLimitResult = await streamsRateLimit(request, "POST", "/api/streams");
   if (!rateLimitResult.allowed) {
@@ -230,4 +234,5 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json(payload, { status: 201 });
+  });
 }
