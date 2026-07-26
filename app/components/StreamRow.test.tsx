@@ -3,10 +3,14 @@
  */
 
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { StreamRow, type StreamRowData } from "./StreamRow";
 import type { StreamStatus } from "@/app/types/openapi";
+
+jest.mock("../../lib/apiClient", () => ({
+  fetchWithIdempotency: jest.fn().mockResolvedValue({ ok: true }),
+}));
 
 const ALL_STATUSES: readonly StreamStatus[] = [
   "active",
@@ -194,6 +198,160 @@ describe("StreamRow", () => {
       const stripe = container.querySelector(".stream-row__color-stripe");
       expect(stripe).not.toBeNull();
       expect(stripe).toHaveAttribute("aria-hidden", "true");
+    });
+  });
+
+  describe("swipe to cancel (mobile)", () => {
+    const cancellableStream: StreamRowData = {
+      ...makeMockStream("active"),
+      nextAction: "Cancel",
+    };
+
+    const nonCancellableStreams: StreamRowData[] = [
+      { ...makeMockStream("cancelled"), nextAction: "Cancel" },
+      { ...makeMockStream("ended"), nextAction: "Cancel" },
+      { ...makeMockStream("withdrawn"), nextAction: "Cancel" },
+      { ...makeMockStream("active"), nextAction: "Pause" },
+    ];
+
+    function touchStart(article: HTMLElement, x: number, y: number) {
+      fireEvent.touchStart(article, {
+        touches: [{ clientX: x, clientY: y }],
+      });
+    }
+
+    function touchMove(article: HTMLElement, x: number, y: number) {
+      fireEvent.touchMove(article, {
+        touches: [{ clientX: x, clientY: y }],
+      });
+    }
+
+    function touchEnd(article: HTMLElement) {
+      fireEvent.touchEnd(article);
+    }
+
+    it("renders the cancel reveal element for cancellable streams", () => {
+      const { container } = render(<StreamRow stream={cancellableStream} />);
+      const reveal = container.querySelector(".stream-row__cancel-reveal");
+      expect(reveal).not.toBeNull();
+      expect(reveal).toHaveAttribute("aria-hidden", "true");
+    });
+
+    it.each(nonCancellableStreams)(
+      "does not render cancel reveal when status=$status and nextAction=$nextAction",
+      (stream) => {
+        const { container } = render(<StreamRow stream={stream} />);
+        const reveal = container.querySelector(".stream-row__cancel-reveal");
+        expect(reveal).toBeNull();
+      },
+    );
+
+    it("shows cancel label inside the reveal element", () => {
+      const { container } = render(<StreamRow stream={cancellableStream} />);
+      const label = container.querySelector(".stream-row__cancel-label");
+      expect(label).not.toBeNull();
+      expect(label).toHaveTextContent("Cancel");
+    });
+
+    it("applies stream-row--swiping class during left swipe", () => {
+      const { container } = render(<StreamRow stream={cancellableStream} />);
+      const article = container.querySelector("article.stream-row") as HTMLElement;
+
+      touchStart(article, 200, 100);
+      touchMove(article, 100, 100);
+
+      expect(article).toHaveClass("stream-row--swiping");
+    });
+
+    it("does not apply swiping class for right swipe", () => {
+      const { container } = render(<StreamRow stream={cancellableStream} />);
+      const article = container.querySelector("article.stream-row") as HTMLElement;
+
+      touchStart(article, 100, 100);
+      touchMove(article, 200, 100);
+
+      expect(article).not.toHaveClass("stream-row--swiping");
+    });
+
+    it("does not apply swiping class for vertical swipe", () => {
+      const { container } = render(<StreamRow stream={cancellableStream} />);
+      const article = container.querySelector("article.stream-row") as HTMLElement;
+
+      touchStart(article, 100, 100);
+      touchMove(article, 100, 200);
+
+      expect(article).not.toHaveClass("stream-row--swiping");
+    });
+
+    it("snaps back when swipe distance is below threshold", () => {
+      const { container } = render(<StreamRow stream={cancellableStream} />);
+      const article = container.querySelector("article.stream-row") as HTMLElement;
+
+      touchStart(article, 200, 100);
+      touchMove(article, 150, 100);
+      touchEnd(article);
+
+      expect(article).not.toHaveClass("stream-row--swiping");
+      expect(article.style.transform).toBe("");
+    });
+
+    it("triggers cancel action when swipe exceeds threshold", async () => {
+      const { fetchWithIdempotency } = require("../../lib/apiClient");
+      const { container } = render(<StreamRow stream={cancellableStream} />);
+      const article = container.querySelector("article.stream-row") as HTMLElement;
+
+      touchStart(article, 200, 100);
+      touchMove(article, 50, 100);
+      touchEnd(article);
+
+      expect(fetchWithIdempotency).toHaveBeenCalledWith(
+        `/api/streams/${cancellableStream.id}/cancel`,
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+
+    it("sets data-swipe-active on cancel reveal when threshold exceeded", () => {
+      const { container } = render(<StreamRow stream={cancellableStream} />);
+      const article = container.querySelector("article.stream-row") as HTMLElement;
+
+      touchStart(article, 200, 100);
+      touchMove(article, 50, 100);
+
+      const reveal = container.querySelector(".stream-row__cancel-reveal");
+      expect(reveal).toHaveAttribute("data-swipe-active", "true");
+    });
+
+    it("does not set data-swipe-active when swipe is below threshold", () => {
+      const { container } = render(<StreamRow stream={cancellableStream} />);
+      const article = container.querySelector("article.stream-row") as HTMLElement;
+
+      touchStart(article, 200, 100);
+      touchMove(article, 150, 100);
+
+      const reveal = container.querySelector(".stream-row__cancel-reveal");
+      expect(reveal).toHaveAttribute("data-swipe-active", "false");
+    });
+
+    it("applies translateX style during swipe", () => {
+      const { container } = render(<StreamRow stream={cancellableStream} />);
+      const article = container.querySelector("article.stream-row") as HTMLElement;
+
+      touchStart(article, 200, 100);
+      touchMove(article, 120, 100);
+
+      expect(article.style.transform).toContain("translateX");
+    });
+
+    it("does not respond to touch events on non-cancellable streams", () => {
+      const { container } = render(<StreamRow stream={makeMockStream("active")} />);
+      const article = container.querySelector("article.stream-row") as HTMLElement;
+
+      touchStart(article, 200, 100);
+      touchMove(article, 50, 100);
+      touchEnd(article);
+
+      expect(article).not.toHaveClass("stream-row--swiping");
+      expect(article.style.transform).toBe("");
     });
   });
 });
