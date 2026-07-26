@@ -256,6 +256,13 @@ export function tryAuthenticateRequest(request: Request): AuthenticatedActor | n
   };
 
   for (const secret of getJwtSecretCandidates(token)) {
+    if (
+      secret === INSECURE_DEV_JWT_SECRET &&
+      process.env.NODE_ENV === "production" &&
+      process.env.ALLOW_INSECURE_DEV_SECRET !== "true"
+    ) {
+      continue;
+    }
     try {
       const verified = jwt.verify(token, secret, verificationOptions) as TokenClaims;
 
