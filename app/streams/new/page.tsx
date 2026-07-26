@@ -2,9 +2,91 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { CreateStreamForm } from '../CreateStreamForm';
+import { GasOnRecipientToggle } from '../../components/GasOnRecipientToggle';
+import { RecentRecipients } from './components/RecentRecipients';
+import { addRecentRecipient } from '../../state/recentRecipients';
+import { BottomSheet } from '../../components/BottomSheet';
+import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion';
 
 export default function NewStreamPage() {
+  const [recipient, setRecipient] = useState('');
+  const [amount, setAmount] = useState('');
+  const [token, setToken] = useState<'XLM' | 'USDC'>('XLM');
+  const [gasOnRecipient, setGasOnRecipient] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [success, setSuccess] = useState(false);
+
+  const [isMobile, setIsMobile] = useState(false);
+  const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
+
+  const prefersReducedMotion = usePrefersReducedMotion();
+
+  // Detect mobile viewport using matchMedia
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 767px)');
+    setIsMobile(mediaQuery.matches);
+
+    const listener = (e: MediaQueryListEvent) => {
+      setIsMobile(e.matches);
+    };
+
+    mediaQuery.addEventListener('change', listener);
+    return () => {
+      mediaQuery.removeEventListener('change', listener);
+    };
+  }, []);
+
+  // Auto-close bottom sheet if viewport is resized to desktop width
+  useEffect(() => {
+    if (!isMobile) {
+      setIsBottomSheetOpen(false);
+    }
+  }, [isMobile]);
+
+  const performCreateStream = async () => {
+    setIsSubmitting(true);
+    setIsBottomSheetOpen(false);
+    // TODO: call stream creation API with { recipient, amount, token, gasOnRecipient }
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    addRecentRecipient(recipient);
+    setIsSubmitting(false);
+    setSuccess(true);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isMobile) {
+      setIsBottomSheetOpen(true);
+    } else {
+      performCreateStream();
+    }
+  };
+
+  const fieldStyle: React.CSSProperties = {
+    width: '100%',
+    background: 'var(--panel)',
+    border: '1px solid var(--border)',
+    color: 'var(--foreground)',
+    padding: '0.75rem',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 'var(--text-base)',
+  };
+
+  if (success) {
+    return (
+      <main className="page-shell">
+        <section className="page-hero">
+          <div>
+            <p className="page-hero__eyebrow">Success</p>
+            <h1 className="page-hero__title">Stream Created</h1>
+            <p className="page-hero__description">Your stream is live.</p>
+          </div>
+          <Link href="/streams" className="button button--primary">View Streams</Link>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="page-shell">
       <section className="page-hero">
@@ -139,6 +221,7 @@ export default function NewStreamPage() {
         isOpen={isBottomSheetOpen}
         onClose={() => setIsBottomSheetOpen(false)}
         title="Review Stream Details"
+        reducedMotion={prefersReducedMotion}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <p style={{ color: 'var(--muted-light)', fontSize: 'var(--text-sm, 0.875rem)', margin: 0 }}>
