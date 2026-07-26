@@ -87,7 +87,45 @@ describe("GET /api/webhooks/health", () => {
     const body = (res as unknown as { body: { checked_at: string } }).body;
     expect(new Date(body.checked_at).toISOString()).toBe(body.checked_at);
   });
+
+  it("handles request with custom correlation header", async () => {
+    const req = new Request("http://localhost:3000/api/webhooks/health", {
+      headers: { "x-correlation-id": "test-corr-id-123" },
+    });
+    const res = await GET(req);
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 500 error envelope when an unexpected error is thrown", async () => {
+    // Force new Date().toISOString() — called inside the GET handler — to throw
+    // so the catch branch (line 48 of route.ts) is exercised.
+    const originalToISOString = Date.prototype.toISOString;
+    Date.prototype.toISOString = () => {
+      throw new Error("simulated clock failure");
+    };
+
+    try {
+      const res = await GET();
+      expect(res.status).toBe(500);
+
+      const body = (
+        res as unknown as { body: { error: { code: string; message: string; request_id: string } } }
+      ).body;
+      expect(body.error).toHaveProperty("code", "INTERNAL_SERVER_ERROR");
+      expect(body.error).toHaveProperty(
+        "message",
+        "Failed to retrieve webhook health stats.",
+      );
+      expect(body.error).toHaveProperty("request_id");
+    } finally {
+      // Always restore — prevents test pollution.
+      Date.prototype.toISOString = originalToISOString;
+    }
+  });
 });
+
+
+
 
 describe("deriveHealthStatus", () => {
   const healthySubs: WebhookSubscriptionStats = {
