@@ -159,6 +159,15 @@ export class AppendOnlyAuditLogStore {
         if (filters.requestId && entry.requestId !== filters.requestId) {
           return false;
         }
+        if (filters.orgId && entry.metadata?.orgId !== filters.orgId) {
+          return false;
+        }
+        if (filters.startDate && entry.timestamp < filters.startDate) {
+          return false;
+        }
+        if (filters.endDate && entry.timestamp > filters.endDate) {
+          return false;
+        }
         if (filters.q) {
           const haystack = [
             entry.actor.id,
