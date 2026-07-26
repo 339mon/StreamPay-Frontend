@@ -592,6 +592,59 @@ a:hover {
   gap: 1rem;
 }
 
+/* ─── Cascade Stagger Animation (#841) ───────────────────────────────────── */
+/*
+ * Each .stream-cascade-item wraps a StreamRow.  The parent component sets
+ * `--cascade-index` as an inline custom property (0, 1, 2 …) so the CSS
+ * can calculate a per-item delay without any JavaScript timers.
+ *
+ * Motion budget:
+ *   - Opacity:   0 → 1
+ *   - Translate: 12px down → 0  (subtle vertical lift-in)
+ *   - Duration:  320 ms per item, eased with cubic-bezier for a snappy feel
+ *   - Base delay: 60 ms × index — fast enough to feel live, not jarring
+ *
+ * WCAG 2.1 §2.3 / prefers-reduced-motion:
+ *   When the user has requested reduced motion the wrapper is made visible
+ *   immediately (opacity: 1; transform: none) with no animation, so content
+ *   is still accessible without any motion.
+ */
+@keyframes stream-cascade-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.stream-cascade-item {
+  /*
+   * animation-delay is driven by --cascade-index so each row enters
+   * 60 ms after the previous one.  calc() only resolves a unitless
+   * custom property when multiplied by a value that carries units.
+   */
+  animation: stream-cascade-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--cascade-index, 0) * 60ms);
+  /* Hint to the compositor — avoids layout thrashing on scroll. */
+  will-change: opacity, transform;
+}
+
+/*
+ * Reduced-motion fallback: skip the animation entirely so the row is
+ * immediately visible.  The `!important` guards ensure this wins over
+ * the inline style and any specificity conflicts.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .stream-cascade-item {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+
 /* ─── Streams Dense Layout (density toggle) ─────────────────────────────── */
 .stream-row--compact {
   padding: 0.875rem;
