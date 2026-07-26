@@ -5,7 +5,7 @@
 import React from 'react';
 import fs from 'fs';
 import path from 'path';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import StreamTypeChip from './StreamTypeChip';
 import '@testing-library/jest-dom';
 
@@ -112,5 +112,47 @@ describe('StreamTypeChip', () => {
       expect(chip.style.transform).toBe('none');
     });
   });
-});
 
+  describe('empty state (Issue #1085)', () => {
+    it('renders themed empty state when isEmpty is true', () => {
+      render(<StreamTypeChip isEmpty />);
+      const empty = screen.getByTestId('stream-type-chip-empty-state');
+      expect(empty).toBeInTheDocument();
+      expect(empty).toHaveAttribute('data-variant', 'stream-type-chip');
+      expect(screen.getByText('No stream type selected')).toBeInTheDocument();
+      expect(
+        screen.getByText(/Pick a stream type to see amount details/)
+      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Create a stream' })).toBeInTheDocument();
+    });
+
+    it('renders empty state when type is missing or blank', () => {
+      const { rerender } = render(<StreamTypeChip type="" amount={0} />);
+      expect(screen.getByTestId('stream-type-chip-empty-state')).toBeInTheDocument();
+
+      rerender(<StreamTypeChip type="   " amount={1} />);
+      expect(screen.getByTestId('stream-type-chip-empty-state')).toBeInTheDocument();
+    });
+
+    it('invokes empty CTA handler when clicked', () => {
+      const onEmptyCtaClick = jest.fn();
+      render(<StreamTypeChip isEmpty onEmptyCtaClick={onEmptyCtaClick} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Create a stream' }));
+      expect(onEmptyCtaClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('supports custom empty copy and CTA label', () => {
+      render(
+        <StreamTypeChip
+          isEmpty
+          emptyTitle="Nothing here"
+          emptyDescription="Add a type first."
+          emptyCtaText="Browse types"
+        />
+      );
+      expect(screen.getByText('Nothing here')).toBeInTheDocument();
+      expect(screen.getByText('Add a type first.')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Browse types' })).toBeInTheDocument();
+    });
+  });
+});
