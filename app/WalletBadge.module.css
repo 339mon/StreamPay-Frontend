@@ -53,6 +53,31 @@
 .dotDisconnecting {
   background-color: var(--system-warning-border, #f59e0b);
   box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
+  animation: wallet-badge-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes wallet-badge-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.85);
+  }
+}
+
+/* JS-driven motion modifiers (Issue #1078) */
+.badgeAnimated {
+  /* default — animations enabled via .dotConnecting / transitions */
+}
+
+.badgeStatic .dotConnecting,
+.badgeStatic .dotDisconnecting {
+  animation: none !important;
+  opacity: 1;
+  transform: none;
 }
 
 .dotError {
@@ -186,11 +211,18 @@
   }
 }
 
-/* Prefers Reduced Motion */
+/* Prefers Reduced Motion — CSS-level static fallback (Issue #1078) */
 @media (prefers-reduced-motion: reduce) {
   .badge,
   .dot,
   .disconnect {
     transition: none !important;
+  }
+
+  .dotConnecting,
+  .dotDisconnecting {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
   }
 }
