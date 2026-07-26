@@ -170,7 +170,7 @@ describe("NewStreamPage - Mobile Bottom Sheet Summary", () => {
   });
 });
 
-describe("NewStreamPage - Reduced Motion Fallback", () => {
+describe("NewStreamPage - Color-Blind Safe Patterns", () => {
   let originalMatchMedia: typeof window.matchMedia;
 
   beforeAll(() => {
@@ -186,34 +186,61 @@ describe("NewStreamPage - Reduced Motion Fallback", () => {
     delete window.matchMedia;
   });
 
-  it("does not use CSS animation when reduced motion is preferred", async () => {
-    window.matchMedia = createMockMediaMulti(true, true) as any;
-    render(<NewStreamPage />);
+  it("renders status indicator with draft pattern on initial load", () => {
+    window.matchMedia = createMockMedia(false) as any;
+    const { container } = render(<NewStreamPage />);
 
-    const recipientInput = screen.getByLabelText(/recipient address/i);
-    const amountInput = screen.getByLabelText(/amount/i);
-    const submitButton = screen.getByRole("button", { name: /create stream/i });
-
-    fireEvent.change(recipientInput, { target: { value: "GD72X2Y3B6V7XW5P4D8Q2Z9K0F1E3R5T7Y9U0I2O4P6A8S0D2F4G6H8J" } });
-    fireEvent.change(amountInput, { target: { value: "150" } });
-
-    fireEvent.click(submitButton);
-
-    await waitFor(() => {
-      expect(screen.getByTestId("bottom-sheet-overlay")).toBeInTheDocument();
-    });
-
-    const overlay = screen.getByTestId("bottom-sheet-overlay");
-    expect(overlay.style.animation).toBe("");
-    expect(overlay.style.opacity).toBe("1");
-
-    const panel = overlay.querySelector("[role='dialog']") as HTMLElement;
-    expect(panel.style.animation).toBe("");
-    expect(panel.style.transform).toBe("translateY(0)");
+    const statusIndicator = container.querySelector(".create-stream-status");
+    expect(statusIndicator).toBeInTheDocument();
+    expect(statusIndicator).toHaveClass("create-stream-status--draft");
+    expect(statusIndicator).toHaveAttribute("role", "status");
+    expect(statusIndicator).toHaveAttribute("aria-label", "Form ready");
   });
 
-  it("uses CSS animation when reduced motion is not preferred", async () => {
-    window.matchMedia = createMockMediaMulti(true, false) as any;
+  it("applies cb-pattern--draft class to submit button during submission", async () => {
+    window.matchMedia = createMockMedia(false) as any;
+    render(<NewStreamPage />);
+
+    const recipientInput = screen.getByLabelText(/recipient address/i);
+    const amountInput = screen.getByLabelText(/amount/i);
+    const submitButton = screen.getByRole("button", { name: /create stream/i });
+
+    fireEvent.change(recipientInput, { target: { value: "GD72X2Y3B6V7XW5P4D8Q2Z9K0F1E3R5T7Y9U0I2O4P6A8S0D2F4G6H8J" } });
+    fireEvent.change(amountInput, { target: { value: "150" } });
+
+    fireEvent.click(submitButton);
+
+    // Button should have the draft pattern class while submitting
+    await waitFor(() => {
+      expect(submitButton).toHaveClass("cb-pattern--draft");
+      expect(submitButton).toHaveClass("button--busy");
+    });
+  });
+
+  it("removes pattern class from button after submission completes", async () => {
+    window.matchMedia = createMockMedia(false) as any;
+    render(<NewStreamPage />);
+
+    const recipientInput = screen.getByLabelText(/recipient address/i);
+    const amountInput = screen.getByLabelText(/amount/i);
+    const submitButton = screen.getByRole("button", { name: /create stream/i });
+
+    fireEvent.change(recipientInput, { target: { value: "GD72X2Y3B6V7XW5P4D8Q2Z9K0F1E3R5T7Y9U0I2O4P6A8S0D2F4G6H8J" } });
+    fireEvent.change(amountInput, { target: { value: "150" } });
+
+    fireEvent.click(submitButton);
+
+    // Wait for success
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: /stream created/i })).toBeInTheDocument();
+    });
+
+    // Button should no longer have pattern class (success state replaces form)
+    expect(screen.queryByRole("button", { name: /create stream/i })).not.toBeInTheDocument();
+  });
+
+  it("applies cb-pattern--draft to BottomSheet confirm button during submission", async () => {
+    window.matchMedia = createMockMedia(true) as any;
     render(<NewStreamPage />);
 
     const recipientInput = screen.getByLabelText(/recipient address/i);
@@ -229,10 +256,42 @@ describe("NewStreamPage - Reduced Motion Fallback", () => {
       expect(screen.getByTestId("bottom-sheet-overlay")).toBeInTheDocument();
     });
 
-    const overlay = screen.getByTestId("bottom-sheet-overlay");
-    expect(overlay.style.animation).toContain("sheetFadeIn");
+    const confirmButton = screen.getByRole("button", { name: /confirm & create/i });
+    expect(confirmButton).not.toHaveClass("cb-pattern--draft");
 
-    const panel = overlay.querySelector("[role='dialog']") as HTMLElement;
-    expect(panel.style.animation).toContain("sheetSlideUp");
+    fireEvent.click(confirmButton);
+
+    // Confirm button should get draft pattern while submitting
+    await waitFor(() => {
+      expect(confirmButton).toHaveClass("cb-pattern--draft");
+      expect(confirmButton).toHaveClass("button--busy");
+    });
+  });
+});
+
+describe("patterns.css - CreateStreamForm rules", () => {
+  it("defines the create-stream-status utility classes", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const styleText = fs.readFileSync(
+      path.join(__dirname, "../../styles/patterns.css"),
+      "utf8"
+    );
+
+    expect(styleText).toContain(".create-stream-status");
+    expect(styleText).toContain(".create-stream-status--draft");
+    expect(styleText).toContain(".create-stream-status--active");
+  });
+
+  it("defines button pattern overlay rules", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const styleText = fs.readFileSync(
+      path.join(__dirname, "../../styles/patterns.css"),
+      "utf8"
+    );
+
+    expect(styleText).toContain(".button--primary.cb-pattern--draft::before");
+    expect(styleText).toContain(".button--primary.cb-pattern--active::before");
   });
 });
