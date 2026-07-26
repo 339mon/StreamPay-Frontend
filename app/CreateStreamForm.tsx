@@ -35,8 +35,8 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { KbdHint } from "../src/components/KbdHint";
-import { Skeleton } from "./components/Skeleton";
-import { LiveRegion } from "./components/LiveRegion";
+import { Skeleton } from "../src/components/Skeleton";
+import { LiveRegion } from "../src/components/LiveRegion";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
