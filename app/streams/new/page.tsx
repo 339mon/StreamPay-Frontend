@@ -139,6 +139,11 @@ export default function NewStreamPage() {
       </section>
 
       <section style={{ maxWidth: '560px', margin: '0 auto', padding: '0 1.5rem' }}>
+        <div
+          className={`create-stream-status ${success ? 'create-stream-status--active' : 'create-stream-status--draft'}`}
+          role="status"
+          aria-label={success ? 'Stream created successfully' : 'Form ready'}
+        />
         <form
           onSubmit={handleSubmit}
           style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}
@@ -224,7 +229,7 @@ export default function NewStreamPage() {
             </button>
             <button
               type="submit"
-              className={`button button--primary${isSubmitting ? ' button--busy' : ''}`}
+              className={`button button--primary${isSubmitting ? ' button--busy cb-pattern--draft' : ''}`}
               disabled={isSubmitting}
             >
               {isSubmitting ? 'Creating…' : 'Create Stream'}
@@ -292,7 +297,7 @@ export default function NewStreamPage() {
           >
             <button
               type="button"
-              className={`button button--primary${isSubmitting ? ' button--busy' : ''}`}
+              className={`button button--primary${isSubmitting ? ' button--busy cb-pattern--draft' : ''}`}
               disabled={isSubmitting}
               onClick={performCreateStream}
               style={{ width: '100%', minHeight: '2.75rem' }}
