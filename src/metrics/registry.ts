@@ -19,3 +19,18 @@ export const webhookDuration = new Histogram({
   buckets: [0.1, 0.5, 1, 2, 5],
   registers: [registry],
 });
+
+export const reconciliationCounter = new Counter({
+  name: 'api_reconciliation_requests_total',
+  help: 'Total number of /api/reconciliation requests received',
+  labelNames: ['status'],
+  registers: [registry],
+});
+
+export const reconciliationDuration = new Histogram({
+  name: 'api_reconciliation_request_duration_seconds',
+  help: 'Histogram of /api/reconciliation request processing duration in seconds',
+  labelNames: ['status'],
+  buckets: [0.1, 0.5, 1, 2, 5],
+  registers: [registry],
+});

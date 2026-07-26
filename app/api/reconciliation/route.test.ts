@@ -20,6 +20,7 @@ import {
   type RateLimitStore,
   type RateLimitResult,
 } from '@/app/lib/rate-limit-store';
+import { reconciliationCounter, reconciliationDuration } from '@/src/metrics/registry';
 
 // ── Logger mock ──────────────────────────────────────────────────────────────
 
@@ -32,6 +33,23 @@ jest.mock('@/app/lib/logger', () => ({
   },
   getCorrelationContext: jest.fn(),
 }));
+
+jest.mock('@/src/metrics/registry', () => {
+  const mockInc = jest.fn();
+  const mockLabels = jest.fn(() => ({ inc: mockInc }));
+  const mockEndTimer = jest.fn();
+  const mockStartTimer = jest.fn(() => mockEndTimer);
+
+  return {
+    reconciliationCounter: {
+      labels: mockLabels,
+      inc: mockInc, // Just in case it's called directly
+    },
+    reconciliationDuration: {
+      startTimer: mockStartTimer,
+    },
+  };
+});
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -138,6 +156,42 @@ describe('GET /api/reconciliation – existing behaviour', () => {
   });
 });
 
+// ── Metrics tests ────────────────────────────────────────────────────────────
+
+describe('GET /api/reconciliation – metrics', () => {
+  it('records 200 status for successful requests', async () => {
+    await GET(makeRequest());
+    
+    expect(reconciliationDuration.startTimer).toHaveBeenCalled();
+    expect(reconciliationCounter.labels).toHaveBeenCalledWith('200');
+    // Start timer returns end timer function
+    const mockEndTimer = (reconciliationDuration.startTimer as jest.Mock).mock.results[0].value;
+    expect(mockEndTimer).toHaveBeenCalledWith({ status: '200' });
+  });
+
+  it('records 400 status for invalid input', async () => {
+    await GET(makeRequest({ search: '?limit=invalid' }));
+    
+    expect(reconciliationCounter.labels).toHaveBeenCalledWith('400');
+    const mockEndTimer = (reconciliationDuration.startTimer as jest.Mock).mock.results[0].value;
+    expect(mockEndTimer).toHaveBeenCalledWith({ status: '400' });
+  });
+
+  it('records 500 status on unexpected errors', async () => {
+    // Force an error by mocking URL to throw
+    const originalURL = global.URL;
+    global.URL = jest.fn().mockImplementation(() => { throw new Error('Boom'); }) as any;
+    
+    await GET(makeRequest());
+    
+    expect(reconciliationCounter.labels).toHaveBeenCalledWith('500');
+    const mockEndTimer = (reconciliationDuration.startTimer as jest.Mock).mock.results[0].value;
+    expect(mockEndTimer).toHaveBeenCalledWith({ status: '500' });
+    
+    global.URL = originalURL;
+  });
+});
+
 // ── Rate-limit tests ─────────────────────────────────────────────────────────
 
 describe('GET /api/reconciliation – rate limiting', () => {
@@ -148,6 +202,9 @@ describe('GET /api/reconciliation – rate limiting', () => {
     const res = await GET(makeRequest());
 
     expect(res.status).toBe(429);
+    expect(reconciliationCounter.labels).toHaveBeenCalledWith('429');
+    const mockEndTimer = (reconciliationDuration.startTimer as jest.Mock).mock.results[0].value;
+    expect(mockEndTimer).toHaveBeenCalledWith({ status: '429' });
   });
 
   it('429 response has Retry-After header', async () => {
