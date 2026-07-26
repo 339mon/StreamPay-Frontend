@@ -361,6 +361,8 @@ Quick links to the long-form docs under [docs/](docs/):
 - [Privacy](docs/PRIVACY.md)
 - [Reconciliation runbook](docs/reconciliation-runbook.md)
 - [Initial render performance](docs/performance-initial-render.md)
+- [StreamTypeChip color-blind patterns](docs/streamtypechip-cb-patterns.md) — `status` prop & texture overlay API
+- [StreamTypeChip focus accessibility](docs/streamtypechip-focus-accessibility.md)
 - [Help & FAQ page](/help) — in-app support page at `app/help/page.tsx`
 [SECURITY.md](SECURITY.md) in the repository root.
 

@@ -7,10 +7,16 @@ import fs from 'fs';
 import path from 'path';
 import { render, screen } from '@testing-library/react';
 import StreamTypeChip from './StreamTypeChip';
+import type { StreamStatus } from './StreamTypeChip';
 import '@testing-library/jest-dom';
 
 const styleText = fs.readFileSync(
   path.join(__dirname, 'StreamTypeChip.module.css'),
+  'utf8'
+);
+
+const patternsCss = fs.readFileSync(
+  path.join(__dirname, 'styles', 'patterns.css'),
   'utf8'
 );
 
@@ -50,6 +56,98 @@ describe('StreamTypeChip', () => {
     expect(chip).toHaveFocus();
     expect(chip).toHaveClass('stream-type-chip');
   });
+
+  // ── status prop: absent (backward-compat) ───────────────────────────────
+
+  describe('without status prop', () => {
+    it('renders without any cb-pattern class when status is omitted', () => {
+      const { container } = render(<StreamTypeChip type="Live" amount={1} />);
+      const chip = container.querySelector('.stream-type-chip') as HTMLElement;
+      expect(chip.className).not.toMatch(/cb-pattern/);
+    });
+
+    it('does not set data-status attribute when status is omitted', () => {
+      const { container } = render(<StreamTypeChip type="Live" amount={1} />);
+      const chip = container.querySelector('.stream-type-chip') as HTMLElement;
+      expect(chip).not.toHaveAttribute('data-status');
+    });
+  });
+
+  // ── status prop: each valid status ─────────────────────────────────────
+
+  describe('status prop — pattern class application', () => {
+    const statuses: StreamStatus[] = ['active', 'draft', 'paused', 'ended', 'cancelled', 'withdrawn'];
+
+    it.each(statuses)(
+      'applies cb-pattern--%s class when status="%s"',
+      (status) => {
+        const { container } = render(<StreamTypeChip type="T" amount={0} status={status} />);
+        const chip = container.querySelector('.stream-type-chip') as HTMLElement;
+        expect(chip).toHaveClass(`cb-pattern--${status}`);
+      }
+    );
+
+    it.each(statuses)(
+      'sets data-status="%s" attribute when status="%s"',
+      (status) => {
+        const { container } = render(<StreamTypeChip type="T" amount={0} status={status} />);
+        const chip = container.querySelector('.stream-type-chip') as HTMLElement;
+        expect(chip).toHaveAttribute('data-status', status);
+      }
+    );
+
+    it.each(statuses)(
+      'does not apply any other cb-pattern class when status="%s"',
+      (status) => {
+        const { container } = render(<StreamTypeChip type="T" amount={0} status={status} />);
+        const chip = container.querySelector('.stream-type-chip') as HTMLElement;
+        const otherStatuses = statuses.filter((s) => s !== status);
+        for (const other of otherStatuses) {
+          expect(chip).not.toHaveClass(`cb-pattern--${other}`);
+        }
+      }
+    );
+
+    it('always retains stream-type-chip class regardless of status', () => {
+      for (const status of statuses) {
+        const { container } = render(<StreamTypeChip type="T" amount={0} status={status} />);
+        const chip = container.querySelector('.stream-type-chip') as HTMLElement;
+        expect(chip).toHaveClass('stream-type-chip');
+      }
+    });
+
+    it('still renders type and amount correctly when status is set', () => {
+      render(<StreamTypeChip type="Salary" amount={5000} status="active" />);
+      expect(screen.getByText('Salary')).toBeInTheDocument();
+      expect(screen.getByText('5000')).toBeInTheDocument();
+    });
+  });
+
+  // ── patterns.css — StreamTypeChip selectors present ────────────────────
+
+  describe('patterns.css — StreamTypeChip selectors', () => {
+    it('defines per-status overlay selectors for .stream-type-chip', () => {
+      expect(patternsCss).toContain('.stream-type-chip.cb-pattern--active::before');
+      expect(patternsCss).toContain('.stream-type-chip.cb-pattern--draft::before');
+      expect(patternsCss).toContain('.stream-type-chip.cb-pattern--paused::before');
+      expect(patternsCss).toContain('.stream-type-chip.cb-pattern--ended::before');
+      expect(patternsCss).toContain('.stream-type-chip.cb-pattern--cancelled::before');
+      expect(patternsCss).toContain('.stream-type-chip.cb-pattern--withdrawn::before');
+    });
+
+    it('uses a reduced tile/opacity for the compact chip footprint', () => {
+      // Extract the StreamTypeChip block from CSS to verify compact settings
+      const chipBlock = patternsCss.slice(
+        patternsCss.indexOf('.stream-type-chip.cb-pattern--active::before'),
+      );
+      // background-size should use 8px 8px (compact tile)
+      expect(chipBlock).toContain('background-size: 8px 8px');
+      // opacity should reference the CSS variable rather than a hard value
+      expect(chipBlock).toContain('opacity: calc(var(--cb-pattern-opacity)');
+    });
+  });
+
+  // ── reduced-motion ──────────────────────────────────────────────────────
 
   describe('reduced-motion', () => {
     afterEach(() => {
@@ -94,6 +192,24 @@ describe('StreamTypeChip', () => {
       expect(chip).toHaveAttribute('data-reduced-motion', 'true');
       expect(chip.style.transition).toBe('none');
       expect(chip.style.transform).toBe('none');
+    });
+
+    it('applies pattern class even when reduced motion is active', () => {
+      window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+        matches: true,
+        media: query,
+        onchange: null,
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+        addListener: jest.fn(),
+        removeListener: jest.fn(),
+        dispatchEvent: jest.fn(),
+      }));
+
+      const { container } = render(<StreamTypeChip type="Video" amount={12345} status="paused" />);
+      const chip = container.querySelector('.stream-type-chip') as HTMLElement;
+      expect(chip).toHaveClass('cb-pattern--paused');
+      expect(chip).toHaveAttribute('data-reduced-motion', 'true');
     });
   });
 });

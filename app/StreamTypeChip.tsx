@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import '../src/styles/typography.css'; // Adjust path if needed
 import styles from './StreamTypeChip.module.css';
+import './styles/patterns.css';
 
 /**
  * Tracks the user's `prefers-reduced-motion` setting.
@@ -30,26 +31,48 @@ function usePrefersReducedMotion(): boolean {
   return prefersReduced;
 }
 
+/** Valid stream lifecycle statuses for color-blind pattern fills. */
+export type StreamStatus =
+  | 'active'
+  | 'draft'
+  | 'paused'
+  | 'ended'
+  | 'cancelled'
+  | 'withdrawn';
+
 /**
  * StreamTypeChip component.
  * Displays a stream type and an amount using tabular figures for better alignment.
- * 
- * @param {string} type - The type of stream.
- * @param {number} amount - The amount associated with the stream.
+ *
+ * Accessibility: when `status` is provided the chip receives a SVG-texture
+ * overlay (via `cb-pattern--<status>`) so that users with colour-vision
+ * deficiency (protanopia / deuteranopia / tritanopia / achromatopsia) can
+ * distinguish stream statuses by geometric shape in addition to colour.
+ *
+ * @param type   - The stream type label (e.g. "Video", "Audio").
+ * @param amount - The amount associated with the stream.
+ * @param status - Optional stream lifecycle status. When provided, applies the
+ *                 matching `cb-pattern--<status>` class from patterns.css.
  */
 export interface StreamTypeChipProps {
   type: string;
   amount: number;
+  /** Optional stream lifecycle status used to apply a color-blind-safe
+   *  texture pattern overlay on the chip. */
+  status?: StreamStatus;
 }
 
-export const StreamTypeChip: React.FC<StreamTypeChipProps> = ({ type, amount }) => {
+export const StreamTypeChip: React.FC<StreamTypeChipProps> = ({ type, amount, status }) => {
   const prefersReducedMotion = usePrefersReducedMotion();
+
+  const patternClass = status ? `cb-pattern--${status}` : '';
 
   return (
     <div
-      className={`${styles.streamTypeChip} stream-type-chip`}
+      className={[styles.streamTypeChip, 'stream-type-chip', patternClass].filter(Boolean).join(' ')}
       tabIndex={0}
       data-reduced-motion={prefersReducedMotion}
+      data-status={status ?? undefined}
       style={{
         transition: prefersReducedMotion ? 'none' : 'transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease',
         transform: prefersReducedMotion ? 'none' : undefined,

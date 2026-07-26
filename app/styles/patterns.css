@@ -282,6 +282,22 @@
       auto;
   }
 
+  /* ── StreamTypeChip pattern ─────────────────────────────────────────────
+   * The chip uses the shared cb-pattern--* utility classes.  Tile size is
+   * reduced to 8px so the texture is readable even in the compact chip
+   * footprint.  Opacity is kept at the same reduced level as the StatusBadge
+   * so the type label and amount remain fully legible on top. */
+
+  .stream-type-chip.cb-pattern--active::before,
+  .stream-type-chip.cb-pattern--draft::before,
+  .stream-type-chip.cb-pattern--paused::before,
+  .stream-type-chip.cb-pattern--ended::before,
+  .stream-type-chip.cb-pattern--withdrawn::before,
+  .stream-type-chip.cb-pattern--cancelled::before {
+    opacity: calc(var(--cb-pattern-opacity) * 0.7);
+    background-size: 8px 8px;
+  }
+
   /* ── MiniBurnDown pattern colour hint ─────────────────────────────────── */
 
   .stream-row__burndown--active {
