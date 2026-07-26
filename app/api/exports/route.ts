@@ -6,6 +6,19 @@ import { checkRateLimit, rateLimitResponse, type ClientIdentity } from "@/app/li
 import { getLimitForRoute } from "@/app/lib/rate-limit-config";
 import { recordRequest, recordThrottle } from "@/app/lib/rate-limit-metrics";
 import { withTimeout } from "@/src/middleware/timeout";
+import { exportCounter, exportDuration } from "@/src/metrics/registry";
+
+/**
+ * Observe Prometheus counter + histogram for an /api/exports request.
+ * Always records, including auth failures and validation errors.
+ */
+function recordExportMetrics(method: "GET" | "POST", status: number, startedAt: [number, number]) {
+  const diff = process.hrtime(startedAt);
+  const durationSeconds = diff[0] + diff[1] / 1e9;
+  const labels = { status: String(status), method };
+  exportCounter.inc(labels);
+  exportDuration.observe(labels, durationSeconds);
+}
 
 function getRequestUrl(request: Request): URL {
   try {
@@ -122,119 +135,139 @@ function scheduleExportJob(jobId: string) {
 }
 
 export async function POST(request: Request) {
-  return withTimeout(EXPORTS_TIMEOUT_MS, request, async (signal) => {
-    const { exportRepository } = getStore();
-    const actor = tryAuthenticateRequest(request);
-    if (!actor) {
-      return createErrorResponse("UNAUTHORIZED", "Missing or invalid authorization header", 401);
-    }
+  const startedAt = process.hrtime();
+  let status = 500;
 
-    // Limit by the verified wallet, after auth, so a forged bearer token can
-    // neither mint fresh buckets nor spend another user's budget.
-    const url = getRequestUrl(request);
-    const limitType = getLimitForRoute("POST", url.pathname);
-    const identity: ClientIdentity = {
-      type: "wallet",
-      value: actor.walletAddress,
-      displayValue: actor.walletAddress.slice(0, 16) + "...",
-    };
-    const rateCheck = await checkRateLimit(identity, limitType);
+  try {
+    const response = await withTimeout(EXPORTS_TIMEOUT_MS, request, async (signal) => {
+      const { exportRepository } = getStore();
+      const actor = tryAuthenticateRequest(request);
+      if (!actor) {
+        return createErrorResponse("UNAUTHORIZED", "Missing or invalid authorization header", 401);
+      }
 
-    if (!rateCheck.allowed) {
-      recordThrottle(url.pathname, limitType, identity.type, identity.displayValue);
-      return rateLimitResponse(rateCheck.retryAfter!);
-    }
-    recordRequest(url.pathname);
+      // Limit by the verified wallet, after auth, so a forged bearer token can
+      // neither mint fresh buckets nor spend another user's budget.
+      const url = getRequestUrl(request);
+      const limitType = getLimitForRoute("POST", url.pathname);
+      const identity: ClientIdentity = {
+        type: "wallet",
+        value: actor.walletAddress,
+        displayValue: actor.walletAddress.slice(0, 16) + "...",
+      };
+      const rateCheck = await checkRateLimit(identity, limitType);
 
-    const id = crypto.randomUUID();
-    const requestedAt = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + EXPORT_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+      if (!rateCheck.allowed) {
+        recordThrottle(url.pathname, limitType, identity.type, identity.displayValue);
+        return rateLimitResponse(rateCheck.retryAfter!);
+      }
+      recordRequest(url.pathname);
 
-    const job: ExportJob = {
-      id,
-      ownerId: actor.walletAddress,
-      requestedAt,
-      status: "pending",
-      expiresAt,
-      fileName: `streampay-export-${requestedAt.slice(0, 10)}.csv`,
-      rows: 0,
-    };
+      const id = crypto.randomUUID();
+      const requestedAt = new Date().toISOString();
+      const expiresAt = new Date(Date.now() + EXPORT_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-    exportRepository.jobs.set(id, job);
-    createAuditRecord(id, "export.requested", { requestedAt, retentionDays: EXPORT_RETENTION_DAYS });
-    scheduleExportJob(id);
+      const job: ExportJob = {
+        id,
+        ownerId: actor.walletAddress,
+        requestedAt,
+        status: "pending",
+        expiresAt,
+        fileName: `streampay-export-${requestedAt.slice(0, 10)}.csv`,
+        rows: 0,
+      };
 
-    return NextResponse.json({ data: job, links: { self: `/api/exports/${id}` } }, { status: 201 });
-  });
+      exportRepository.jobs.set(id, job);
+      createAuditRecord(id, "export.requested", { requestedAt, retentionDays: EXPORT_RETENTION_DAYS });
+      scheduleExportJob(id);
+
+      return NextResponse.json({ data: job, links: { self: `/api/exports/${id}` } }, { status: 201 });
+    });
+
+    status = response.status;
+    return response;
+  } finally {
+    recordExportMetrics("POST", status, startedAt);
+  }
 }
 
 export async function GET(request: Request) {
-  return withTimeout(EXPORTS_TIMEOUT_MS, request, async (signal) => {
-    const { exportRepository } = getStore();
-    const actor = tryAuthenticateRequest(request);
-    if (!actor) {
-      return createErrorResponse("UNAUTHORIZED", "Missing or invalid authorization header", 401);
-    }
+  const startedAt = process.hrtime();
+  let status = 500;
 
-    const url = getRequestUrl(request);
-    const limitType = getLimitForRoute("GET", url.pathname);
-    const identity: ClientIdentity = {
-      type: "wallet",
-      value: actor.walletAddress,
-      displayValue: actor.walletAddress.slice(0, 16) + "...",
-    };
-    const rateCheck = await checkRateLimit(identity, limitType);
-
-    if (!rateCheck.allowed) {
-      recordThrottle(url.pathname, limitType, identity.type, identity.displayValue);
-      return rateLimitResponse(rateCheck.retryAfter!);
-    }
-    recordRequest(url.pathname);
-
-    const { searchParams } = url;
-    const cursor = searchParams.get("cursor");
-    const limitStr = searchParams.get("limit");
-    const limit = limitStr ? parseInt(limitStr, 10) : 20;
-
-    if (isNaN(limit) || limit < 1 || limit > 100) {
-      return createErrorResponse("VALIDATION_ERROR", "Invalid limit parameter", 422);
-    }
-
-    let jobs = Array.from(exportRepository.jobs.values())
-      .filter((job) => job.ownerId === actor.walletAddress)
-      .sort((left, right) => {
-        const timeCompare = right.requestedAt.localeCompare(left.requestedAt);
-        return timeCompare !== 0 ? timeCompare : right.id.localeCompare(left.id);
-      });
-
-    if (cursor) {
-      try {
-        const decoded = decodeCompositeCursor(cursor);
-        const cursorIndex = jobs.findIndex(
-          (job) => job.requestedAt === decoded.timestamp && job.id === decoded.id
-        );
-        if (cursorIndex >= 0) {
-          jobs = jobs.slice(cursorIndex + 1);
-        }
-      } catch {
-        return createErrorResponse("INVALID_CURSOR", "Malformed cursor", 422);
+  try {
+    const response = await withTimeout(EXPORTS_TIMEOUT_MS, request, async (signal) => {
+      const { exportRepository } = getStore();
+      const actor = tryAuthenticateRequest(request);
+      if (!actor) {
+        return createErrorResponse("UNAUTHORIZED", "Missing or invalid authorization header", 401);
       }
-    }
 
-    const paginatedJobs = jobs.slice(0, limit);
-    const hasNext = jobs.length > limit;
-    const nextCursor =
-      hasNext && paginatedJobs.length > 0
-        ? encodeCompositeCursor(
-            paginatedJobs[paginatedJobs.length - 1].requestedAt,
-            paginatedJobs[paginatedJobs.length - 1].id
-          )
-        : null;
+      const url = getRequestUrl(request);
+      const limitType = getLimitForRoute("GET", url.pathname);
+      const identity: ClientIdentity = {
+        type: "wallet",
+        value: actor.walletAddress,
+        displayValue: actor.walletAddress.slice(0, 16) + "...",
+      };
+      const rateCheck = await checkRateLimit(identity, limitType);
 
-    return NextResponse.json({
-      data: paginatedJobs,
-      links: { self: `/api/exports?limit=${limit}` },
-      meta: { hasNext, nextCursor, total: jobs.length },
+      if (!rateCheck.allowed) {
+        recordThrottle(url.pathname, limitType, identity.type, identity.displayValue);
+        return rateLimitResponse(rateCheck.retryAfter!);
+      }
+      recordRequest(url.pathname);
+
+      const { searchParams } = url;
+      const cursor = searchParams.get("cursor");
+      const limitStr = searchParams.get("limit");
+      const limit = limitStr ? parseInt(limitStr, 10) : 20;
+
+      if (isNaN(limit) || limit < 1 || limit > 100) {
+        return createErrorResponse("VALIDATION_ERROR", "Invalid limit parameter", 422);
+      }
+
+      let jobs = Array.from(exportRepository.jobs.values())
+        .filter((job) => job.ownerId === actor.walletAddress)
+        .sort((left, right) => {
+          const timeCompare = right.requestedAt.localeCompare(left.requestedAt);
+          return timeCompare !== 0 ? timeCompare : right.id.localeCompare(left.id);
+        });
+
+      if (cursor) {
+        try {
+          const decoded = decodeCompositeCursor(cursor);
+          const cursorIndex = jobs.findIndex(
+            (job) => job.requestedAt === decoded.timestamp && job.id === decoded.id
+          );
+          if (cursorIndex >= 0) {
+            jobs = jobs.slice(cursorIndex + 1);
+          }
+        } catch {
+          return createErrorResponse("INVALID_CURSOR", "Malformed cursor", 422);
+        }
+      }
+
+      const paginatedJobs = jobs.slice(0, limit);
+      const hasNext = jobs.length > limit;
+      const nextCursor =
+        hasNext && paginatedJobs.length > 0
+          ? encodeCompositeCursor(
+              paginatedJobs[paginatedJobs.length - 1].requestedAt,
+              paginatedJobs[paginatedJobs.length - 1].id
+            )
+          : null;
+
+      return NextResponse.json({
+        data: paginatedJobs,
+        links: { self: `/api/exports?limit=${limit}` },
+        meta: { hasNext, nextCursor, total: jobs.length },
+      });
     });
-  });
+
+    status = response.status;
+    return response;
+  } finally {
+    recordExportMetrics("GET", status, startedAt);
+  }
 }

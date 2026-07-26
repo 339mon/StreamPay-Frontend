@@ -98,11 +98,18 @@ streampay_metrics_up 1
 | `streampay_requests_total` | counter | Total requests observed per route |
 | `streampay_rate_limit_throttled_total` | counter | Throttled requests per route and limit type |
 | `streampay_metrics_up` | gauge | Whether the metrics endpoint is serving (always 1) |
+| `webhook_requests_total` | counter | Total webhook requests by status and event type |
+| `webhook_request_duration_seconds` | histogram | Webhook request duration by status and event type |
+| `export_requests_total` | counter | Total `/api/exports` requests by status and method |
+| `export_request_duration_seconds` | histogram | `/api/exports` request duration by status and method |
 
 ### Labels
 
 - `route`: The API route path (e.g., `/api/streams`, `/api/streams/123`)
 - `limit_type`: The type of rate limit that was applied (e.g., `org`, `rate`)
+- `status`: HTTP status code (export/webhook endpoint metrics)
+- `method`: HTTP method (`GET` / `POST`) for export endpoint metrics
+- `event_type`: Webhook event type label
 
 ## Usage Examples
 
