@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useCallback, useEffect } from "react";
-import { KbdHint } from "../src/components/KbdHint";
 import styles from "./ReceiptCard.module.css";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -32,6 +31,25 @@ export function maskAddress(address: string): string {
 
 const COPY_FEEDBACK_MS = 2000;
 
+/**
+ * Returns true when the user has requested reduced motion via OS/UA settings.
+ * Falls back to false when the `matchMedia` API is unavailable (SSR, legacy).
+ */
+function usePrefersReducedMotion(): boolean {
+  const [prefersReduced, setPrefersReduced] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setPrefersReduced(mq.matches);
+
+    const handler = (e: MediaQueryListEvent) => setPrefersReduced(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+
+  return prefersReduced;
+}
+
 export function ReceiptCard({
   streamId,
   recipient,
@@ -44,6 +62,7 @@ export function ReceiptCard({
 }: ReceiptCardProps) {
   const [masked, setMasked] = useState(defaultMasked);
   const [copied, setCopied] = useState(false);
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   const shownRecipient = masked ? maskAddress(recipient) : recipient;
   const networkLabel = network === "mainnet" ? "Stellar Mainnet" : "Stellar Testnet";
@@ -54,12 +73,14 @@ export function ReceiptCard({
     if (navigator.clipboard) {
       navigator.clipboard.writeText(shareText).then(() => {
         setCopied(true);
-        setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);
+        if (!prefersReducedMotion) {
+          setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);
+        }
       }).catch((e) => {
         console.error("Failed to copy", e);
       });
     }
-  }, [streamId, amount, assetCode, shownRecipient]);
+  }, [streamId, amount, assetCode, shownRecipient, prefersReducedMotion]);
 
   useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -92,7 +113,7 @@ export function ReceiptCard({
 
   return (
     <article
-      className={styles.card}
+      className={`${styles.card} ${prefersReducedMotion ? styles.cardReducedMotion : ""}`}
       aria-label="Stream receipt card"
       tabIndex={0}
     >
