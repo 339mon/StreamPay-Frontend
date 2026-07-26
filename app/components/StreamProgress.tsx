@@ -26,10 +26,12 @@
  * ## Amounts
  * Accepts raw i128-compatible bigint or number values. No decimal conversion
  * is performed here; callers supply pre-scaled display values if needed.
- * The percentage label and remaining-balance text both render with
- * `font-variant-numeric: tabular-nums` (the shared `.tabular-nums` utility
- * in `app/styles/typography.css`) so digit widths stay fixed as the value
- * changes, preventing the bar's meta row from jittering horizontally.
+ *
+ * ## Styling
+ * Track/meta spacing and label typography (`app/globals.css`, the
+ * `.stream-progress*` rules) are pinned to the shared `--space-*` / `--text-*`
+ * / `--font-*` design tokens rather than hardcoded rem values, so the
+ * component stays in step with any future scale adjustments.
  */
 
 "use client";

@@ -90,9 +90,13 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
   to the broader streams list.
 - `StreamProgress` now emits shared color-blind pattern classes on its fill so
   stream state remains distinguishable beyond color alone.
-- `StreamProgress` now applies `tabular-nums` to its percentage/status label
-  (the remaining-balance amount already had it), so digit widths stay fixed
-  as accrual updates instead of jittering horizontally.
+- `StreamProgress` spacing and typography are now pinned to design tokens
+  (`--space-*` / `--text-*` / `--font-*` in `app/globals.css`) instead of
+  hardcoded rem values. These tokens were referenced elsewhere in the
+  codebase but never actually defined; they're now added to `:root`,
+  fixing the underlying gap app-wide. The percentage label's font-size
+  normalizes from `0.8125rem` to the nearest scale step, `--text-sm`
+  (`0.875rem`).
 
 ### Fixed
 - `GET /api/orgs/:orgId/members` and `POST /api/orgs/:orgId/members` now return
