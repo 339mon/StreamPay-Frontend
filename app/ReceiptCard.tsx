@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
+import { KbdHint } from "../src/components/KbdHint";
 import styles from "./ReceiptCard.module.css";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -20,6 +21,8 @@ export type ReceiptCardProps = {
   status?: string;
   network?: "testnet" | "mainnet";
   defaultMasked?: boolean;
+  /** Whether to render keyboard shortcut hints (default true) */
+  showKbdHints?: boolean;
 };
 
 export function maskAddress(address: string): string {
@@ -37,6 +40,7 @@ export function ReceiptCard({
   status,
   network,
   defaultMasked = true,
+  showKbdHints = true,
 }: ReceiptCardProps) {
   const [masked, setMasked] = useState(defaultMasked);
   const [copied, setCopied] = useState(false);
@@ -56,6 +60,35 @@ export function ReceiptCard({
       });
     }
   }, [streamId, amount, assetCode, shownRecipient]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      const tagName = activeEl?.tagName.toLowerCase();
+      if (
+        (tagName === "input" && (activeEl as HTMLInputElement).type !== "checkbox") ||
+        tagName === "textarea" ||
+        tagName === "select"
+      ) {
+        return;
+      }
+
+      if (event.key === "c" || event.key === "C") {
+        if (!event.ctrlKey && !event.metaKey && !event.altKey) {
+          event.preventDefault();
+          handleCopy();
+        }
+      } else if (event.key === "m" || event.key === "M") {
+        if (!event.ctrlKey && !event.metaKey && !event.altKey) {
+          event.preventDefault();
+          setMasked((prev) => !prev);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleCopy]);
 
   return (
     <article
@@ -131,18 +164,26 @@ export function ReceiptCard({
               checked={masked}
               onChange={(e) => setMasked(e.target.checked)}
               aria-label="Mask recipient address for privacy"
+              aria-keyshortcuts="M"
               className={styles.maskInput}
             />
-            Mask
+            <span>Mask</span>
+            {showKbdHints && (
+              <KbdHint keys="M" variant="subtle" size="sm" ariaLabel="Shortcut: M" testId="receipt-kbd-mask" />
+            )}
           </label>
 
           <button
             type="button"
             onClick={handleCopy}
             aria-label={copied ? "Share text copied" : "Copy share text"}
+            aria-keyshortcuts="C"
             className={`${styles.copyBtn} ${copied ? styles.copyBtnCopied : styles.copyBtnDefault}`}
           >
-            {copied ? "Copied" : "Copy"}
+            <span>{copied ? "Copied" : "Copy"}</span>
+            {showKbdHints && (
+              <KbdHint keys="C" variant="subtle" size="sm" ariaLabel="Shortcut: C" testId="receipt-kbd-copy" />
+            )}
           </button>
         </div>
       </div>
