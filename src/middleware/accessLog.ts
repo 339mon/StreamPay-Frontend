@@ -13,7 +13,7 @@ export interface AccessLogContext {
 export function logAccessEvent(context: AccessLogContext): void {
   const correlation = getCorrelationContext();
 
-  logger.info("api access", {
+  logger.info("http access", {
     ...context,
     request_id: correlation?.request_id,
     correlation_id: correlation?.correlation_id,
