@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { getCorrelationContext, logger } from '@/app/lib/logger';
 import { withStrongEtag } from '@/src/middleware/etag';
 import { applyRateLimit } from '@/src/middleware/rateLimit';
+import { logAccessEvent } from '@/src/middleware/accessLog';
 
 function errorResponse(code: string, message: string, status: number) {
   const requestId = getCorrelationContext()?.request_id ?? `req-${crypto.randomUUID()}`;
@@ -45,8 +46,29 @@ export async function GET(request: Request) {
       },
     };
 
-    return withStrongEtag(request, responsePayload);
+    const startTime = Date.now();
+    const response = withStrongEtag(request, responsePayload);
+
+    // Structured access log for observability
+    logAccessEvent({
+      method: 'GET',
+      path: '/api/reconciliation',
+      status: 200,
+      durationMs: Date.now() - startTime,
+      limit,
+    });
+
+    return response;
   } catch (error: any) {
+    const statusCode = error.message?.includes('INVALID') ? 400 : 500;
+    logAccessEvent({
+      method: 'GET',
+      path: '/api/reconciliation',
+      status: statusCode,
+      errorCode: statusCode === 400 ? 'INVALID_INPUT' : 'INTERNAL_SERVER_ERROR',
+      errorMessage: error.message,
+    });
+
     logger.error('Unexpected error in reconciliation route', { error: error.message });
     return errorResponse('INTERNAL_SERVER_ERROR', 'An unexpected error occurred', 500);
   }

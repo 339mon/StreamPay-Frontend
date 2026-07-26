@@ -63,3 +63,25 @@ export async function streamsRateLimit(
   recordRequest(url.pathname);
   return { allowed: true };
 }
+
+/**
+ * Convenience wrapper for per-route rate limiting.
+ *
+ * Applies the rate limit for the given route key and returns the 429 response
+ * if the caller's bucket is exhausted, or `null` if the request is allowed.
+ *
+ * @param request  Incoming request (used for identity resolution).
+ * @param routeKey Route slug used to look up the rate-limit configuration
+ *                 (e.g. `"reconciliation"`, `"webhooks"`).
+ * @returns `null` when allowed, or a `NextResponse` with status 429.
+ */
+export async function applyRateLimit(
+  request: Request,
+  routeKey: string,
+): Promise<NextResponse | null> {
+  const result = await streamsRateLimit(request, "GET", `/api/${routeKey}`);
+  if (!result.allowed) {
+    return result.response;
+  }
+  return null;
+}
