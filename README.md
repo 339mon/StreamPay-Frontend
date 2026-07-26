@@ -101,6 +101,13 @@ transition table and invariants.
 - Short months use actual day counts (no 30/32-day months).
 - Local time display may shift with DST; calculations remain UTC.
 
+## Webhook input validation
+
+`POST /api/webhooks` now validates request bodies with a strict Zod schema.
+Requests must include a non-empty `eventType` string. Optional fields are
+`eventId`, `timestamp` (ISO 8601), `source`, `data`, `metadata`, and `headers`.
+Unknown top-level fields now return HTTP 400 with `INVALID_INPUT`.
+
 ## Horizon/Soroban resilience notes
 
 The resilience wrapper in app/lib/stellarClient.ts provides a short-TTL read-through cache for account

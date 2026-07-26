@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- `POST /api/webhooks` now applies strict Zod body validation. Requests must include a non-empty `eventType`; unknown top-level fields now return `400 INVALID_INPUT`.
+
 All notable API changes to StreamPay are documented here.  
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).  
 API versioning follows the policy in [README.md#api-versioning](README.md#api-versioning).
