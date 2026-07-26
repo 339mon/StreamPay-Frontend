@@ -18,6 +18,25 @@
   }
 }
 
+/* ── Reduced motion fallback ───────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .card *,
+  .card *::before,
+  .card *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.cardReducedMotion .copyBtn {
+  transition: none;
+}
+
+/* ──────────────────────────────────────────────────────────────────────── */
+
 .header {
   margin-bottom: 16px;
 }
