@@ -211,6 +211,8 @@ export async function middleware(request: NextRequest) {
 
     if (request.method === 'OPTIONS') {
       const headers = buildCorsHeaders(origin);
+      const requestId = resolveRequestId(request.headers);
+      headers.set(REQUEST_ID_HEADER, requestId);
       setCanaryHeader(headers, isCanary);
       return new NextResponse(null, {
         status: 204,
@@ -220,7 +222,9 @@ export async function middleware(request: NextRequest) {
   }
 
   if (request.method === 'OPTIONS' && !origin) {
+    const requestId = resolveRequestId(request.headers);
     const response = new NextResponse(null, { status: 204 });
+    response.headers.set(REQUEST_ID_HEADER, requestId);
     setCanaryHeader(response.headers, isCanary);
     return response;
   }

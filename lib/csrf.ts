@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { resolveRequestId } from './requestId';
 
 export const CSRF_COOKIE_NAME = 'csrf-token';
 export const CSRF_HEADER_NAME = 'x-csrf-token';
@@ -106,7 +107,7 @@ export function attachCsrfCookie(response: NextResponse, request: NextRequest | 
 }
 
 export function createCsrfForbiddenResponse(request: NextRequest | Request): NextResponse {
-  const requestId = request.headers.get('x-request-id') ?? `req_${Date.now().toString(36)}`;
+  const requestId = resolveRequestId(request.headers);
   return NextResponse.json(
     {
       error: {
