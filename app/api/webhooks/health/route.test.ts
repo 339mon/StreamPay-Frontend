@@ -81,6 +81,14 @@ describe("GET /api/webhooks/health", () => {
     expect(new Date(body.checked_at).toISOString()).toBe(body.checked_at);
   });
 
+  it("handles request with custom correlation header", async () => {
+    const req = new Request("http://localhost:3000/api/webhooks/health", {
+      headers: { "x-correlation-id": "test-corr-id-123" },
+    });
+    const res = await GET(req);
+    expect(res.status).toBe(200);
+  });
+
   it("returns 500 error envelope when an unexpected error is thrown", async () => {
     // Force new Date().toISOString() — called inside the GET handler — to throw
     // so the catch branch (line 48 of route.ts) is exercised.
@@ -108,6 +116,7 @@ describe("GET /api/webhooks/health", () => {
     }
   });
 });
+
 
 
 
