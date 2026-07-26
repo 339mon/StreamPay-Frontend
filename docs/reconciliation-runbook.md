@@ -2,6 +2,10 @@
 
 This document outlines the steps to take when the nightly reconciliation job detects a mismatch between the StreamPay database and the on-chain (Stellar/Soroban) state.
 
+## Health probe
+
+Use `GET /api/reconciliation/health` to verify that the reconciliation dependencies needed by the service are available. The endpoint returns `200 OK` when both the database and on-chain dependencies are ready and `503 Service Unavailable` when either dependency reports degraded readiness. The payload includes per-dependency status and timestamps for easier monitoring and alerting.
+
 ## Per-stream diff endpoint
 
 `GET /api/internal/reconciliation/diff/:id` lets you inspect the DB-vs-on-chain diff for a single stream without triggering a full reconciliation run. Use it to quickly triage alerts from the nightly job.

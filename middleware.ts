@@ -131,8 +131,7 @@ function resolveRequestId(request: NextRequest): string {
   return `req_${Date.now().toString(36)}_${Math.random().toString(16).slice(2, 10)}`;
 }
 
-  return pathname.startsWith('/api/');
-}
+
 
 export async function middleware(request: NextRequest) {
   const fingerprint = await captureRequestFingerprint(request);
@@ -242,10 +241,10 @@ export async function middleware(request: NextRequest) {
     return csrfResponse;
   }
 
+  // Add CORS headers for allowed origins on non-preflight requests
   if (originAllowed) {
-    const headers = response.headers;
-    headers.set('Access-Control-Allow-Origin', origin!);
-    headers.set('Vary', 'Origin');
+    response.headers.set('Access-Control-Allow-Origin', origin!);
+    response.headers.set('Vary', 'Origin');
   }
 
   return response;

@@ -92,7 +92,7 @@ mod admin_nonce_tests {
                 duration: 4_500,
                 last_update: 1_000,
                 status: StreamStatus::Active,
-                pause_time: 0,
+                paused_at: 0,
                 total_paused_duration: 0,
             };
             self.env.as_contract(&self.contract_id, || {

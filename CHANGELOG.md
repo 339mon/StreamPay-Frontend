@@ -30,12 +30,14 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
   (gzip/brotli for all responses).
 
 ### Added
-- `app/settings/notifications/page.tsx` — dedicated GrantFox FWC26
-  notifications page exposing per-category in-app/email toggles with a
-  focused save flow and responsive, accessible settings layout.
-- `app/components/PayoutSummary.tsx` — a refined GrantFox payout summary card
-  with tighter typography, spacing, and responsive layout for the campaign
-  surface while preserving dark-mode and accessibility token consistency.
+- MRU (most-recently-used) wallet ordering on the connect modal: the
+  provider a user picked last surfaces at the top of `WalletModal`,
+  persisted under the `streampay_mru_wallet` `localStorage` key via
+  `getMRUWalletId` / `setMRUWalletId` / `getSortedProviders` in
+  `app/state/walletPrefs.ts`. Stale ids and SSR are tolerated; the
+  connect flow never breaks because of a missing preference. Backed by
+  focused unit tests in `app/state/walletPrefs.test.ts` and documented in
+  `docs/mru-wallet-ordering.md`.
 - `lib/chaos.ts` — fault-injection middleware for chaos tests. Lets test
   suites inject latency, error responses, or request aborts at configurable
   rates (defaults disabled; opt in via `CHAOS_ENABLED=true` or programmatic
@@ -54,6 +56,12 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
   and the middleware dispatch surface.
 
 ### Security
+- Per-user rate limit on `POST /api/exports`: 5 requests/min per
+  authenticated wallet, checked after JWT verification so forged tokens
+  cannot spend a victim's budget, returning the standard `429` envelope with
+  `Retry-After`. Rate-limit buckets are now keyed per limit tier
+  (read/write/export), so throttling one endpoint class can no longer drain
+  a user's allowance for another.
 - Wallet auth IP rate limiting on `GET|POST /api/auth/wallet` now returns the
   canonical `{ error: { code, message, request_id } }` envelope on 429, echoes
   `x-request-id`, and emits structured `wallet_ip_rate_limit_exceeded` logs
@@ -75,6 +83,13 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
   forwards it via the internal `x-request-fingerprint` header. Fingerprint
   observations are written to the append-only audit log with correlation IDs,
   and privileged stream audit events now include `requestFingerprint` metadata.
+
+### Changed
+- The streams list now surfaces a distinct filtered-results empty state when the
+  current view has no matches, with clearer guidance to clear filters and return
+  to the broader streams list.
+- `StreamProgress` now emits shared color-blind pattern classes on its fill so
+  stream state remains distinguishable beyond color alone.
 
 ### Fixed
 - `GET /api/orgs/:orgId/members` and `POST /api/orgs/:orgId/members` now return

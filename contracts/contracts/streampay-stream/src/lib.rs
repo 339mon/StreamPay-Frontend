@@ -20,8 +20,10 @@
 mod allowlist;
 mod error;
 mod events;
+mod fee_sweep;
 mod fees;
 mod limits;
+mod migrate;
 mod multi;
 mod release;
 mod snapshot_diff;
@@ -29,6 +31,9 @@ mod storage;
 mod views;
 pub mod admin;
 mod withdrawer;
+
+#[cfg(test)]
+mod fee_sweep_test;
 
 pub use error::Error;
 use soroban_sdk::contracttype;
@@ -315,6 +320,17 @@ impl Contract {
     }
 
     /// Returns the current fee collector address, or `None` if unset.
+    ///
+    /// When no fee collector is set, the full withdrawal amount (including
+    /// any per-stream fee) goes to the recipient. See [`Contract::set_fee_collector`]
+    /// for how to configure the collector.
+    ///
+    /// # Returns
+    /// - `Some(Address)` — the configured fee collector address.
+    /// - `None` — no fee collector has been set; fees are not deducted.
+    ///
+    /// # Errors
+    /// This entrypoint is read-only and never returns an error.
     pub fn get_fee_collector(env: Env) -> Option<Address> {
         fees::get_fee_collector(&env)
     }
@@ -343,6 +359,16 @@ impl Contract {
     }
 
     /// Returns the global default `fee_bps` (0 if never set).
+    ///
+    /// This is the fee basis points applied to streams that do not supply
+    /// an explicit per-stream override at creation time. The default is `0`
+    /// unless modified via [`Contract::set_default_fee_bps`].
+    ///
+    /// # Returns
+    /// The default fee in basis points `[0, 10_000]`.
+    ///
+    /// # Errors
+    /// This entrypoint is read-only and never returns an error.
     pub fn get_default_fee_bps(env: Env) -> u32 {
         fees::get_default_fee_bps(&env)
     }
@@ -358,6 +384,63 @@ impl Contract {
         // Verify the stream actually exists before returning a fee value.
         get_existing_stream(&env, stream_id)?;
         Ok(fees::get_stream_fee_bps(&env, stream_id))
+    }
+
+    // ── Fee sweep entrypoint ──────────────────────────────────────────────────
+
+    /// Sweeps accumulated protocol fees from the given streams into the
+    /// configured fee collector (treasury) address.
+    ///
+    /// This is the primary mechanism for the protocol treasury to collect fees.
+    /// Rather than transferring each fee individually at withdrawal time, fees
+    /// are recorded on-chain per-stream and collected in batch here.
+    ///
+    /// ## Parameters
+    /// - `admin`      — Must match the admin set at initialisation.
+    /// - `stream_ids` — IDs of streams whose accumulated fee balances to sweep.
+    ///                  Streams with a zero balance or a missing stream row are
+    ///                  silently skipped.  Pass an empty list to sweep nothing
+    ///                  (returns `Error::SweepNoFees`).
+    ///
+    /// ## Returns
+    /// A [`SweepResult`] with `streams_swept` and `total_swept` populated.
+    ///
+    /// ## Errors
+    /// - [`Error::NotFound`]     — Contract not initialised, or no fee collector set.
+    /// - [`Error::Unauthorized`] — `admin` is not the stored admin address.
+    /// - [`Error::SweepNoFees`]  — All listed streams have a zero accumulated balance.
+    /// - [`Error::Overflow`]     — Aggregate fee total would overflow `i128`.
+    ///
+    /// ## Auth
+    /// Requires authorisation from `admin`.  An arbitrary caller cannot redirect
+    /// protocol funds.
+    ///
+    /// ## Security
+    /// - Admin-gated: only the stored admin can trigger a sweep.
+    /// - Double-sweep proof: each stream's balance is atomically zeroed before
+    ///   the token transfer; a second sweep call finds zero balances.
+    /// - Reentrancy-safe: Soroban executes invocations sequentially within a
+    ///   single ledger transaction; no re-entrant callback can occur.
+    /// - Overflow-safe: aggregate arithmetic uses `checked_add`.
+    /// - Partial-failure safe: Soroban rolls back all writes on any error.
+    pub fn sweep_fees(
+        env: Env,
+        admin: Address,
+        stream_ids: soroban_sdk::Vec<u64>,
+    ) -> Result<(u32, i128), Error> {
+        let r = fee_sweep::sweep_fees(&env, &admin, &stream_ids)?;
+        Ok((r.streams_swept, r.total_swept))
+    }
+
+    /// Returns the accumulated (un-swept) protocol fee balance for `stream_id`.
+    ///
+    /// Read-only; requires no auth.  Returns `0` if the stream has never had a
+    /// fee charged or has already been fully swept.
+    ///
+    /// Useful for off-chain tooling to determine which streams have outstanding
+    /// fee balances before calling [`Contract::sweep_fees`].
+    pub fn get_accrued_fees(env: Env, stream_id: u64) -> i128 {
+        fees::get_accumulated_fees(&env, stream_id)
     }
 
     /// Configures the **per-organisation** token allowlist for `org`.
@@ -395,6 +478,17 @@ impl Contract {
 
     /// Returns `true` if `token` is allowed for `org` under the per-org
     /// allowlist (read-only; also honours the global allowlist).
+    ///
+    /// A token is allowed when both the global allowlist and the per-org
+    /// allowlist permit it. See [`Contract::set_org_token_allowed`] for
+    /// the per-org allowlist semantics.
+    ///
+    /// This is a read-only view that never mutates state or requires auth.
+    ///
+    /// # Returns
+    /// - `true` — `token` is allowed for `org` (neither global nor per-org
+    ///   allowlist blocks it).
+    /// - `false` — `token` is blocked for `org`.
     pub fn is_org_token_allowed(env: Env, org: Address, token: Address) -> bool {
         !allowlist::is_org_token_blocked(&env, &org, &token)
             && !storage::is_token_blocked(&env, &token)
@@ -450,6 +544,10 @@ impl Contract {
     /// [`Error::StreamLimitExceeded`] until an existing stream transitions
     /// to a terminal state (`Settled` or `Cancelled`).
     ///
+    /// # Parameters
+    /// - `admin` — Must match the admin set at initialisation.
+    /// - `limit` — Maximum number of concurrent active streams per sender.
+    ///
     /// # Errors
     /// - [`Error::Unauthorized`] if `admin` is not the initialised admin.
     ///
@@ -462,17 +560,47 @@ impl Contract {
     }
 
     /// Returns the current per-sender stream limit.
+    ///
+    /// This is the maximum number of active (non-terminal) streams a single
+    /// sender may have concurrently. Defaults to `10` if not explicitly set
+    /// via [`Contract::set_max_streams_per_sender`].
+    ///
+    /// # Returns
+    /// The per-sender limit as a `u64`.
+    ///
+    /// # Errors
+    /// This entrypoint is read-only and never returns an error.
     pub fn max_streams_per_sender(env: Env) -> u64 {
         limits::get_max_streams_per_sender(&env)
     }
 
     /// Returns the number of active streams currently attributed to `sender`.
+    ///
+    /// # Parameters
+    /// - `sender` — Address to query.
+    ///
+    /// # Returns
+    /// The count of non-terminal streams for `sender`. Returns `0` if the
+    /// sender has never created a stream or all their streams are settled.
+    ///
+    /// # Errors
+    /// This entrypoint is read-only and never returns an error.
     pub fn sender_stream_count(env: Env, sender: Address) -> u64 {
         limits::get_sender_stream_count(&env, &sender)
     }
 
     /// Returns how many more streams `sender` may create before reaching the
     /// configured per-sender limit (`0` once the limit is reached).
+    ///
+    /// # Parameters
+    /// - `sender` — Address to query.
+    ///
+    /// # Returns
+    /// The remaining capacity: `limit - current_count`. Returns `0` once the
+    /// sender is at or above the limit.
+    ///
+    /// # Errors
+    /// This entrypoint is read-only and never returns an error.
     pub fn remaining_sender_capacity(env: Env, sender: Address) -> u64 {
         limits::remaining_sender_capacity(&env, &sender)
     }
@@ -508,7 +636,15 @@ impl Contract {
 
     /// Returns the current protocol-level fee in basis points.
     ///
-    /// Returns `0` when no fee has been configured.
+    /// This fee is charged on withdrawals made via
+    /// [`Contract::withdraw_with_max_fee_bps`]. Returns `0` when no fee
+    /// has been configured (the default).
+    ///
+    /// # Returns
+    /// The protocol fee in basis points, in the range `[0, 10_000]`.
+    ///
+    /// # Errors
+    /// This entrypoint is read-only and never returns an error.
     pub fn fee_bps(env: Env) -> u32 {
         storage::get_fee_bps(&env)
     }
@@ -850,7 +986,7 @@ impl Contract {
             duration,
             last_update: 0,
             status: StreamStatus::Draft,
-            pause_time: 0,
+            paused_at: 0,
             total_paused_duration: 0,
             fee_bps,
         };
@@ -884,16 +1020,6 @@ impl Contract {
     ///
     /// # Returns
     /// The updated [`Stream`] record after activation.
-    ///
-    /// # Errors
-    /// - [`Error::ContractPaused`] if the global pause flag is set.
-    /// - [`Error::NotFound`] if `stream_id` does not exist.
-    /// - [`Error::InvalidState`] if the stream is not in `Draft` status.
-    /// - [`Error::InvalidTimeRange`] if `now + duration` overflows `u64`.
-    ///
-    ///
-    /// Sets `status = Active`, `start_time = now`, `last_update = now`, and
-    /// `end_time = now + duration`. No token transfer occurs.
     ///
     /// # Errors
     /// - [`Error::ContractPaused`] if the global pause flag is set.
@@ -950,6 +1076,16 @@ impl Contract {
 
     /// Returns the token amount currently accrued and available for withdrawal.
     ///
+    /// This is a read-only view that computes `vested_amount - released_amount`
+    /// using overflow-safe linear accrual. It never mutates state or requires
+    /// auth, and is unaffected by the global pause flag.
+    ///
+    /// # Parameters
+    /// - `stream_id` — Numeric ID of the stream to query.
+    ///
+    /// # Returns
+    /// The currently withdrawable token amount (base units). Always non-negative.
+    ///
     /// # Errors
     /// - [`Error::NotFound`] if `stream_id` does not exist.
     /// - [`Error::Overflow`] if the vested-amount computation overflows.
@@ -961,8 +1097,18 @@ impl Contract {
     /// Returns the stream balance (total vested amount) at the current ledger
     /// timestamp using overflow-safe linear accrual.
     ///
+    /// This is a read-only view that never mutates state or requires auth.
+    /// It is unaffected by the global pause flag.
+    ///
+    /// # Parameters
+    /// - `stream_id` — Numeric ID of the stream to query.
+    ///
+    /// # Returns
+    /// The total vested token amount (base units). Always in `[0, total_amount]`.
+    ///
     /// # Errors
     /// - [`Error::NotFound`] if `stream_id` does not exist.
+    /// - [`Error::Overflow`] if the vested-amount computation overflows.
     pub fn stream_balance(env: Env, stream_id: u64) -> Result<i128, Error> {
         let stream = get_existing_stream(&env, stream_id)?;
         Ok(release::vested_amount(&stream, env.ledger().timestamp()))
@@ -1028,7 +1174,23 @@ impl Contract {
     }
 
     /// Withdraws accrued escrow on behalf of `caller`.
-    /// initiates the withdrawal.
+    ///
+    /// Transfers `amount` tokens from the contract escrow to the stream
+    /// recipient. The caller must be the stream recipient or an allowlisted
+    /// withdrawer (see [`Contract::add_withdrawer`]).
+    ///
+    /// If the stream has a per-stream `fee_bps` and a fee collector has been
+    /// configured, the fee is deducted before the transfer.
+    ///
+    /// # Parameters
+    /// - `caller`    — Address initiating the withdrawal (must be recipient or
+    ///   allowlisted withdrawer).
+    /// - `stream_id` — Numeric ID of the stream to withdraw from.
+    /// - `amount`    — Token amount (base units) to withdraw. Must be > 0 and
+    ///   ≤ the currently accrued withdrawable balance.
+    ///
+    /// # Returns
+    /// The `amount` that was withdrawn on success.
     ///
     /// # Errors
     /// - [`Error::ContractPaused`] if the global pause flag is set.
@@ -1193,52 +1355,6 @@ impl Contract {
         Ok(storage::get_withdrawer_allowlist(&env, stream_id))
     }
 
-    /// Cancels an active or paused stream before it reaches its end time.
-    ///
-    /// Only the stream sender may cancel. Unvested funds are refunded to the
-    /// sender; any already-vested-but-undrawn funds remain claimable by the
-    /// recipient (they stay in escrow and the stream transitions to Cancelled
-    /// so that the recipient can still call `withdraw`). If all vested funds
-    /// have already been withdrawn, the stream is settled immediately.
-    ///
-    /// # Errors
-    /// - [`Error::NotFound`] if `stream_id` does not exist.
-    /// - [`Error::InvalidState`] if the stream is not Active or Paused.
-    ///
-    /// # Auth
-    /// Requires authorisation from the stream's `sender`.
-    pub fn cancel_stream(env: Env, stream_id: u64) -> Result<(), Error> {
-        let mut stream = get_existing_stream(&env, stream_id)?;
-        stream.sender.require_auth();
-
-        if stream.status != StreamStatus::Active && stream.status != StreamStatus::Paused {
-            return Err(Error::InvalidState);
-        }
-
-        let now = env.ledger().timestamp();
-        let vested = release::vested_amount(&stream, now);
-        let unvested = stream
-            .total_amount
-            .checked_sub(vested)
-            .ok_or(Error::InvalidAmount)?;
-
-        if unvested > 0 {
-            #[allow(clippy::needless_borrows_for_generic_args)]
-            token::Client::new(&env, &stream.token).transfer(
-                &env.current_contract_address(),
-                &stream.sender,
-                &unvested,
-            );
-        }
-
-        stream.status = StreamStatus::Cancelled;
-        stream.last_update = now;
-
-        storage::set_stream(&env, stream_id, &stream);
-
-        Ok(())
-    }
-
     /// Pauses an active stream, freezing accrual while preserving vested funds.
     ///
     /// Only the stream sender may call this. On pause, status is set to Paused
@@ -1249,6 +1365,9 @@ impl Contract {
     /// - [`Error::NotFound`] if `stream_id` does not exist.
     /// - [`Error::Unauthorized`] if caller is not the stream sender.
     /// - [`Error::InvalidState`] if the stream is not `Active`.
+    ///
+    /// # Auth
+    /// Requires authorisation from the stream's `sender`.
     pub fn pause(env: Env, stream_id: u64) -> Result<Stream, Error> {
         let mut stream = get_existing_stream(&env, stream_id)?;
         stream.sender.require_auth();
@@ -1269,11 +1388,8 @@ impl Contract {
         Ok(stream)
     }
 
-    /// Resumes a previously paused stream. Only the `sender` may resume.
-    ///
-    /// # Auth
-    /// Requires authorisation from the stream's `sender`.
-    /// Resumes a paused stream, extending end_time to preserve unstreamed time.
+    /// Resumes a previously paused stream, extending `end_time` to preserve
+    /// unstreamed time.
     ///
     /// Only the stream sender may call this. On resume, the `end_time` is extended
     /// by the paused duration so the remaining streamable amount is preserved.
@@ -1284,6 +1400,9 @@ impl Contract {
     /// - [`Error::Unauthorized`] if caller is not the stream sender.
     /// - [`Error::InvalidState`] if the stream is not `Paused`.
     /// - [`Error::InvalidTimeRange`] if time calculation overflows.
+    ///
+    /// # Auth
+    /// Requires authorisation from the stream's `sender`.
     pub fn resume(env: Env, stream_id: u64) -> Result<Stream, Error> {
         let mut stream = get_existing_stream(&env, stream_id)?;
         stream.sender.require_auth();
@@ -1374,7 +1493,8 @@ impl Contract {
         Ok(())
     }
 
-    /// Cancels an active or paused stream with a correct sender/recipient refund split.
+    /// Cancels an active, paused, or draft stream, returning unvested funds to
+    /// the sender and paying accrued-but-unreleased funds to the recipient.
     ///
     /// At the moment of cancellation the stream's vested amount is computed. Funds
     /// are split as follows:
@@ -1383,10 +1503,17 @@ impl Contract {
     ///   not yet withdrawn).
     /// - **Sender** receives `total_amount - vested_amount` (unvested / unstreamed).
     ///
+    /// For draft streams, `vested_amount = 0` so the full escrow returns to the sender.
     /// This preserves the invariant that the recipient is entitled to everything
     /// that has already vested, regardless of whether they have withdrawn it yet.
     ///
     /// The stream transitions to [`StreamStatus::Cancelled`] (terminal state).
+    ///
+    /// # Parameters
+    /// - `stream_id` — Numeric ID of the stream to cancel.
+    ///
+    /// # Returns
+    /// The updated [`Stream`] record after cancellation.
     ///
     /// # Errors
     /// - [`Error::NotFound`] if `stream_id` does not exist.
@@ -1545,23 +1672,39 @@ impl Contract {
         Ok(stream)
     }
 
-    /// Read-only view returning unsettled accrual per (stream, recipient).
+    /// Returns the unsettled accrual (vested minus released) for `stream_id`.
+    ///
+    /// This is a convenience alias for [`Contract::withdrawable`]. It computes
+    /// the amount currently accrued and available for withdrawal using
+    /// overflow-safe linear accrual.
+    ///
+    /// This is a read-only view that never mutates state or requires auth.
+    /// It is unaffected by the global pause flag.
     ///
     /// # Parameters
-    /// - `stream_id`: Numeric ID of the stream to query.
-    /// - `recipient`: Recipient address to verify (optional).
+    /// - `stream_id` — Numeric ID of the stream to query.
     ///
     /// # Returns
-    /// The unsettled accrual amount (vested minus released).
+    /// The unsettled accrual amount (vested minus released). Always non-negative.
     ///
     /// # Errors
     /// - [`Error::NotFound`] if `stream_id` does not exist.
+    /// - [`Error::Overflow`] if the vested-amount computation overflows.
     pub fn claim_drip(env: Env, stream_id: u64) -> Result<i128, Error> {
         let stream = get_existing_stream(&env, stream_id)?;
         release::withdrawable(&stream, env.ledger().timestamp())
     }
 
     /// Upgrades the contract to a new WASM binary.
+    ///
+    /// Replaces the running contract code with `new_wasm_hash`. The contract's
+    /// storage (streams, admin, allowlist) is preserved across the upgrade.
+    /// Only the contract admin may call this.
+    ///
+    /// # Parameters
+    /// - `admin`         — Must match the admin set at initialisation.
+    /// - `new_wasm_hash` — The WASM hash of the new contract code, obtained
+    ///   via [`Env::deployer`]`::upload_contract_wasm`.
     ///
     /// # Errors
     /// - [`Error::Unauthorized`] if `admin` is not the initialised admin.
@@ -1577,6 +1720,56 @@ impl Contract {
         Ok(())
     }
 
+    // ── Versioned migration ────────────────────────────────────────────────────
+
+    /// Migrates the contract's persistent storage to the latest schema
+    /// version.
+    ///
+    /// This entrypoint runs all pending migration steps sequentially to
+    /// bring the contract's storage layout up to [`migrate::LATEST_VERSION`].
+    /// If the contract is already at the latest version, the call is a
+    /// no-op (returns `Ok(())`).
+    ///
+    /// Migrations are **one-way** and **irreversible** by design: once a
+    /// contract has been migrated to version N, there is no supported path
+    /// back to version N−1.
+    ///
+    /// # Parameters
+    /// - `admin` — Must match the admin set at initialisation.
+    ///
+    /// # Errors
+    /// - [`Error::Unauthorized`] if `admin` is not the initialised admin.
+    /// - [`Error::NotFound`] if the contract has not been initialised.
+    /// - Any error returned by an individual migration step. When a step
+    ///   returns `Err`, the entire transaction is rolled back by the
+    ///   Soroban host — no partial migration is committed.
+    ///
+    /// # Auth
+    /// Requires authorisation from `admin`.
+    ///
+    /// # Pause semantics
+    /// The global pause flag does **not** block migration; an admin should
+    /// be able to migrate a paused contract.
+    pub fn migrate(env: Env, admin: Address) -> Result<(), Error> {
+        migrate::migrate_internal(&env, &admin)
+    }
+
+    /// Returns the current storage version of the contract.
+    ///
+    /// Returns `0` if no version has been recorded (pre-migration contract).
+    ///
+    /// This is a read-only view that never mutates state or requires auth.
+    /// It is unaffected by the global pause flag.
+    ///
+    /// # Returns
+    /// The current storage schema version (`u32`).
+    ///
+    /// # Errors
+    /// This entrypoint is read-only and never returns an error.
+    pub fn storage_version(env: Env) -> u32 {
+        migrate::current_version(&env)
+    }
+
     // ── Admin nonce ───────────────────────────────────────────────────────────
 
     /// Returns the current (next-expected) admin nonce.
@@ -1587,6 +1780,13 @@ impl Contract {
     /// value will be rejected.
     ///
     /// This is a read-only call; it never mutates state or requires auth.
+    ///
+    /// # Returns
+    /// The current admin nonce. Starts at `0` and increments by 1 on each
+    /// successful [`Contract::admin_override`] call.
+    ///
+    /// # Errors
+    /// This entrypoint is read-only and never returns an error.
     pub fn get_admin_nonce(env: Env) -> u64 {
         admin::get_nonce(&env)
     }
@@ -1848,7 +2048,18 @@ impl Contract {
 
     /// Returns the stored split stream record for `stream_id`.
     ///
-    /// This is a read-only call and is never blocked by the pause flag.
+    /// This is a read-only view that never mutates state or requires auth.
+    /// It is unaffected by the global pause flag.
+    ///
+    /// # Parameters
+    /// - `stream_id` — Numeric ID of the split stream to look up.
+    ///
+    /// # Returns
+    /// The [`SplitStream`] record stored on-chain, containing all recipients,
+    /// their weights, and cumulative release amounts.
+    ///
+    /// # Errors
+    /// - [`Error::NotFound`] if `stream_id` does not exist.
     pub fn get_split_stream(env: Env, stream_id: u64) -> Result<SplitStream, Error> {
         multi::get_split_stream(env, stream_id)
     }
@@ -1856,7 +2067,16 @@ impl Contract {
     /// Returns the withdrawable balance for a specific recipient in a split
     /// stream.
     ///
-    /// This is a read-only call and is never blocked by the pause flag.
+    /// This is a read-only view that never mutates state or requires auth.
+    /// It is unaffected by the global pause flag.
+    ///
+    /// # Parameters
+    /// - `stream_id` — Numeric ID of the split stream.
+    /// - `recipient` — The recipient address to query.
+    ///
+    /// # Returns
+    /// The withdrawable token amount (base units) for `recipient`. Always
+    /// non-negative.
     ///
     /// # Errors
     /// - [`Error::NotFound`] if `stream_id` does not exist or `recipient`
@@ -1868,7 +2088,18 @@ impl Contract {
     /// Returns the total vested amount for a split stream at the current
     /// ledger timestamp.
     ///
-    /// This is a read-only call and is never blocked by the pause flag.
+    /// This is a read-only view that never mutates state or requires auth.
+    /// It is unaffected by the global pause flag.
+    ///
+    /// # Parameters
+    /// - `stream_id` — Numeric ID of the split stream.
+    ///
+    /// # Returns
+    /// The total vested token amount (base units) across all recipients.
+    ///
+    /// # Errors
+    /// - [`Error::NotFound`] if `stream_id` does not exist.
+    /// - [`Error::Overflow`] if the vested-amount computation overflows.
     pub fn split_stream_balance(env: Env, stream_id: u64) -> Result<i128, Error> {
         multi::split_stream_balance(env, stream_id)
     }
@@ -1972,6 +2203,9 @@ mod admin_nonce_test;
 /// state-changing entrypoint.  See `src/events_test.rs`.
 #[cfg(test)]
 mod events_test;
+
+#[cfg(test)]
+mod err_stab;
 
 #[cfg(test)]
 mod fee_test;

@@ -31,6 +31,13 @@ describe("StreamsPageContent", () => {
     expect(screen.getAllByTestId("stream-row-skeleton")).toHaveLength(3);
   });
 
+  it("renders a filtered empty state when the current view has no matches", () => {
+    render(<StreamsPageContent state="populated" streams={[]} emptyStateVariant="filtered" />);
+
+    expect(screen.getByRole("heading", { name: /no streams match your current filters/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /clear filters/i })).toBeInTheDocument();
+  });
+
   it("renders the populated list state", () => {
     render(<StreamsPageContent state="populated" />);
 

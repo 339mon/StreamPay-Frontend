@@ -1,6 +1,17 @@
 export const RATE_LIMITS = {
   read: { limit: 60, windowMs: 60_000 },
   write: { limit: 10, windowMs: 60_000 },
+  export: { limit: 5, windowMs: 60_000 },
+  /**
+   * Per-user limit for the public reconciliation overview endpoint
+   * (`GET /api/reconciliation`).  30 requests per minute is generous enough
+   * for polling dashboards while still protecting the endpoint from abuse.
+   * Override via `RECONCILIATION_RATE_LIMIT` environment variable.
+   */
+  reconciliation: {
+    limit: Number(process.env.RECONCILIATION_RATE_LIMIT ?? 30),
+    windowMs: 60_000,
+  },
 } as const;
 
 export type LimitType = keyof typeof RATE_LIMITS;
@@ -21,6 +32,7 @@ export const ORG_DAILY_STREAM_QUOTA = {
 } as const;
 
 export const ROUTE_LIMITS: Record<string, LimitType> = {
+  "GET:/api/reconciliation": "reconciliation",
   "GET:/api/streams": "read",
   "GET:/api/streams/": "read",
   "GET:/api/activity": "read",
@@ -34,6 +46,7 @@ export const ROUTE_LIMITS: Record<string, LimitType> = {
   "POST:/api/streams/*/settle": "write",
   "POST:/api/streams/*/withdraw": "write",
   "POST:/api/streams/*/webhooks/test": "write",
+  "POST:/api/exports": "export",
 };
 
 export const STORE_TYPE = process.env.RATE_LIMIT_STORE_TYPE || "in-memory";

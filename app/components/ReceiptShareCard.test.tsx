@@ -263,4 +263,153 @@ describe("ReceiptShareCard", () => {
       );
     });
   });
+
+  /* ── tabular-nums formatting ─────────────────────────────────────────── */
+
+  it("renders the amount value with the receipt-share-card__amount-value class that applies tabular-nums", () => {
+    const { container } = render(
+      <ReceiptShareCard streamId="s-1" recipient={RECIPIENT} amount="1234.56" />,
+    );
+
+    const amountValue = container.querySelector(".receipt-share-card__amount-value");
+    expect(amountValue).toBeInTheDocument();
+    expect(amountValue).toHaveTextContent("1234.56");
+    // The class .receipt-share-card__amount-value carries font-variant-numeric: tabular-nums
+    // in globals.css (verified via integration tests / visual review).
+    // jsdom does not resolve external CSS, so we verify the class contract instead.
+    expect(amountValue!.className).toContain("receipt-share-card__amount-value");
+  });
+
+  it("renders the amount with the correct class for a whole number", () => {
+    const { container } = render(
+      <ReceiptShareCard streamId="s-1" recipient={RECIPIENT} amount="1000" />,
+    );
+
+    const amountValue = container.querySelector(".receipt-share-card__amount-value");
+    expect(amountValue).toBeInTheDocument();
+    expect(amountValue).toHaveTextContent("1000");
+    expect(amountValue!.className).toContain("receipt-share-card__amount-value");
+  });
+
+  it("renders the amount with the correct class for a large number", () => {
+    const { container } = render(
+      <ReceiptShareCard streamId="s-1" recipient={RECIPIENT} amount="999999.99" />,
+    );
+
+    const amountValue = container.querySelector(".receipt-share-card__amount-value");
+    expect(amountValue).toBeInTheDocument();
+    expect(amountValue).toHaveTextContent("999999.99");
+    expect(amountValue!.className).toContain("receipt-share-card__amount-value");
+  });
+
+  it("does not apply the amount-value class to the asset code element", () => {
+    const { container } = render(
+      <ReceiptShareCard streamId="s-1" recipient={RECIPIENT} amount="42.00" assetCode="USDC" />,
+    );
+
+    const assetCode = container.querySelector(".receipt-share-card__amount-asset");
+    expect(assetCode).toBeInTheDocument();
+    expect(assetCode).toHaveTextContent("USDC");
+    // The asset code element uses a different BEM class and does NOT get
+    // the tabular-nums rule — only the amount-value class carries it.
+    expect(assetCode!.className).not.toContain("receipt-share-card__amount-value");
+  });
+});
+
+describe("ReceiptShareCard aria-live announcements", () => {
+  beforeEach(() => {
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: jest.fn().mockResolvedValue(undefined),
+      },
+    });
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.runOnlyPendingTimers();
+    jest.useRealTimers();
+    jest.clearAllMocks();
+  });
+
+  it("renders a live region present from the initial render", () => {
+    render(
+      <ReceiptShareCard streamId="s-1" recipient={RECIPIENT} amount="42.00" />,
+    );
+
+    const region = screen.getByRole("status");
+    expect(region).toHaveAttribute("aria-live", "polite");
+    expect(region).toHaveTextContent("");
+  });
+
+  it("announces that the share text was copied", async () => {
+    render(
+      <ReceiptShareCard streamId="s-1" recipient={RECIPIENT} amount="42.00" />,
+    );
+
+    const copyBtn = screen.getByRole("button", { name: "Copy share text" });
+    fireEvent.click(copyBtn);
+
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Share text copied to clipboard.",
+      );
+    });
+  });
+
+  it("announces when the recipient address is hidden", () => {
+    render(
+      <ReceiptShareCard
+        streamId="s-1"
+        recipient={RECIPIENT}
+        amount="42.00"
+        defaultMasked={false}
+      />,
+    );
+
+    const toggle = screen.getByLabelText("Mask recipient address for privacy");
+    fireEvent.click(toggle);
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Recipient address hidden.",
+    );
+  });
+
+  it("announces when the recipient address is shown", () => {
+    render(
+      <ReceiptShareCard streamId="s-1" recipient={RECIPIENT} amount="42.00" />,
+    );
+
+    const toggle = screen.getByLabelText("Mask recipient address for privacy");
+    fireEvent.click(toggle);
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Recipient address shown.",
+    );
+  });
+
+  it("keeps the live region mounted after the copy feedback resets", async () => {
+    render(
+      <ReceiptShareCard streamId="s-1" recipient={RECIPIENT} amount="42.00" />,
+    );
+
+    const copyBtn = screen.getByRole("button", { name: "Copy share text" });
+    fireEvent.click(copyBtn);
+
+    await waitFor(() => {
+      expect(copyBtn).toHaveTextContent("Copied");
+    });
+
+    jest.advanceTimersByTime(2000);
+
+    await waitFor(() => {
+      expect(copyBtn).toHaveTextContent("Copy");
+    });
+
+    // The announcement text itself persists (screen readers already spoke
+    // it) — only the visible button label reverts.
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Share text copied to clipboard.",
+    );
+  });
 });
