@@ -173,11 +173,11 @@ export async function middleware(request: NextRequest) {
   // ------------------------------------------------------------------
   // 3. CORS
   // ------------------------------------------------------------------
-  const origin = request.headers.get('origin');
+  const corsOrigin = request.headers.get('origin');
   let originAllowed = false;
 
-  if (origin) {
-    originAllowed = isOriginAllowed(origin, allowedOrigins);
+  if (corsOrigin) {
+    originAllowed = isOriginAllowed(corsOrigin, allowedOrigins);
 
     if (!originAllowed) {
       const requestId =
@@ -187,7 +187,7 @@ export async function middleware(request: NextRequest) {
       console.warn(
         JSON.stringify({
           type: 'cors.rejection',
-          origin,
+          origin: corsOrigin,
           method: request.method,
           pathname: request.nextUrl?.pathname ?? '',
           request_id: requestId,
@@ -198,7 +198,7 @@ export async function middleware(request: NextRequest) {
         {
           error: {
             code: 'CORS_ORIGIN_DISALLOWED',
-            message: `Origin '${origin}' is not allowed.`,
+            message: `Origin '${corsOrigin}' is not allowed.`,
             request_id: requestId,
           },
         },
@@ -211,7 +211,7 @@ export async function middleware(request: NextRequest) {
     }
 
     if (request.method === 'OPTIONS') {
-      const headers = buildCorsHeaders(origin);
+      const headers = buildCorsHeaders(corsOrigin);
       setCanaryHeader(headers, isCanary);
       return new NextResponse(null, {
         status: 204,
@@ -220,7 +220,7 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  if (request.method === 'OPTIONS' && !origin) {
+  if (request.method === 'OPTIONS' && !corsOrigin) {
     const response = new NextResponse(null, { status: 204 });
     setCanaryHeader(response.headers, isCanary);
     return response;
@@ -235,7 +235,7 @@ export async function middleware(request: NextRequest) {
   if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') {
     const csrfResponse = attachCsrfCookie(response, request);
     if (originAllowed) {
-      csrfResponse.headers.set('Access-Control-Allow-Origin', origin!);
+      csrfResponse.headers.set('Access-Control-Allow-Origin', corsOrigin!);
       csrfResponse.headers.set('Vary', 'Origin');
     }
     return csrfResponse;
