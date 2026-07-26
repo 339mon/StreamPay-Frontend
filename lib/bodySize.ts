@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { resolveRequestId } from './requestId';
 
 /**
  * Body size limit configuration for different route categories.
@@ -199,8 +200,7 @@ export function checkRequestBodySize(
   }
 
   if (contentLength > maxBytes) {
-    const requestId = (request.headers.get('x-request-id') as string | null) ?? 
-                     `req_${Date.now().toString(36)}`;
+    const requestId = resolveRequestId(request.headers);
     return createBodySizeTooLargeResponse(contentLength, maxBytes, requestId);
   }
 

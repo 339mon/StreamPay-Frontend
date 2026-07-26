@@ -25,6 +25,11 @@ import {
   isCsrfProtectedMethod,
   validateCsrfToken,
 } from './lib/csrf';
+import {
+  REQUEST_ID_HEADER,
+  applyRequestIdPolicy,
+  resolveRequestId,
+} from './lib/requestId';
 import { getChaosConfig } from './lib/chaos';
 import { touchLastSeenFromRequest } from './lib/lastSeen';
 
@@ -127,15 +132,6 @@ function setCanaryHeader(headers: Headers, isCanary: boolean) {
   }
 }
 
-function resolveRequestId(request: NextRequest): string {
-  const forwarded = request.headers.get('x-request-id');
-  if (forwarded && forwarded.trim().length > 0) {
-    return forwarded.trim();
-  }
-  return `req_${Date.now().toString(36)}_${Math.random().toString(16).slice(2, 10)}`;
-}
-
-
 
 export async function middleware(request: NextRequest) {
   const fingerprint = await captureRequestFingerprint(request);
@@ -148,12 +144,16 @@ export async function middleware(request: NextRequest) {
     requestHeaders.set(CANARY_HEADER_NAME, 'true');
   }
 
+  const origin = request.headers.get('origin');
+
   // ------------------------------------------------------------------
   // 1. Request body size cap (O(1) — reads Content-Length)
   // ------------------------------------------------------------------
   const sizeError = checkRequestBodySize(request, bodyLimits);
   if (sizeError !== null) {
+    const requestId = resolveRequestId(request.headers);
     sizeError.headers.set(REQUEST_FINGERPRINT_HEADER, fingerprint);
+    sizeError.headers.set(REQUEST_ID_HEADER, requestId);
     setCanaryHeader(sizeError.headers, isCanary);
     return sizeError;
   }
@@ -167,8 +167,9 @@ export async function middleware(request: NextRequest) {
     const headerToken = getCsrfHeaderValue(request);
     if (!validateCsrfToken(cookieToken, headerToken)) {
       const response = createCsrfForbiddenResponse(request);
+      const requestId = resolveRequestId(request.headers);
       response.headers.set(REQUEST_FINGERPRINT_HEADER, fingerprint);
-      setCanaryHeader(response.headers, isCanary);
+      response.headers.set(REQUEST_ID_HEADER, requestId);
       return response;
     }
   }
@@ -182,9 +183,7 @@ export async function middleware(request: NextRequest) {
     originAllowed = isOriginAllowed(corsOrigin, allowedOrigins);
 
     if (!originAllowed) {
-      const requestId =
-        request.headers.get('x-request-id') ??
-        `req_${Date.now().toString(36)}`;
+      const requestId = resolveRequestId(request.headers);
 
       console.warn(
         JSON.stringify({
@@ -207,13 +206,16 @@ export async function middleware(request: NextRequest) {
         { status: 403 }
       );
       errorResponse.headers.set(REQUEST_FINGERPRINT_HEADER, fingerprint);
+      errorResponse.headers.set(REQUEST_ID_HEADER, requestId);
       errorResponse.headers.set('Vary', 'Origin');
       setCanaryHeader(errorResponse.headers, isCanary);
       return errorResponse;
     }
 
     if (request.method === 'OPTIONS') {
-      const headers = buildCorsHeaders(corsOrigin);
+      const headers = buildCorsHeaders(origin);
+      const requestId = resolveRequestId(request.headers);
+      headers.set(REQUEST_ID_HEADER, requestId);
       setCanaryHeader(headers, isCanary);
       return new NextResponse(null, {
         status: 204,
@@ -222,8 +224,10 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  if (request.method === 'OPTIONS' && !corsOrigin) {
+  if (request.method === 'OPTIONS' && !origin) {
+    const requestId = resolveRequestId(request.headers);
     const response = new NextResponse(null, { status: 204 });
+    response.headers.set(REQUEST_ID_HEADER, requestId);
     setCanaryHeader(response.headers, isCanary);
     return response;
   }
@@ -234,6 +238,11 @@ export async function middleware(request: NextRequest) {
     },
   });
   setCanaryHeader(response.headers, isCanary);
+
+  // ------------------------------------------------------------------
+  // Request-Id propagation
+  // ------------------------------------------------------------------
+  applyRequestIdPolicy(request.headers, requestHeaders, response.headers);
 
   if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') {
     const csrfResponse = attachCsrfCookie(response, request);
