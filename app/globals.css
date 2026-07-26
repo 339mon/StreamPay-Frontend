@@ -4359,3 +4359,68 @@ a:hover {
     transition: none !important;
   }
 }
+
+/* ─── CreateStreamForm responsive (#1042 v7) ─── */
+
+.csf-field-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1rem;
+}
+
+.csf-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+}
+
+.csf-cta-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+/* Extra narrow (< 360px): single-column field grid, stacked buttons, compact CTA */
+@media (max-width: 22.4375rem) {
+  .csf-field-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .csf-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .csf-cta-banner {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+    padding: 0.875rem 1rem;
+  }
+
+  .csf-cta-banner .button {
+    width: 100%;
+    min-height: 2.75rem;
+  }
+}
+
+/* Narrow mobile (< 480px): tighter padding */
+@media (max-width: 480px) {
+  .csf-section {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+}
+
+/* Tablet+ (≥ 768px): restore generous padding and two-column grid */
+@media (min-width: 48rem) {
+  .csf-section {
+    padding-left: 1.5rem !important;
+    padding-right: 1.5rem !important;
+  }
+}

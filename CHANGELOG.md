@@ -8,6 +8,19 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
 
 ## [Unreleased]
 
+### Fixed
+- **CreateStreamForm responsive breakpoints** (#1042 v7): Audited and fixed
+  responsive layout for `CreateStreamForm` (`app/streams/new/page.tsx`) across
+  narrow, mobile, and wide viewports. The Amount+Token grid now collapses to a
+  single column below 360px (`22.4375rem`), action buttons stack vertically on
+  extra-narrow screens, and the multi-recipient CTA banner adapts with tighter
+  padding on small viewports. Introduced `.csf-field-row`, `.csf-actions`,
+  `.csf-cta-banner`, and `.csf-section` CSS classes with media-query overrides
+  in `globals.css`. Added `data-testid` attributes for each responsive container
+  and a focused test suite (`page.resp.test.tsx`) covering class presence,
+  structural integrity, and mobile bottom-sheet behaviour. All 19
+  CreateStreamForm tests pass.
+
 ### Performance (issue #85 — reduce initial render time)
 - **SplashScreen delay reduced**: mandatory display time cut from 2 400 ms to
   400 ms and fade-out from 600 ms to 300 ms, removing ~2.3 s of forced
