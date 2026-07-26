@@ -96,5 +96,19 @@ describe('StreamTypeChip', () => {
       expect(chip.style.transform).toBe('none');
     });
   });
-});
 
+  describe('loading state', () => {
+    it('renders Skeleton components when isLoading is true', () => {
+      const { container } = render(<StreamTypeChip type="Video" amount={12345} isLoading />);
+      
+      const chip = container.querySelector('.stream-type-chip') as HTMLElement;
+      expect(chip).toHaveAttribute('aria-busy', 'true');
+      expect(chip).toHaveAttribute('aria-live', 'polite');
+      
+      const skeletons = container.querySelectorAll('.skeleton');
+      expect(skeletons.length).toBe(2);
+      expect(skeletons[0]).toHaveStyle('width: 60px');
+      expect(skeletons[1]).toHaveStyle('width: 40px');
+    });
+  });
+});
