@@ -129,6 +129,11 @@
  * Responsive Breakpoint Audit Specifications (Issue #1072)
  * ───────────────────────────────────────────────────────────── */
 
+.kbdHint {
+  /* Responsive display for keyboard shortcut hint */
+}
+
+
 /* Mobile / Narrow Viewport (< 480px / 30rem) */
 @media (max-width: 29.9375rem) {
   .badge {
@@ -147,6 +152,10 @@
   }
 
   .providerPrefix {
+    display: none;
+  }
+
+  .kbdHint {
     display: none;
   }
 }

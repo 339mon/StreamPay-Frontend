@@ -1,0 +1,16 @@
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15rem 0.35rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--muted-light, #9ca3af);
+  background-color: var(--panel-elevated, #27272a);
+  border: 1px solid var(--border, #374151);
+  border-radius: 4px;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+  margin-left: 0.5rem;
+}

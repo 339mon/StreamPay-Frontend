@@ -133,4 +133,16 @@ describe("WalletBadge", () => {
     expect(badge).toHaveAttribute("role", "region");
     expect(badge).not.toHaveAttribute("tabIndex");
   });
+
+  it("renders keyboard shortcut hint when shortcut is provided and component is interactive", () => {
+    render(<WalletBadge state="disconnected" onConnect={jest.fn()} shortcut="C" />);
+    const hint = screen.getByTestId("kbd-hint");
+    expect(hint).toBeInTheDocument();
+    expect(hint).toHaveTextContent("C");
+  });
+
+  it("does not render keyboard shortcut hint when component is not interactive", () => {
+    render(<WalletBadge state="connecting" shortcut="C" />);
+    expect(screen.queryByTestId("kbd-hint")).not.toBeInTheDocument();
+  });
 });
