@@ -1,7 +1,7 @@
 import { logger } from "@/app/lib/logger";
 import { getMetrics } from "@/app/lib/rate-limit-metrics";
+import { registry } from "@/src/metrics/registry";
 import { NextResponse } from "next/server";
-
 
 /**
  * GET /api/metrics
@@ -22,6 +22,15 @@ import { NextResponse } from "next/server";
  * - `401` — missing or malformed `Authorization` header.
  * - `403` — token present but incorrect.
  * - `503` — endpoint disabled (no token configured).
+ *
+ * ## Metrics surface
+ * Two metric sources are concatenated:
+ *
+ * 1. Custom in-process counters (`streampay_requests_total`,
+ *    `streampay_rate_limit_throttled_total`, `streampay_metrics_up`).
+ * 2. The shared Prometheus `prom-client` registry, which carries the
+ *    `webhook_*` family and the new `wallet_auth_*` family powering
+ *    per-endpoint observability of `/api/auth/wallet`.
  */
 
 const PROM_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8";
@@ -107,7 +116,13 @@ export async function GET(request: Request): Promise<NextResponse> {
     );
   }
 
-  const body = renderPrometheus();
+  // Render the two metric surfaces back to back. Each source already emits
+  // its content with trailing newlines, so a straightforward concat produces
+  // a well-formed Prometheus exposition document.
+  const custom = renderPrometheus();
+  const promClient = await registry.metrics();
+
+  const body = `${custom}${promClient}`;
   return new NextResponse(body, {
     status: 200,
     headers: { "Content-Type": PROM_CONTENT_TYPE, "Cache-Control": "no-store" },
