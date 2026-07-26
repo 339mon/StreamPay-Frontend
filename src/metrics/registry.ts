@@ -22,36 +22,34 @@ export const webhookDuration = new Histogram({
   registers: [registry],
 });
 
-// ── /api/auth/wallet metrics ─────────────────────────────────────────────────
-//
-// Per-endpoint metrics for the wallet authentication endpoint. Two handlers
-// live behind a single path:
-//
-//   GET  /api/auth/wallet  → issues a one-time challenge ("challenge")
-//   POST /api/auth/wallet  → verifies a wallet signature ("verify")
-//
-// Both are recorded with the same metric names so a Grafana dashboard can
-// graph "requests by operation" or "p99 latency for verify failures" without
-// having to know the underlying HTTP method.
-//
-// Label cardinality:
-//   method     — 2 values (GET, POST), bounded.
-//   operation  — 2 values (challenge, verify), bounded.
-//   status     — small bounded set of HTTP status codes returned by the route.
-// Cardinality stays bounded so Prometheus TSDB does not blow up.
-export const walletAuthCounter = new Counter({
-  name: 'wallet_auth_requests_total',
-  help: 'Total number of /api/auth/wallet requests received, partitioned by HTTP method, semantic operation, and response status.',
-  labelNames: ['method', 'operation', 'status'],
+/** Per-endpoint counter for `/api/streams` (GET/POST). */
+export const streamsCounter = new Counter({
+  name: 'streams_requests_total',
+  help: 'Total number of /api/streams requests',
+  labelNames: ['method', 'status'],
   registers: [registry],
 });
 
-export const walletAuthDuration = new Histogram({
-  name: 'wallet_auth_request_duration_seconds',
-  help: 'Histogram of /api/auth/wallet request processing duration in seconds, partitioned by HTTP method, semantic operation, and response status.',
-  labelNames: ['method', 'operation', 'status'],
-  // Buckets sized for the wallet endpoint's 5 s per-request deadline plus
-  // headroom for the 429 rate-limit fast-path which is sub-millisecond.
-  buckets: [0.005, 0.025, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+/** Per-endpoint latency histogram for `/api/streams` (GET/POST). */
+export const streamsDuration = new Histogram({
+  name: 'streams_request_duration_seconds',
+  help: 'Histogram of /api/streams request processing duration in seconds',
+  labelNames: ['method', 'status'],
+  buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5],
   registers: [registry],
 });
+
+/**
+ * Record a completed `/api/streams` request on the shared Prometheus registry.
+ */
+export function observeStreamsRequest(
+  method: string,
+  status: number,
+  start: [number, number],
+): void {
+  const diff = process.hrtime(start);
+  const durationSeconds = diff[0] + diff[1] / 1e9;
+  const labels = { method: method.toUpperCase(), status: String(status) };
+  streamsCounter.inc(labels);
+  streamsDuration.observe(labels, durationSeconds);
+}
