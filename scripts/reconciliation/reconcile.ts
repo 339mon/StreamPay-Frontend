@@ -138,7 +138,20 @@ export class ReconciliationService {
   }
 
   private async reconcileSingleStream(dbStream: DbStream, report: ReconciliationReport): Promise<void> {
-    const onChainStream = await onChainClient.fetchStream(dbStream.id);
+    let onChainStream: OnChainStream | null = null;
+    try {
+      onChainStream = await onChainClient.fetchStream(dbStream.id);
+    } catch (err) {
+      if (
+        (err && typeof err === "object" && "variant" in err && (err as any).variant === "StreamNotFound") ||
+        (err && typeof err === "object" && "code" in err && ((err as any).code === "STREAM_NOT_FOUND" || (err as any).code === "StreamNotFound")) ||
+        (err instanceof Error && err.message.includes("does not exist on-chain"))
+      ) {
+        onChainStream = null;
+      } else {
+        throw err;
+      }
+    }
     if (!onChainStream) {
       report.mismatches.push({
         streamId: dbStream.id,

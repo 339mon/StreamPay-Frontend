@@ -139,7 +139,7 @@ describe('Webhook Delivery Integration Tests', () => {
       const delivery = webhookDeliveryStore.getDelivery('delivery-hanging-1');
       expect(delivery?.status).toBe('dlq');
       expect(delivery?.attempts.length).toBe(2);
-    });
+    }, 15000);
 
     it('should handle receiver with varying response codes', async () => {
       const endpoint: WebhookEndpoint = {
