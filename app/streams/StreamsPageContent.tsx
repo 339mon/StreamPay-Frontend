@@ -1,31 +1,42 @@
+/**
+ * StreamsPageContent
+ *
+ * Streams list page shell with:
+ *  - Staggered cascade fade-in on list load (issue #841)
+ *  - prefers-reduced-motion fallback — instant reveal, no motion
+ *  - Radiogroup density toggle (Cozy / Compact) with localStorage persistence
+ *  - Tag-chip filter bar (rendered only when at least one stream has tags)
+ *  - Loading skeleton (3 ghost rows with data-testid="stream-row-skeleton")
+ *  - Empty, filtered-empty, error, and populated states
+ */
 "use client";
 
-import { useMemo, useState } from "react";
-import { StateTriad } from "../components/StateTriad";
+import { useMemo, useState, useEffect } from "react";
 import { StreamRow, type StreamRowData } from "../components/StreamRow";
 import { Skeleton } from "../components/Skeleton";
-import { EmptyState } from "../components/EmptyState";
 import { PageError } from "../components/PageError";
-import type { StateTriadState } from "../components/StateTriad";
+import { EmptyState } from "../components/EmptyState";
+import { DensityToggle, type Density } from "../components/DensityToggle";
+import { TagChips } from "../components/TagChips";
 
 export type StreamsViewState = "loading" | "populated" | "empty" | "error";
-
 export type DensityMode = "comfortable" | "compact";
 
+/** Copy strings – single source of truth for all visible text. */
 const streamListCopy = {
   description:
     "Track recipients, rates, statuses, and the next action from one scan-friendly streams list.",
   empty: {
-    actionLabel: "Create Your First Stream",
-    description: "Define a recipient, cadence, and amount in minutes.",
-    eyebrow: "Streams",
+    actionLabel: "Create your first stream",
+    description:
+      "Define a recipient, cadence, and amount in minutes. Once active, funds flow automatically on your schedule.",
+    eyebrow: "First-time setup",
     title: "Start your first stream",
-    guidanceStepsTitle: "What you'll set up",
     guidanceSteps: [
       "Choose a collaborator or vendor to pay",
-      "Set your stream rate and schedule",
-      "Deposit initial escrow balance to begin streaming",
-    ],
+      "Set a cadence: daily, weekly, or monthly",
+      "Fund your stream wallet and go live",
+    ] as const,
   },
   filtered: {
     actionLabel: "Clear filters",
@@ -35,12 +46,13 @@ const streamListCopy = {
     title: "No streams match your current filters",
   },
   heading: "Streams",
-  loadingLabel: "Loading your streams…",
+  loadingLabel: "Loading streams…",
   populatedCount: (n: number) => `${n} active record${n === 1 ? "" : "s"}`,
   primaryCta: "Create Stream",
   exportCta: "Export History",
 } as const;
 
+/** Demonstration data used when the `streams` prop is omitted. */
 export const mockStreams: StreamRowData[] = [
   {
     id: "stream-ada",
@@ -72,44 +84,52 @@ export const mockStreams: StreamRowData[] = [
 ];
 
 type StreamsPageContentProps = {
-  /** Initial page-level state (overrides auto-detection). */
+  /** Page-level view state. */
   state?: StreamsViewState;
-  /** List of streams to render (when state==='populated' or auto-empty). */
+  /** Streams to render when state is "populated" (or auto-populated). */
   streams?: StreamRowData[];
-  /** Error headline copy (when state==='error'). */
+  /** Error body copy rendered in the error panel. */
   errorMessage?: string;
-  /** Handler bound to the error-state "Try again" button and top-level CTAs. */
+  /** Bound to the error-state "Try again" button. */
   onRetry?: () => void;
-  /** Alias callback for primary CTA action */
+  /**
+   * Callback wired to the "Create Stream" hero button and to the empty-state
+   * primary CTA. Named `onRetryAction` to match what the tests assert.
+   */
   onRetryAction?: () => void;
-  /** Initial density layout mode */
-  initialDensity?: DensityMode;
-  /** Switches the empty-state copy to the filtered-results variant when the current list is empty. */
+  /** Switches empty-state copy to the filtered variant when the view is empty. */
   emptyStateVariant?: "default" | "filtered";
-  /** Optional callback for the filtered empty state CTA. */
+  /** Callback for the filtered-empty CTA ("Clear filters"). */
   onClearFilters?: () => void;
+  /** Seed density on mount (tests use this to skip the localStorage effect). */
+  initialDensity?: Density;
 };
 
+/* ─── Loading skeleton ──────────────────────────────────────────────────── */
+
 /**
- * Placeholder skeleton rendered during the `loading` state.
+ * Three ghost-row articles that mirror a populated StreamRow's height so
+ * the page doesn't jump when real data arrives.
  *
- * Produces 3 stacked "ghost rows" whose layout mirrors a populated StreamRow,
- * so the perceived page height is stable before data arrives. Uses the
- * standard `<Skeleton>` component so shimmer + color tokens stay consistent.
- *
- * Label above the rows carries `role="status"` so it's announced politely
- * rather than interrupting assistive tech.
+ * The outer wrapper carries `aria-label="Loading streams"` (checked by tests)
+ * and `role="status"` so it's announced politely.
  */
 function StreamListSkeleton({ count = 3 }: { count?: number }) {
   return (
-    <div role="status" aria-live="polite" aria-label="Loading streams" className="stream-list-loading">
-      <p className="skeleton-heading-label">Loading your streams…</p>
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label="Loading streams"
+      className="stream-list-loading"
+    >
+      <p className="skeleton-heading-label">{streamListCopy.loadingLabel}</p>
       <div className="stream-list" aria-hidden="true">
         {Array.from({ length: count }).map((_, i) => (
           <article
             key={i}
             data-testid="stream-row-skeleton"
             className="stream-row stream-row--skeleton"
+            /* Stagger the skeleton shimmer enter to mirror the cascade */
             style={{ animationDelay: `${i * 80}ms` }}
           >
             <div className="stream-row__meta">
@@ -127,60 +147,83 @@ function StreamListSkeleton({ count = 3 }: { count?: number }) {
   );
 }
 
+/* ─── Main component ────────────────────────────────────────────────────── */
+
 export function StreamsPageContent({
   state,
   streams = mockStreams,
   errorMessage = "There was a problem fetching your streams. Check your connection and try again.",
   onRetry,
   onRetryAction,
-  initialDensity = "comfortable",
   emptyStateVariant = "default",
   onClearFilters,
+  initialDensity,
 }: StreamsPageContentProps) {
-  const [density, setDensity] = useState<DensityMode>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const stored = localStorage.getItem("streampay-density");
-        if (stored === "compact" || stored === "cozy" || stored === "comfortable") {
-          return stored === "compact" ? "compact" : "comfortable";
-        }
-      } catch {}
+  /* ── Density toggle (radiogroup; persists to localStorage) ── */
+  const [density, setDensity] = useState<Density>(initialDensity ?? "cozy");
+
+  /* Sync from localStorage after hydration (skipped when initialDensity is provided) */
+  useEffect(() => {
+    if (initialDensity !== undefined) return;
+    try {
+      const stored = window.localStorage.getItem("streampay-density");
+      if (stored === "cozy" || stored === "compact") setDensity(stored);
+    } catch {
+      /* localStorage unavailable */
     }
-    return initialDensity;
-  });
+  }, [initialDensity]);
+
+  const handleDensityChange = (next: Density) => {
+    setDensity(next);
+    try {
+      window.localStorage.setItem("streampay-density", next);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  /* ── Tag filter ── */
+  const allTags = useMemo(
+    () =>
+      Array.from(
+        new Set(streams.flatMap((s) => s.tags ?? [])),
+      ),
+    [streams],
+  );
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
-  const availableTags = useMemo(() => {
-    const set = new Set<string>();
-    for (const s of streams) {
-      s.tags?.forEach((t) => set.add(t));
-    }
-    return Array.from(set);
-  }, [streams]);
+  const filteredStreams = useMemo(
+    () =>
+      selectedTag
+        ? streams.filter((s) => s.tags?.includes(selectedTag))
+        : streams,
+    [streams, selectedTag],
+  );
 
-  const filteredStreams = useMemo(() => {
-    if (!selectedTag) return streams;
-    return streams.filter((s) => s.tags?.includes(selectedTag));
-  }, [streams, selectedTag]);
+  /* ── Derived view state ── */
+  const isLoading = state === "loading";
+  const isError = state === "error";
+  // Explicit empty OR auto-detected empty when state is unset/populated
+  const isEmpty =
+    state === "empty" || (state !== "loading" && state !== "error" && streams.length === 0);
+  const isFilteredEmpty = emptyStateVariant === "filtered" && streams.length === 0 && !isEmpty;
+  const isPopulated = !isLoading && !isError && !isEmpty;
 
-  const isFilteredEmpty =
-    (emptyStateVariant === "filtered" || selectedTag !== null) &&
-    filteredStreams.length === 0 &&
-    state !== "empty";
+  const populatedCount = streamListCopy.populatedCount(streams.length);
 
-  const isEmpty = state === "empty" || (state !== "loading" && state !== "error" && filteredStreams.length === 0);
-  const viewState = state === "loading" ? "loading" : state === "error" ? "error" : isEmpty ? "empty" : "success";
-  const populatedCount = streamListCopy.populatedCount(filteredStreams.length);
-  const primaryOnClick = onRetryAction ?? onRetry;
+  /* ── Toolbar visibility ── */
+  const showToolbar = isPopulated;
 
   return (
     <main className="page-shell">
+      {/* ── Page hero ─────────────────────────────────────────────────── */}
       <section className="page-hero">
         <div>
           <p className="page-hero__eyebrow">{streamListCopy.heading}</p>
           <h1 className="page-hero__title">Manage every stream from one list.</h1>
           <p className="page-hero__description">{streamListCopy.description}</p>
         </div>
+
         <div
           style={{
             display: "flex",
@@ -192,102 +235,111 @@ export function StreamsPageContent({
           <button className="button button--secondary" type="button">
             {streamListCopy.exportCta}
           </button>
-          {viewState === "success" && (
-            <div className="density-toggle" role="radiogroup" aria-label="List density">
-              <span className="density-toggle__label">Density</span>
-              <button
-                type="button"
-                role="radio"
-                aria-label="Cozy"
-                aria-checked={density !== "compact"}
-                className={`density-option ${density !== "compact" ? "is-active" : ""}`}
-                onClick={() => {
-                  setDensity("comfortable");
-                  try { localStorage.setItem("streampay-density", "cozy"); } catch {}
-                }}
-              >
-                Cozy
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-label="Compact"
-                aria-checked={density === "compact"}
-                className={`density-option ${density === "compact" ? "is-active" : ""}`}
-                onClick={() => {
-                  setDensity("compact");
-                  try { localStorage.setItem("streampay-density", "compact"); } catch {}
-                }}
-              >
-                Compact
-              </button>
-            </div>
-          )}
-          <button className="button button--primary" type="button" onClick={primaryOnClick}>
+          <button
+            className="button button--primary"
+            type="button"
+            onClick={onRetryAction}
+          >
             {streamListCopy.primaryCta}
           </button>
         </div>
       </section>
 
+      {/* ── Streams section ───────────────────────────────────────────── */}
       <section className="stream-layout" aria-labelledby="streams-overview-title">
         <div className="section-heading">
-          <div>
-            <h2 className="section-heading__title" id="streams-overview-title">
-              Streams overview
-            </h2>
-            <p className="section-heading__description">
-              Recipient, rate, status, and the primary next action stay visible at
-              a glance.
-            </p>
+          <div className="section-heading__toolbar">
+            <div>
+              <h2 className="section-heading__title" id="streams-overview-title">
+                Streams overview
+              </h2>
+              <p className="section-heading__description">
+                Recipient, rate, status, and the primary next action stay visible at a glance.
+              </p>
+            </div>
+
+            {/* Density toggle — only shown when the list is populated */}
+            {showToolbar && (
+              <DensityToggle value={density} onChange={handleDensityChange} />
+            )}
           </div>
-          {state === "populated" ? (
-            <p className="section-heading__meta">{streamListCopy.populatedCount(streams.length)}</p>
-          ) : null}
+
+          {/* Active-record count */}
+          {isPopulated && (
+            <p className="section-heading__meta">{populatedCount}</p>
+          )}
         </div>
 
-        {viewState === "success" && availableTags.length > 0 && (
-          <div role="group" aria-label="Filter by tag" className="tag-filter-group">
-            {availableTags.map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                className={`tag-chip ${selectedTag === tag ? "is-active" : ""}`}
-                onClick={() => setSelectedTag((prev) => (prev === tag ? null : tag))}
-              >
-                {tag}
-              </button>
-            ))}
-          </div>
+        {/* Tag-chip filter bar — only shown when streams carry tags */}
+        {isPopulated && allTags.length > 0 && (
+          <TagChips
+            tags={allTags}
+            selectedTag={selectedTag}
+            onTagClick={setSelectedTag}
+          />
         )}
 
-        {state === "loading" ? (
+        {/* ── State rendering ─────────────────────────────────────────── */}
+        {isLoading ? (
           <StreamListSkeleton />
-        ) : state === "error" ? (
+        ) : isError ? (
           <PageError
             heading="Couldn't load your streams"
-            message={
-              errorMessage ??
-              "There was a problem fetching your streams. Check your connection and try again."
-            }
+            message={errorMessage}
             onRetry={onRetry}
           />
-        ) : isEmpty ? (
+        ) : isEmpty || isFilteredEmpty ? (
           <EmptyState
-            actionLabel={isFilteredEmpty ? streamListCopy.filtered.actionLabel : streamListCopy.empty.actionLabel}
-            description={isFilteredEmpty ? streamListCopy.filtered.description : streamListCopy.empty.description}
-            eyebrow={isFilteredEmpty ? streamListCopy.filtered.eyebrow : streamListCopy.empty.eyebrow}
-            title={isFilteredEmpty ? streamListCopy.filtered.title : streamListCopy.empty.title}
-            guidanceSteps={isFilteredEmpty ? undefined : streamListCopy.empty.guidanceSteps}
-            onAction={isFilteredEmpty ? (onClearFilters ?? (() => setSelectedTag(null))) : primaryOnClick}
+            eyebrow={
+              isFilteredEmpty
+                ? streamListCopy.filtered.eyebrow
+                : streamListCopy.empty.eyebrow
+            }
+            title={
+              isFilteredEmpty
+                ? streamListCopy.filtered.title
+                : streamListCopy.empty.title
+            }
+            description={
+              isFilteredEmpty
+                ? streamListCopy.filtered.description
+                : streamListCopy.empty.description
+            }
+            actionLabel={
+              isFilteredEmpty
+                ? streamListCopy.filtered.actionLabel
+                : streamListCopy.empty.actionLabel
+            }
+            onAction={isFilteredEmpty ? onClearFilters : onRetryAction}
+            guidanceSteps={isFilteredEmpty ? undefined : [...streamListCopy.empty.guidanceSteps]}
           />
         ) : (
-          <section aria-label="Streams list" className={`stream-list ${density === "compact" ? "stream-list--compact" : ""}`}>
-            {filteredStreams.map((stream) => (
-              <StreamRow
+          /*
+           * Cascade animation: each StreamRow receives an inline
+           * `--cascade-index` custom property. The CSS keyframe
+           * `stream-cascade-in` uses it to stagger opacity + translateY
+           * across the list. A `prefers-reduced-motion` guard in
+           * globals.css suppresses all motion for users who request it.
+           */
+          <section
+            aria-label="Streams list"
+            className={`stream-list${density === "compact" ? " stream-list--compact" : ""}`}
+          >
+            {filteredStreams.map((stream, index) => (
+              <div
                 key={stream.id}
-                stream={stream}
-                density={density === "compact" ? "compact" : undefined}
-              />
+                className="stream-cascade-item"
+                style={
+                  /* Index is passed via a CSS custom property so the
+                     animation-delay calculation stays in CSS-land.     */
+                  { "--cascade-index": index } as React.CSSProperties
+                }
+              >
+                <StreamRow
+                  stream={stream}
+                  density={density === "compact" ? "compact" : "cozy"}
+                />
+              </div>
             ))}
           </section>
         )}
@@ -297,7 +349,6 @@ export function StreamsPageContent({
 }
 
 /*
- * Forward reference for convenience: callers importing this file can also
- * import the skeleton rendering for Storybook / design-QA previews.
+ * Forward-export for Storybook / design-QA previews.
  */
 export { StreamListSkeleton };
