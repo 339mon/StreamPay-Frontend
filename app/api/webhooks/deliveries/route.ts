@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { errorResponse, ErrorCode } from "@/app/lib/errors/server";
 import { webhookDeliveryStore } from "@/app/lib/webhook-delivery-store";
 import { getOutboxStore } from "@/lib/outbox";
+import { withTimeout, WEBHOOK_TIMEOUT_MS } from "@/src/middleware/timeout";
 
 /**
  * GET /api/webhooks/deliveries
@@ -14,6 +15,7 @@ import { getOutboxStore } from "@/lib/outbox";
  *   - cursor (opaque pagination cursor)
  */
 export async function GET(req: NextRequest) {
+  return withTimeout(WEBHOOK_TIMEOUT_MS, req, async () => {
   try {
     const { searchParams } = req.nextUrl;
     const rawLimit = searchParams.get("limit");
@@ -51,4 +53,5 @@ export async function GET(req: NextRequest) {
       500,
     );
   }
+  });
 }
