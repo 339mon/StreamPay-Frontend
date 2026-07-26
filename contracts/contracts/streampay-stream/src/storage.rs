@@ -340,6 +340,9 @@ pub fn next_stream_id(env: &Env) -> u64 {
 pub fn peek_next_stream_id(env: &Env) -> u64 {
     let storage = env.storage().instance();
     let id: u64 = storage.get(&DataKey::StreamCount).unwrap_or(1u64);
+    // Extend instance TTL on this hot read path so the stream-ID counter
+    // never archives while the contract is actively serving paginated views.
+    extend_next_stream_id_ttl(env);
     id
 }
 
