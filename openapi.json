@@ -1302,11 +1302,25 @@
                   }
                 }
               },
-              "example": {
-                "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
-                "rate": "120",
-                "schedule": "month",
-                "token": "XLM"
+              "examples": {
+                "minimal-xlm": {
+                  "summary": "Minimal request — XLM (default token)",
+                  "value": {
+                    "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                    "rate": "120",
+                    "schedule": "month",
+                    "token": "XLM"
+                  }
+                },
+                "with-usdc-token": {
+                  "summary": "Full request with USDC token",
+                  "value": {
+                    "recipient": "GDEF1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFGH",
+                    "rate": "500",
+                    "schedule": "week",
+                    "token": "USDC"
+                  }
+                }
               }
             }
           }
@@ -1340,17 +1354,23 @@
                     }
                   }
                 },
-                "example": {
-                  "data": {
-                    "id": "stream-abc12345",
-                    "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
-                    "rate": "120",
-                    "schedule": "month",
-                    "status": "draft",
-                    "nextAction": "start",
-                    "token": "XLM",
-                    "createdAt": "2024-01-15T10:00:00.000Z",
-                    "updatedAt": "2024-01-15T10:00:00.000Z"
+                "examples": {
+                  "draft-xlm": {
+                    "summary": "Newly created XLM stream in draft status",
+                    "value": {
+                      "data": {
+                        "id": "stream-abc12345",
+                        "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                        "rate": "120",
+                        "schedule": "month",
+                        "status": "draft",
+                        "nextAction": "start",
+                        "token": "XLM",
+                        "createdAt": "2024-01-15T10:00:00.000Z",
+                        "updatedAt": "2024-01-15T10:00:00.000Z"
+                      },
+                      "links": { "self": "/api/v1/streams/stream-abc12345" }
+                    }
                   },
                   "links": {
                     "self": "/api/v1/streams/stream-abc12345"
@@ -1561,6 +1581,36 @@
                           "type": "string"
                         }
                       }
+                    }
+                  }
+                },
+                "examples": {
+                  "results-found": {
+                    "summary": "Search returned matching streams",
+                    "value": {
+                      "data": [
+                        {
+                          "id": "stream-abc12345",
+                          "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                          "rate": "120",
+                          "schedule": "month",
+                          "status": "active",
+                          "nextAction": "pause",
+                          "token": "XLM",
+                          "createdAt": "2024-01-15T10:00:00.000Z",
+                          "updatedAt": "2024-01-16T08:30:00.000Z"
+                        }
+                      ],
+                      "meta": { "total": 1, "limit": 50, "offset": 0, "count": 1, "query": "abc12345" },
+                      "links": { "self": "/api/streams/search?q=abc12345&limit=50" }
+                    }
+                  },
+                  "no-results": {
+                    "summary": "No streams matched the search query",
+                    "value": {
+                      "data": [],
+                      "meta": { "total": 0, "limit": 50, "offset": 0, "count": 0, "query": "nonexistent" },
+                      "links": { "self": "/api/streams/search?q=nonexistent&limit=50" }
                     }
                   }
                 }
@@ -1799,17 +1849,38 @@
                     }
                   }
                 },
-                "example": {
-                  "data": {
-                    "id": "stream-abc12345",
-                    "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
-                    "rate": "150",
-                    "schedule": "month",
-                    "status": "draft",
-                    "nextAction": "start",
-                    "token": "XLM",
-                    "createdAt": "2024-01-15T10:00:00.000Z",
-                    "updatedAt": "2024-01-15T11:30:00.000Z"
+                "examples": {
+                  "rate-updated": {
+                    "summary": "Rate updated successfully",
+                    "value": {
+                      "data": {
+                        "id": "stream-abc12345",
+                        "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                        "rate": "150",
+                        "schedule": "month",
+                        "status": "draft",
+                        "nextAction": "start",
+                        "token": "XLM",
+                        "createdAt": "2024-01-15T10:00:00.000Z",
+                        "updatedAt": "2024-01-15T11:30:00.000Z"
+                      }
+                    }
+                  },
+                  "rate-and-token-updated": {
+                    "summary": "Rate and token updated",
+                    "value": {
+                      "data": {
+                        "id": "stream-abc12345",
+                        "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                        "rate": "200",
+                        "schedule": "month",
+                        "status": "draft",
+                        "nextAction": "start",
+                        "token": "USDC",
+                        "createdAt": "2024-01-15T10:00:00.000Z",
+                        "updatedAt": "2024-01-15T11:35:00.000Z"
+                      }
+                    }
                   }
                 }
               }
@@ -2562,7 +2633,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Stream list.",
+            "description": "Paginated stream list.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2581,7 +2652,7 @@
                 },
                 "examples": {
                   "one-active-stream": {
-                    "summary": "Single active stream",
+                    "summary": "Single active stream, no further pages",
                     "value": {
                       "streams": [
                         {
@@ -2596,7 +2667,9 @@
                           "created_at": "2024-01-15T10:00:00.000Z",
                           "settlement": null
                         }
-                      ]
+                      ],
+                      "meta": { "hasNext": false, "nextCursor": null, "total": 1 },
+                      "links": { "self": "/api/v2/streams?limit=20" }
                     }
                   },
                   "settled-stream": {
@@ -2616,7 +2689,9 @@
                             "currency": "XLM"
                           }
                         }
-                      ]
+                      ],
+                      "meta": { "hasNext": false, "nextCursor": null, "total": 1 },
+                      "links": { "self": "/api/v2/streams?limit=20" }
                     }
                   },
                   "empty-list": {
@@ -2691,10 +2766,24 @@
                   }
                 }
               },
-              "example": {
-                "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
-                "rate": "120",
-                "schedule": "month"
+              "examples": {
+                "minimal-xlm": {
+                  "summary": "Minimal request — XLM (default token)",
+                  "value": {
+                    "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                    "rate": "120",
+                    "schedule": "month"
+                  }
+                },
+                "with-usdc-token": {
+                  "summary": "Full request with USDC token",
+                  "value": {
+                    "recipient": "GDEF1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFGH",
+                    "rate": "500",
+                    "schedule": "week",
+                    "token": "USDC"
+                  }
+                }
               }
             }
           }
@@ -2931,7 +3020,7 @@
                   "$ref": "#/components/schemas/StreamV2"
                 },
                 "examples": {
-                  "success": {
+                  "draft-to-active": {
                     "summary": "Stream transitioned from draft to active",
                     "value": {
                       "id": "stream_lf3k9z",
@@ -2942,6 +3031,18 @@
                         "pause",
                         "stop"
                       ],
+                      "created_at": "2024-01-15T10:00:00.000Z",
+                      "settlement": null
+                    }
+                  },
+                  "paused-to-active": {
+                    "summary": "Paused stream resumed to active",
+                    "value": {
+                      "id": "stream_lf3k9z",
+                      "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
+                      "rate": "120 XLM/month",
+                      "status": "active",
+                      "allowed_actions": ["pause", "stop"],
                       "created_at": "2024-01-15T10:00:00.000Z",
                       "settlement": null
                     }
@@ -2966,7 +3067,7 @@
                 "example": {
                   "error": {
                     "code": "INVALID_STATE_TRANSITION",
-                    "message": "Cannot start a stream that is not in draft status.",
+                    "message": "Cannot start a stream that is not in draft or paused status.",
                     "request_id": "req_01HZ9ABCDEF"
                   }
                 }
@@ -3104,8 +3205,8 @@
                   "$ref": "#/components/schemas/StreamV2"
                 },
                 "examples": {
-                  "success": {
-                    "summary": "Active stream paused",
+                  "active-to-paused": {
+                    "summary": "Active stream paused, payments halted",
                     "value": {
                       "id": "stream_lf3k9z",
                       "recipient": "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFG",
@@ -3116,6 +3217,18 @@
                         "stop"
                       ],
                       "created_at": "2024-01-15T10:00:00.000Z",
+                      "settlement": null
+                    }
+                  },
+                  "high-value-paused": {
+                    "summary": "High-value USDC stream paused",
+                    "value": {
+                      "id": "stream_q8r4s5",
+                      "recipient": "GDEF1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ234567890ABCDEFGH",
+                      "rate": "5000 USDC/month",
+                      "status": "paused",
+                      "allowed_actions": ["start", "stop"],
+                      "created_at": "2024-02-01T09:00:00.000Z",
                       "settlement": null
                     }
                   }
