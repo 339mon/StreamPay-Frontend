@@ -198,12 +198,12 @@ describe('GET /api/reconciliation – metrics', () => {
     expect(mockEndTimer).toHaveBeenCalledWith({ status: '200' });
   });
 
-  it('records 400 status for invalid input', async () => {
+  it('records 422 status for invalid input', async () => {
     await GET(makeRequest({ search: '?limit=invalid' }));
-    
-    expect(reconciliationCounter.labels).toHaveBeenCalledWith('400');
+
+    expect(reconciliationCounter.labels).toHaveBeenCalledWith('422');
     const mockEndTimer = (reconciliationDuration.startTimer as jest.Mock).mock.results[0].value;
-    expect(mockEndTimer).toHaveBeenCalledWith({ status: '400' });
+    expect(mockEndTimer).toHaveBeenCalledWith({ status: '422' });
   });
 
   it('records 500 status on unexpected errors', async () => {
