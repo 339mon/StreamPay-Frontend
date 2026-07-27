@@ -422,6 +422,7 @@ New users see a 5-step `WelcomeTour` modal the first time they land on the home 
 - **Subsequent visits (tour seen, banner not dismissed)** — the plain banner is shown.
 - **All dismissed** — nothing is rendered.
 - Pressing **Escape** closes the tour. **ArrowRight / ArrowDown** advance, **ArrowLeft / ArrowUp** go back. Clicking a dot jumps to that step. Clicking the backdrop dismisses.
+- Pressing **?** anywhere in the app opens the Keyboard Shortcuts overlay, listing all available shortcuts. Press **?** again or **Escape** to close it.
 
 **Testing**
 
