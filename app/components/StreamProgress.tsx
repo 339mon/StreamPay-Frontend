@@ -48,13 +48,17 @@ import type { KbdShortcut } from "@/src/components/KbdHint";
 /**
  * Tracks the user's `prefers-reduced-motion` setting.
  *
- * Returns `true` when the user has requested reduced motion. SSR-safe: defaults
- * to `false` on the server (and before hydration) and updates live if the
- * preference changes. Used to swap the animated fill transition for a static,
- * instantly-positioned bar.
+ * Reads the media query synchronously on mount so the correct class is applied
+ * on the first render (no flash). Updates live if the preference changes.
+ * SSR-safe: returns `false` on the server.
  */
 function usePrefersReducedMotion(): boolean {
-  const [prefersReduced, setPrefersReduced] = useState(false);
+  const [prefersReduced, setPrefersReduced] = useState(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return false;
+    }
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  });
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
@@ -62,12 +66,8 @@ function usePrefersReducedMotion(): boolean {
     }
 
     const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setPrefersReduced(query.matches);
-
     const onChange = (event: MediaQueryListEvent) => setPrefersReduced(event.matches);
 
-    // addEventListener is the modern API; fall back to addListener for older
-    // engines (e.g. Safari < 14) so the hook degrades gracefully.
     if (typeof query.addEventListener === "function") {
       query.addEventListener("change", onChange);
       return () => query.removeEventListener("change", onChange);
