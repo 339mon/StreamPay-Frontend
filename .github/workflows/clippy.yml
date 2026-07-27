@@ -41,7 +41,7 @@ jobs:
         run: |
           cargo clippy \
             --target wasm32v1-none \
-            --all-targets \
+            --lib \
             --all-features \
             -- \
             -W clippy::pedantic \

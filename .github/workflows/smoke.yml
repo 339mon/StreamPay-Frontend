@@ -59,7 +59,9 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Install stellar CLI
-        run: cargo install stellar-cli --locked
+        uses: stellar/install-stellar-cli@v1
+        with:
+          version: 27.0.0
 
       - name: Generate throwaway testnet keypair
         id: keypair

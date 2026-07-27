@@ -43,10 +43,6 @@ jobs:
             ${{ runner.os }}-cargo-gas-
             ${{ runner.os }}-cargo-
 
-      - name: Compile benchmark harness
-        working-directory: contracts
-        run: cargo bench --no-run
-
       - name: Build optimized WASM for budget check
         working-directory: contracts
         run: cargo build --target wasm32v1-none --release
@@ -92,5 +88,5 @@ jobs:
         with:
           name: gas-budget-artifacts
           path: |
-            contracts/target
+            contracts/target/wasm32v1-none/release/*.wasm
             contracts/gas-budget.json

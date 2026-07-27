@@ -35,8 +35,6 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
-          # Retry on transient failures
-          setup-type: manual
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3
