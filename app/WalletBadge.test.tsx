@@ -2,6 +2,8 @@
  * @jest-environment jsdom
  */
 
+import fs from "fs";
+import path from "path";
 import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { WalletBadge } from "./WalletBadge";
@@ -158,5 +160,69 @@ describe("WalletBadge", () => {
   it("does not render keyboard shortcut hint when component is not interactive", () => {
     render(<WalletBadge state="connecting" shortcut="C" />);
     expect(screen.queryByTestId("kbd-hint")).not.toBeInTheDocument();
+  });
+
+  it("applies keyboard-visible focus ring on interactive badge when focused via keyboard", () => {
+    const handleConnect = jest.fn();
+    render(<WalletBadge state="disconnected" onConnect={handleConnect} />);
+    const badge = screen.getByTestId("wallet-badge");
+
+    // The badge should be focusable via keyboard (tabIndex 0).
+    expect(badge).toHaveAttribute("tabIndex", "0");
+
+    // Simulate keyboard focus by focusing the element and dispatching
+    // a focus event — jsdom treats all programmatic focus as :focus-visible.
+    badge.focus();
+    expect(document.activeElement).toBe(badge);
+
+    // After focus, pressing Enter should still invoke the callback.
+    fireEvent.keyDown(badge, { key: "Enter" });
+    expect(handleConnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows empty state when showEmptyState is true and state is disconnected", () => {
+    render(
+      <WalletBadge
+        state="disconnected"
+        showEmptyState
+        onConnect={jest.fn()}
+      />
+    );
+
+    expect(screen.getByTestId("wallet-badge-empty-state")).toBeInTheDocument();
+    expect(screen.getByText("Connect Wallet")).toBeInTheDocument();
+  });
+});
+
+describe("WalletBadge focus-visible CSS", () => {
+  const cssText = fs.readFileSync(
+    path.join(__dirname, "WalletBadge.module.css"),
+    "utf8"
+  );
+
+  it("declares .badgeInteractive:focus-visible with accent outline and box-shadow", () => {
+    expect(cssText).toContain(".badgeInteractive:focus-visible");
+    expect(cssText).toContain("outline: 2px solid var(--accent");
+    expect(cssText).toContain("box-shadow: 0 0 0 2px var(--background");
+  });
+
+  it("suppresses outline for mouse/touch focus on interactive badge", () => {
+    expect(cssText).toContain(
+      ".badgeInteractive:focus:not(:focus-visible)"
+    );
+    expect(cssText).toContain("outline: none");
+  });
+
+  it("declares .disconnect:focus-visible with accent outline and box-shadow", () => {
+    expect(cssText).toContain(".disconnect:focus-visible");
+    expect(cssText).toContain("outline: 2px solid var(--accent");
+    expect(cssText).toContain("box-shadow: 0 0 0 2px var(--background");
+  });
+
+  it("suppresses outline for mouse/touch focus on disconnect button", () => {
+    expect(cssText).toContain(
+      ".disconnect:focus:not(:focus-visible)"
+    );
+    expect(cssText).toContain("outline: none");
   });
 });

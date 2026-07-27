@@ -99,7 +99,7 @@ export function EmptyState({
       </p>
       {ctaText && (
         <button
-          className="empty-state__cta"
+          className="empty-state__cta empty-state__cta--focus-visible"
           onClick={onCtaClick}
           disabled={!onCtaClick}
           type="button"
@@ -113,11 +113,8 @@ export function EmptyState({
             fontWeight: 500,
             cursor: onCtaClick ? "pointer" : "not-allowed",
             opacity: onCtaClick ? 1 : 0.6,
-            transition: "background-color 0.2s",
-            outline: "none",
+            transition: "background-color 0.2s, box-shadow 0.15s ease",
           }}
-          onFocus={(e) => (e.target.style.boxShadow = "0 0 0 2px var(--primary, #3B82F6), 0 0 0 4px var(--panel, #1F2937)")}
-          onBlur={(e) => (e.target.style.boxShadow = "none")}
         >
           {ctaText}
         </button>

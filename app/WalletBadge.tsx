@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { LiveRegion } from "../src/components/LiveRegion";
 import { KbdHint } from "../src/components/KbdHint";
+import { EmptyState } from "../src/components/EmptyState";
 import styles from "./WalletBadge.module.css";
 
 export type WalletState = "disconnected" | "connecting" | "connected" | "error" | "disconnecting";
