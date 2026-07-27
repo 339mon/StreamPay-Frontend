@@ -31,12 +31,12 @@ export async function applyChaos(req: NextRequest): Promise<NextResponse | null>
   const correlationId = req.headers.get('x-correlation-id') || crypto.randomUUID();
 
   if (config.latencyMs > 0) {
-    console.warn([ChaosMW] [] Injecting latency of ms);
+    console.warn(`[ChaosMW] [${correlationId}] Injecting latency of ${config.latencyMs}ms`);
     await new Promise((resolve) => setTimeout(resolve, config.latencyMs));
   }
 
   if (config.errorRate > 0 && Math.random() < config.errorRate) {
-    console.error([ChaosMW] [] Injecting failure with status );
+    console.error(`[ChaosMW] [${correlationId}] Injecting failure with status ${config.errorCode}`);
     return NextResponse.json(
       {
         error: {
