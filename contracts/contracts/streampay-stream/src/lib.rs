@@ -25,6 +25,7 @@ mod fees;
 mod limits;
 mod migrate;
 mod multi;
+mod recurring;
 mod release;
 mod snapshot_diff;
 mod storage;
@@ -36,6 +37,7 @@ mod withdrawer;
 mod fee_sweep_test;
 
 pub use error::Error;
+pub use recurring::RecurringStream;
 use soroban_sdk::contracttype;
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env};
 pub use multi::{RecipientAllocation, SplitStream};
@@ -1983,6 +1985,178 @@ impl Contract {
         limit: u64,
     ) -> views::StreamPage {
         views::list_streams_by_sender_and_status(&env, &sender, status, start_after, limit)
+    }
+
+    // ── Recurring streams ───────────────────────────────────────────────────
+
+    /// Creates a new recurring payment stream.
+    ///
+    /// Transfers `amount_per_cycle * total_cycles` from `sender` to the
+    /// contract escrow.  The stream begins in `Active` status; call
+    /// [`process_recurring_stream`] to advance cycles as time elapses.
+    ///
+    /// @param `sender`           — Address funding the stream.
+    /// @param `recipient`        — Address receiving periodic payments.
+    /// @param `token`            — Token contract address.
+    /// @param `amount_per_cycle` — Tokens released each cycle (> 0).
+    /// @param `cycle_duration`   — Seconds per cycle (> 0).
+    /// @param `total_cycles`     — Total number of cycles (> 0).
+    /// @param `start_time`       — When the first cycle starts (≥ now).
+    /// @param `fee_bps`          — Per-stream fee basis points [0, 10_000].
+    ///
+    /// @return The new recurring stream's numeric ID.
+    ///
+    /// @custom:error [`Error::ContractPaused`] if the global pause flag is set.
+    /// @custom:error [`Error::InvalidAmount`] if `amount_per_cycle <= 0` or
+    ///   `total_cycles == 0`.
+    /// @custom:error [`Error::InvalidTimeRange`] if `cycle_duration == 0` or
+    ///   `start_time < now`.
+    /// @custom:error [`Error::SelfStream`] if `sender == recipient`.
+    /// @custom:error [`Error::TokenNotAllowed`] if the token has been blocked.
+    /// @custom:error [`Error::InvalidFeeBps`] if `fee_bps > 10_000`.
+    /// @custom:error [`Error::Overflow`] if
+    ///   `amount_per_cycle * total_cycles` overflows `i128`.
+    ///
+    /// @custom:auth Requires authorisation from `sender`.
+    pub fn create_recurring_stream(
+        env: Env,
+        sender: Address,
+        recipient: Address,
+        token: Address,
+        amount_per_cycle: i128,
+        cycle_duration: u64,
+        total_cycles: u64,
+        start_time: u64,
+        fee_bps: u32,
+    ) -> Result<u64, Error> {
+        recurring::create(
+            env,
+            sender,
+            recipient,
+            token,
+            amount_per_cycle,
+            cycle_duration,
+            total_cycles,
+            start_time,
+            fee_bps,
+        )
+    }
+
+    /// Processes a recurring stream, advancing completed cycles based on
+    /// elapsed time.
+    ///
+    /// Anyone may call this permissionless keeper function.  After processing,
+    /// the recipient can withdraw the newly accrued funds.  When all cycles
+    /// are complete the stream transitions to `Ended`.
+    ///
+    /// @param `recurring_id` — Numeric ID of the recurring stream.
+    ///
+    /// @return The updated [`RecurringStream`] after processing.
+    ///
+    /// @custom:error [`Error::NotFound`] if `recurring_id` does not exist.
+    /// @custom:error [`Error::InvalidState`] if the stream is not `Active`.
+    ///
+    /// @custom:auth No authorisation required (permissionless).
+    pub fn process_recurring_stream(
+        env: Env,
+        recurring_id: u64,
+    ) -> Result<RecurringStream, Error> {
+        recurring::process(env, recurring_id)
+    }
+
+    /// Withdraws `amount` tokens from a recurring stream's vested balance.
+    ///
+    /// Tokens are transferred from the contract escrow to the stream
+    /// recipient.  Stream fees (if configured) are deducted before the
+    /// transfer.
+    ///
+    /// @param `recurring_id` — Numeric ID of the recurring stream.
+    /// @param `recipient`    — Address that must match the stream recipient.
+    /// @param `amount`       — Amount to withdraw (> 0, ≤ withdrawable
+    ///   balance).
+    ///
+    /// @return The amount withdrawn.
+    ///
+    /// @custom:error [`Error::ContractPaused`] if the global pause flag is
+    ///   set.
+    /// @custom:error [`Error::NotFound`] if `recurring_id` does not exist.
+    /// @custom:error [`Error::Unauthorized`] if `recipient` does not match.
+    /// @custom:error [`Error::InvalidAmount`] if `amount <= 0`.
+    /// @custom:error [`Error::InvalidState`] if the stream is cancelled.
+    /// @custom:error [`Error::OverWithdraw`] if `amount` exceeds available
+    ///   balance.
+    /// @custom:error [`Error::Overflow`] if any arithmetic step overflows.
+    ///
+    /// @custom:auth Requires authorisation from `recipient`.
+    pub fn withdraw_recurring(
+        env: Env,
+        recurring_id: u64,
+        recipient: Address,
+        amount: i128,
+    ) -> Result<i128, Error> {
+        recurring::withdraw(env, recurring_id, recipient, amount)
+    }
+
+    /// Cancels an active or ended recurring stream.
+    ///
+    /// Only the sender may cancel.  Unvested escrow is returned to the
+    /// sender; the recipient keeps already-withdrawn funds plus any vested
+    /// but unwithdrawn amount.
+    ///
+    /// @param `recurring_id` — Numeric ID of the recurring stream to cancel.
+    ///
+    /// @return The final [`RecurringStream`] state after cancellation.
+    ///
+    /// @custom:error [`Error::NotFound`] if `recurring_id` does not exist.
+    /// @custom:error [`Error::Unauthorized`] if caller is not the stream
+    ///   sender.
+    /// @custom:error [`Error::InvalidState`] if the stream is already
+    ///   cancelled.
+    /// @custom:error [`Error::Overflow`] if any arithmetic step overflows.
+    ///
+    /// @custom:auth Requires authorisation from the stream `sender`.
+    pub fn cancel_recurring_stream(
+        env: Env,
+        recurring_id: u64,
+    ) -> Result<RecurringStream, Error> {
+        recurring::cancel(env, recurring_id)
+    }
+
+    /// Returns the stored recurring stream record for `recurring_id`.
+    ///
+    /// @param `recurring_id` — Numeric ID of the recurring stream.
+    ///
+    /// @return The [`RecurringStream`] record.
+    ///
+    /// @custom:error [`Error::NotFound`] if `recurring_id` does not exist.
+    pub fn get_recurring_stream(env: Env, recurring_id: u64) -> Result<RecurringStream, Error> {
+        recurring::get(env, recurring_id)
+    }
+
+    /// Returns the amount currently withdrawable from a recurring stream.
+    ///
+    /// @param `recurring_id` — Numeric ID of the recurring stream.
+    ///
+    /// @return The withdrawable amount (always ≥ 0).
+    ///
+    /// @custom:error [`Error::NotFound`] if `recurring_id` does not exist.
+    /// @custom:error [`Error::Overflow`] if vested-amount computation
+    ///   overflows.
+    pub fn recurring_withdrawable(env: Env, recurring_id: u64) -> Result<i128, Error> {
+        recurring::get_withdrawable(env, recurring_id)
+    }
+
+    /// Returns the total amount vested across all completed cycles.
+    ///
+    /// @param `recurring_id` — Numeric ID of the recurring stream.
+    ///
+    /// @return The total vested token amount.
+    ///
+    /// @custom:error [`Error::NotFound`] if `recurring_id` does not exist.
+    /// @custom:error [`Error::Overflow`] if vested-amount computation
+    ///   overflows.
+    pub fn recurring_vested(env: Env, recurring_id: u64) -> Result<i128, Error> {
+        recurring::get_vested(env, recurring_id)
     }
 }
 
