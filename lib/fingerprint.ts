@@ -26,6 +26,26 @@ function getClientIp(headers: Headers): string {
 }
 
 export const REQUEST_FINGERPRINT_HEADER = 'x-request-fingerprint';
+export const REQUEST_FINGERPRINT_AUDIT_ACTION = 'request.fingerprint.captured';
+
+type AuditHookFn = (request: Request, fingerprint: string) => Promise<void> | void;
+let activeAuditHook: AuditHookFn | null = null;
+
+export function setRequestFingerprintAuditHook(hook: AuditHookFn | null): void {
+  activeAuditHook = hook;
+}
+
+export function getRequestFingerprintFromHeaders(headers: Headers): string | null {
+  return headers.get(REQUEST_FINGERPRINT_HEADER);
+}
+
+export function extractRequestPathname(request: Request): string {
+  try {
+    return new URL(request.url).pathname;
+  } catch {
+    return '';
+  }
+}
 
 /**
  * Normalizes request signals to generate a stable, non-volatile fingerprint.
@@ -69,6 +89,22 @@ export function generateFingerprint(request: Request): string {
   }
 }
 
+export async function computeRequestFingerprintFromRequest(request: Request): Promise<string> {
+  return generateFingerprint(request);
+}
+
+export function buildRequestFingerprintLogContext(
+  request: Request,
+  fingerprint: string
+): Record<string, unknown> {
+  return {
+    type: 'request.fingerprint',
+    method: request.method.toUpperCase(),
+    pathname: extractRequestPathname(request),
+    requestFingerprint: fingerprint,
+  };
+}
+
 /**
  * Captures and returns the request fingerprint.
  *
@@ -76,5 +112,13 @@ export function generateFingerprint(request: Request): string {
  * @returns SHA-256 hash string
  */
 export async function captureRequestFingerprint(request: Request): Promise<string> {
-  return generateFingerprint(request);
+  const fp = generateFingerprint(request);
+  if (activeAuditHook) {
+    try {
+      await activeAuditHook(request, fp);
+    } catch (err) {
+      logger.warn('Request fingerprint audit hook error', { error: err });
+    }
+  }
+  return fp;
 }
