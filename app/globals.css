@@ -585,6 +585,53 @@ a:hover {
   }
 }
 
+/* ─── StreamProgress Responsive Breakpoints ───────────────────────────────────
+ *
+ * Narrow viewport (< 30rem / 480px):
+ *   - Stack label + remaining vertically to avoid horizontal overflow
+ *   - Reduce track height and font sizes
+ *   - Tighter gaps
+ *
+ * Mid-range (30rem – 47.9375rem / 480px – 767px):
+ *   - Keep horizontal layout but reduce gaps
+ *
+ * Desktop (>= 48rem / 768px):
+ *   - Default (as above)
+ */
+
+@media (max-width: 29.9375rem) {
+  .stream-progress {
+    gap: 0.375rem;
+  }
+
+  .stream-progress__track {
+    height: 8px;
+  }
+
+  .stream-progress__meta {
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+
+  .stream-progress__label {
+    font-size: 0.75rem;
+  }
+
+  .stream-progress__remaining {
+    font-size: 0.6875rem;
+  }
+}
+
+@media (min-width: 30rem) and (max-width: 47.9375rem) {
+  .stream-progress {
+    gap: 0.375rem;
+  }
+
+  .stream-progress__meta {
+    gap: 0.5rem;
+  }
+}
+
 /* ─── Stream List Layout ──────────────────────────────────────────────────── */
 
 .stream-list {
@@ -1072,6 +1119,33 @@ a:hover {
   content: "•";
   left: 0;
   position: absolute;
+}
+
+/* ─── EmptyState Responsive Breakpoints ───────────────────────────────────────
+ *
+ * Narrow viewport (< 30rem / 480px):
+ *   - Compact padding, smaller title and description
+ *   - Reduced gap and border radius
+ */
+
+@media (max-width: 29.9375rem) {
+  .empty-state {
+    padding: 1rem;
+    gap: 0.75rem;
+    border-radius: 1.25rem;
+  }
+
+  .empty-state__content {
+    gap: 0.5rem;
+  }
+
+  .empty-state__title {
+    font-size: 1.25rem;
+  }
+
+  .empty-state__description {
+    font-size: 0.875rem;
+  }
 }
 
 /* ─── Skeletons ─── */
