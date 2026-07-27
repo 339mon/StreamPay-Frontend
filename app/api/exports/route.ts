@@ -123,12 +123,25 @@ function scheduleExportJob(jobId: string) {
   exportRepository.processing.set(jobId, jobPromise);
 }
 
+function recordExportMetrics(method: string, status: number, startedAt: [number, number]) {
+  const hrtime = process.hrtime(startedAt);
+  const durationMs = hrtime[0] * 1000 + hrtime[1] / 1e6;
+  
+  if (typeof global !== "undefined" && (global as any).prometheusMetrics) {
+    const metrics = (global as any).prometheusMetrics;
+    metrics.apiRequestsTotal?.inc({ method, route: "/api/exports", status });
+    metrics.apiRequestDuration?.observe({ method, route: "/api/exports", status }, durationMs / 1000);
+  } else {
+    logger.info("Export metric recorded", { method, status, durationMs, route: "/api/exports" });
+  }
+}
+
 export async function POST(request: Request) {
   const startedAt = process.hrtime();
   let status = 500;
 
   try {
-    const response = await withTimeout(EXPORTS_TIMEOUT_MS, request, async (signal) => {
+    const response = await withTimeout(EXPORTS_TIMEOUT_MS, request, async (_signal) => {
       const { exportRepository } = getStore();
       const actor = tryAuthenticateRequest(request);
       if (!actor) {
@@ -175,6 +188,10 @@ export async function POST(request: Request) {
 
     status = response.status;
     return response;
+  } catch (error) {
+    const errResp = createErrorResponse("INTERNAL_ERROR", "Export request failed", 500);
+    status = errResp.status;
+    return errResp;
   } finally {
     recordExportMetrics("POST", status, startedAt);
   }
@@ -185,7 +202,7 @@ export async function GET(request: Request) {
   let status = 500;
 
   try {
-    const response = await withTimeout(EXPORTS_TIMEOUT_MS, request, async (signal) => {
+    const response = await withTimeout(EXPORTS_TIMEOUT_MS, request, async (_signal) => {
       const { exportRepository } = getStore();
       const actor = tryAuthenticateRequest(request);
       if (!actor) {
@@ -201,20 +218,62 @@ export async function GET(request: Request) {
       };
       const rateCheck = await checkRateLimit(identity, limitType);
 
-    const payload = {
-      data: paginatedJobs,
-      links: { self: `/api/exports?limit=${limit}` },
-      meta: { hasNext, nextCursor, total: jobs.length },
-    };
+      if (!rateCheck.allowed) {
+        recordThrottle(url.pathname, limitType, identity.type, identity.displayValue);
+        return rateLimitResponse(rateCheck.retryAfter!);
+      }
+      recordRequest(url.pathname);
 
-    logger.info("Exports listed successfully", {
-      count: paginatedJobs.length,
-      total: jobs.length,
-      limit,
-      request_id: getCorrelationContext()?.request_id,
+      const searchParams = url.searchParams;
+      const limit = Math.max(1, Math.min(100, Number(searchParams.get("limit")) || 10));
+      const cursor = searchParams.get("cursor");
+
+      let jobs = Array.from(exportRepository.jobs.values())
+        .filter((job) => job.ownerId === actor.walletAddress)
+        .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
+
+      let startIndex = 0;
+      if (cursor) {
+        const decoded = decodeCompositeCursor(cursor);
+        const idx = jobs.findIndex((j) => j.id === decoded?.id);
+        if (idx >= 0) {
+          startIndex = idx;
+        }
+      }
+
+      const paginatedJobs = jobs.slice(startIndex, startIndex + limit);
+      const hasNext = startIndex + limit < jobs.length;
+      let nextCursor = null;
+
+      if (hasNext) {
+        const nextJob = jobs[startIndex + limit];
+        nextCursor = encodeCompositeCursor({ id: nextJob.id, timestamp: nextJob.requestedAt });
+      }
+
+      const payload = {
+        data: paginatedJobs,
+        links: { self: `/api/exports?limit=${limit}` },
+        meta: { hasNext, nextCursor, total: jobs.length },
+      };
+
+      logger.info("Exports listed successfully", {
+        count: paginatedJobs.length,
+        total: jobs.length,
+        limit,
+        request_id: getCorrelationContext()?.request_id,
+      });
+
+      // Strong ETag / 304 for conditional GET (Issue #1120)
+      return withStrongEtag(request, payload);
     });
 
-    // Strong ETag / 304 for conditional GET (Issue #1120)
-    return withStrongEtag(request, payload);
-  });
+    status = response.status;
+    return response;
+  } catch (error) {
+    const errResp = createErrorResponse("INTERNAL_ERROR", "Export listing failed", 500);
+    status = errResp.status;
+    return errResp;
+  } finally {
+    recordExportMetrics("GET", status, startedAt);
+  }
 }
