@@ -62,4 +62,6 @@ pub enum Error {
     /// 20: Accumulated fee balance for a stream underflows or would produce an
     ///     invalid token transfer amount.  Guards against integer manipulation.
     SweepAmountMismatch = 20,
+    /// 21: Admin action is currently in cooldown.
+    AdminCooldown = 21,
 }

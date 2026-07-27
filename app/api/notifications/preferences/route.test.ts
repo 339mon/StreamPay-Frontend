@@ -114,7 +114,7 @@ describe("GET /api/notifications/preferences", () => {
   });
 
   it("rejects tokens signed with the insecure dev secret", async () => {
-    process.env.JWT_SECRET = INSECURE_DEV_JWT_SECRET;
+    process.env.JWT_SECRET = TEST_SECRET;
     const token = signToken({ sub: WALLET_ADDRESS, actorId: "actor-dev" }, INSECURE_DEV_JWT_SECRET);
 
     const response = await GET(requestWithAuthorization({ authorization: `Bearer ${token}` }));

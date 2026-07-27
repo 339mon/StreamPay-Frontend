@@ -137,11 +137,11 @@ fn created_event_payload_fields() {
 
     // Deserialise as a vec of Val and check field count.
     let fields: soroban_sdk::Vec<soroban_sdk::Val> = payload.from_val(&data.env);
-    // stream_id | sender | recipient | token | total_amount | timestamp  = 6 fields
+    // stream_id | sender | recipient | token | total_amount | fee_bps | duration | timestamp = 8 fields
     assert_eq!(
         fields.len(),
-        6,
-        "StreamCreated payload must have 6 fields"
+        8,
+        "StreamCreated payload must have 8 fields"
     );
 
     // Field 0: stream_id
@@ -151,6 +151,14 @@ fn created_event_payload_fields() {
     // Field 4: total_amount
     let got_amount: i128 = fields.get_unchecked(4).from_val(&data.env);
     assert_eq!(got_amount, 1_000i128);
+
+    // Field 5: fee_bps
+    let got_fee_bps: u32 = fields.get_unchecked(5).from_val(&data.env);
+    assert_eq!(got_fee_bps, 0u32, "fee_bps should be 0 for mock streams");
+
+    // Field 6: duration
+    let got_duration: u64 = fields.get_unchecked(6).from_val(&data.env);
+    assert_eq!(got_duration, 100u64, "duration should be end_time - start_time");
 }
 
 /// No events are emitted when `create_stream` fails (e.g. invalid amount).

@@ -20,6 +20,20 @@
   --skeleton-base: #20202a;
   --skeleton-shine: #31313f;
 
+  --stream-chip-surface: var(--panel-elevated);
+  --stream-chip-border: var(--border);
+  --stream-chip-label-color: var(--foreground);
+  --stream-chip-amount-color: var(--muted-foreground);
+  --stream-chip-radius: 9999px;
+  --stream-chip-padding-block: 0.375rem;
+  --stream-chip-padding-inline: 0.625rem;
+  --stream-chip-padding-inline-desktop: 0.75rem;
+  --stream-chip-gap: 0.375rem;
+  --stream-chip-gap-desktop: 0.5rem;
+  --stream-chip-font-size: 0.875rem;
+  --stream-chip-font-weight: 600;
+  --stream-chip-focus-ring: var(--accent);
+
   --system-success-bg: rgba(34, 197, 94, 0.12);
   --system-success-text: #bbf7d0;
   --system-success-border: #22c55e;
@@ -95,6 +109,28 @@
   --badge-cancelled-bg: var(--stream-status-cancelled-bg);
   --badge-cancelled-border: var(--stream-status-cancelled-border);
   --badge-cancelled-text: var(--stream-status-cancelled-text);
+
+  /* ── Spacing Scale ── */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+
+  /* ── Typography Scale ── */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-4xl: 2.25rem;
+
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
 }
 
 /* ── Light Theme ── */
@@ -117,6 +153,20 @@
   --shadow-soft: 0 24px 60px rgba(0, 0, 0, 0.12);
   --skeleton-base: #f3f4f6;
   --skeleton-shine: #e5e7eb;
+
+  --stream-chip-surface: var(--panel-elevated);
+  --stream-chip-border: var(--border);
+  --stream-chip-label-color: var(--foreground);
+  --stream-chip-amount-color: var(--muted-foreground);
+  --stream-chip-radius: 9999px;
+  --stream-chip-padding-block: 0.375rem;
+  --stream-chip-padding-inline: 0.625rem;
+  --stream-chip-padding-inline-desktop: 0.75rem;
+  --stream-chip-gap: 0.375rem;
+  --stream-chip-gap-desktop: 0.5rem;
+  --stream-chip-font-size: 0.875rem;
+  --stream-chip-font-weight: 600;
+  --stream-chip-focus-ring: var(--accent);
 
   /* ── Stream Lifecycle Tokens (light theme overrides) ── */
   --stream-status-draft-bg: #eff6ff;
@@ -224,6 +274,19 @@
   --shadow-soft: 0 24px 60px rgba(0, 0, 0, 0.6);
   --skeleton-base: #18181b;
   --skeleton-shine: #27272a;
+  --stream-chip-surface: #111116;
+  --stream-chip-border: var(--border);
+  --stream-chip-label-color: var(--foreground);
+  --stream-chip-amount-color: var(--muted-foreground);
+  --stream-chip-radius: 9999px;
+  --stream-chip-padding-block: 0.375rem;
+  --stream-chip-padding-inline: 0.625rem;
+  --stream-chip-padding-inline-desktop: 0.75rem;
+  --stream-chip-gap: 0.375rem;
+  --stream-chip-gap-desktop: 0.5rem;
+  --stream-chip-font-size: 0.875rem;
+  --stream-chip-font-weight: 600;
+  --stream-chip-focus-ring: #4ade80;
   --stream-status-draft-bg: #1e3a5f;
   --stream-status-draft-text: #93c5fd;
   --stream-status-draft-border: #60a5fa;
@@ -495,7 +558,7 @@ a:hover {
 
 .stream-progress {
   display: grid;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .stream-progress__track {
@@ -555,19 +618,19 @@ a:hover {
 .stream-progress__meta {
   align-items: baseline;
   display: flex;
-  gap: 1rem;
+  gap: var(--space-4);
   justify-content: space-between;
 }
 
 .stream-progress__label {
   color: var(--foreground);
-  font-size: 0.8125rem;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
 }
 
 .stream-progress__remaining {
   color: var(--muted-light);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
 }
 
 /* Reduced motion: disable any width transitions (component also handles this
@@ -585,11 +648,152 @@ a:hover {
   }
 }
 
+/* ─── Kbd Hint ──────────────────────────────────────────────────────────────── */
+
+.kbd-hint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: center;
+}
+
+.kbd-hint__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.kbd-hint__keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+.kbd-hint__separator {
+  color: var(--muted);
+  font-size: 0.6875rem;
+  user-select: none;
+}
+
+.kbd {
+  display: inline-block;
+  padding: 0.125rem 0.375rem;
+  font-family: inherit;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--muted-light);
+  background-color: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  min-width: 1.25rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.kbd-hint__description {
+  color: var(--muted-light);
+  font-size: 0.6875rem;
+}
+
+.stream-progress__hints {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-top: 0.25rem;
+}
+
+.stream-progress__hints-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.375rem;
+  font-family: inherit;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--muted-light);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+
+.stream-progress__hints-toggle:hover {
+  color: var(--foreground);
+  border-color: var(--border);
+}
+
+.stream-progress__hints-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.stream-progress__hints-icon {
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
 /* ─── Stream List Layout ──────────────────────────────────────────────────── */
 
 .stream-list {
   display: grid;
   gap: 1rem;
+}
+
+/* ─── Cascade Stagger Animation (#841) ───────────────────────────────────── */
+/*
+ * Each .stream-cascade-item wraps a StreamRow.  The parent component sets
+ * `--cascade-index` as an inline custom property (0, 1, 2 …) so the CSS
+ * can calculate a per-item delay without any JavaScript timers.
+ *
+ * Motion budget:
+ *   - Opacity:   0 → 1
+ *   - Translate: 12px down → 0  (subtle vertical lift-in)
+ *   - Duration:  320 ms per item, eased with cubic-bezier for a snappy feel
+ *   - Base delay: 60 ms × index — fast enough to feel live, not jarring
+ *
+ * WCAG 2.1 §2.3 / prefers-reduced-motion:
+ *   When the user has requested reduced motion the wrapper is made visible
+ *   immediately (opacity: 1; transform: none) with no animation, so content
+ *   is still accessible without any motion.
+ */
+@keyframes stream-cascade-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.stream-cascade-item {
+  /*
+   * animation-delay is driven by --cascade-index so each row enters
+   * 60 ms after the previous one.  calc() only resolves a unitless
+   * custom property when multiplied by a value that carries units.
+   */
+  animation: stream-cascade-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--cascade-index, 0) * 60ms);
+  /* Hint to the compositor — avoids layout thrashing on scroll. */
+  will-change: opacity, transform;
+}
+
+/*
+ * Reduced-motion fallback: skip the animation entirely so the row is
+ * immediately visible.  The `!important` guards ensure this wins over
+ * the inline style and any specificity conflicts.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .stream-cascade-item {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }
 
 /* ─── Streams Dense Layout (density toggle) ─────────────────────────────── */
@@ -809,6 +1013,53 @@ a:hover {
 
 .stream-row__action {
   justify-self: start;
+}
+
+/* ─── Swipe to Cancel (mobile) ─────────────────────────────────────────── */
+.stream-row {
+  touch-action: pan-y;
+  will-change: transform;
+}
+
+.stream-row--swiping {
+  transition: transform 0.15s ease-out;
+}
+
+.stream-row__cancel-reveal {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 1.5rem;
+  border-radius: 1.25rem;
+  background: var(--system-error-bg);
+  z-index: -1;
+  pointer-events: none;
+}
+
+.stream-row__cancel-label {
+  color: var(--system-error-text);
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0;
+  transition: opacity 0.15s ease-out;
+}
+
+.stream-row__cancel-reveal[data-swipe-active="true"] .stream-row__cancel-label {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stream-row--swiping {
+    transition: none !important;
+  }
+
+  .stream-row__cancel-label {
+    transition: none !important;
+  }
 }
 
 .stream-row__receipt-link {
@@ -2607,9 +2858,26 @@ a:hover {
     transform: translateX(-100%);
   }
   100% {
-    transform: translateX(350%);
+    transform: translateX(100%);
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .splash-screen {
+    transition: none !important;
+  }
+  .splash-orb,
+  .splash-logo-glow,
+  .splash-logo,
+  .splash-title,
+  .splash-tagline,
+  .splash-loader,
+  .splash-loader__bar {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
 
 /* ─── Stream Detail & Timeline Pages ──────────────────────────────────────── */
 
@@ -4247,5 +4515,70 @@ a:hover {
 @media (prefers-reduced-motion: reduce) {
   .inline-help__trigger {
     transition: none !important;
+  }
+}
+
+/* ─── CreateStreamForm responsive (#1042 v7) ─── */
+
+.csf-field-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1rem;
+}
+
+.csf-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+}
+
+.csf-cta-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+/* Extra narrow (< 360px): single-column field grid, stacked buttons, compact CTA */
+@media (max-width: 22.4375rem) {
+  .csf-field-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .csf-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .csf-cta-banner {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+    padding: 0.875rem 1rem;
+  }
+
+  .csf-cta-banner .button {
+    width: 100%;
+    min-height: 2.75rem;
+  }
+}
+
+/* Narrow mobile (< 480px): tighter padding */
+@media (max-width: 480px) {
+  .csf-section {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+}
+
+/* Tablet+ (≥ 768px): restore generous padding and two-column grid */
+@media (min-width: 48rem) {
+  .csf-section {
+    padding-left: 1.5rem !important;
+    padding-right: 1.5rem !important;
   }
 }

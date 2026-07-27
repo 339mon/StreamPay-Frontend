@@ -18,6 +18,8 @@ import { useEffect, useState } from "react";
  * - Fade-out reduced from 600 ms → 300 ms.
  * - Component is loaded lazily via next/dynamic in layout.tsx so it
  *   is excluded from the critical rendering path entirely.
+ * - Supports prefers-reduced-motion: all animations are disabled when
+ *   reduced motion is requested.
  */
 
 /** Minimum time (ms) the splash is visible before it begins fading out. */

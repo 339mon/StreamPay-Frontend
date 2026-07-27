@@ -1,4 +1,6 @@
 /** @jest-environment jsdom */
+import fs from "fs";
+import path from "path";
 import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
@@ -148,6 +150,58 @@ describe("StreamProgress progressbar semantics", () => {
     const bar = screen.getByRole("progressbar");
     expect(bar).toHaveAttribute("aria-valuenow", "100");
     expect(bar).toHaveAttribute("aria-valuetext", "Completed");
+  });
+});
+
+// ── Spacing/typography design tokens (FWC26 Stellar Wave) ───────────────────
+
+describe("StreamProgress spacing/typography design tokens", () => {
+  const css = fs.readFileSync(path.join(__dirname, "..", "globals.css"), "utf8");
+
+  /** Returns the declaration block body for a top-level CSS selector. */
+  function ruleBody(selector: string): string {
+    const start = css.indexOf(`${selector} {`);
+    expect(start).toBeGreaterThan(-1);
+    return css.slice(start, css.indexOf("}", start));
+  }
+
+  it("defines the spacing scale tokens referenced across the app", () => {
+    for (const token of ["--space-1", "--space-2", "--space-3", "--space-4", "--space-5", "--space-6", "--space-8"]) {
+      expect(css).toContain(`${token}:`);
+    }
+  });
+
+  it("defines the typography scale tokens referenced across the app", () => {
+    for (const token of ["--text-xs", "--text-sm", "--text-base", "--text-lg", "--text-xl", "--text-2xl", "--text-4xl"]) {
+      expect(css).toContain(`${token}:`);
+    }
+  });
+
+  it("defines the font-weight tokens referenced across the app", () => {
+    for (const token of ["--font-medium", "--font-semibold", "--font-bold"]) {
+      expect(css).toContain(`${token}:`);
+    }
+  });
+
+  it("pins the track/label gap to a spacing token instead of a hardcoded rem value", () => {
+    const rule = ruleBody(".stream-progress");
+    expect(rule).toContain("gap: var(--space-2)");
+  });
+
+  it("pins the meta row gap to a spacing token", () => {
+    const rule = ruleBody(".stream-progress__meta");
+    expect(rule).toContain("gap: var(--space-4)");
+  });
+
+  it("pins the percentage label's typography to design tokens", () => {
+    const rule = ruleBody(".stream-progress__label");
+    expect(rule).toContain("font-size: var(--text-sm)");
+    expect(rule).toContain("font-weight: var(--font-semibold)");
+  });
+
+  it("pins the remaining-balance font-size to a typography token", () => {
+    const rule = ruleBody(".stream-progress__remaining");
+    expect(rule).toContain("font-size: var(--text-xs)");
   });
 });
 
@@ -310,5 +364,114 @@ describe("StreamProgress empty state", () => {
     expect(button).toBeInTheDocument();
     fireEvent.click(button);
     expect(onAction).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── Keyboard shortcut hint tests ─────────────────────────────────────────────
+
+describe("StreamProgress keyboard shortcut hints", () => {
+  afterEach(() => {
+    // @ts-expect-error reset between tests
+    delete window.matchMedia;
+  });
+
+  it("renders a toggle button for keyboard shortcuts", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="active" accruedAmount={50} totalAmount={100} />);
+    const toggle = screen.getByTestId("stream-progress-kbd-toggle");
+    expect(toggle).toBeInTheDocument();
+    expect(toggle).toHaveTextContent("Keyboard shortcuts");
+  });
+
+  it("hints are hidden by default", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="active" accruedAmount={50} totalAmount={100} />);
+    expect(screen.queryByTestId("stream-progress-kbd-hints")).not.toBeInTheDocument();
+  });
+
+  it("toggle button has aria-expanded=false by default", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="active" accruedAmount={50} totalAmount={100} />);
+    const toggle = screen.getByTestId("stream-progress-kbd-toggle");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("shows hints when toggle is clicked", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="active" accruedAmount={50} totalAmount={100} />);
+    const toggle = screen.getByTestId("stream-progress-kbd-toggle");
+    fireEvent.click(toggle);
+    expect(screen.getByTestId("stream-progress-kbd-hints")).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("hides hints when toggle is clicked again", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="active" accruedAmount={50} totalAmount={100} />);
+    const toggle = screen.getByTestId("stream-progress-kbd-toggle");
+    fireEvent.click(toggle);
+    expect(screen.getByTestId("stream-progress-kbd-hints")).toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(screen.queryByTestId("stream-progress-kbd-hints")).not.toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("shows Space shortcut for active streams", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="active" accruedAmount={50} totalAmount={100} />);
+    fireEvent.click(screen.getByTestId("stream-progress-kbd-toggle"));
+    expect(screen.getByText("Space")).toBeInTheDocument();
+    expect(screen.getByText("Pause / resume")).toBeInTheDocument();
+  });
+
+  it("shows Space shortcut for paused streams", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="paused" accruedAmount={50} totalAmount={100} />);
+    fireEvent.click(screen.getByTestId("stream-progress-kbd-toggle"));
+    expect(screen.getByText("Space")).toBeInTheDocument();
+    expect(screen.getByText("Pause / resume")).toBeInTheDocument();
+  });
+
+  it("shows Enter shortcut for draft streams", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="draft" />);
+    fireEvent.click(screen.getByTestId("stream-progress-kbd-toggle"));
+    expect(screen.getByText("Enter")).toBeInTheDocument();
+    expect(screen.getByText("Start stream")).toBeInTheDocument();
+  });
+
+  it("does not show Space shortcut for ended streams", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="ended" />);
+    fireEvent.click(screen.getByTestId("stream-progress-kbd-toggle"));
+    expect(screen.queryByText("Space")).not.toBeInTheDocument();
+    expect(screen.queryByText("Pause / resume")).not.toBeInTheDocument();
+  });
+
+  it("always shows Esc and Ctrl+K shortcuts", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="active" accruedAmount={50} totalAmount={100} />);
+    fireEvent.click(screen.getByTestId("stream-progress-kbd-toggle"));
+    expect(screen.getByText("Esc")).toBeInTheDocument();
+    expect(screen.getByText("Deselect")).toBeInTheDocument();
+    expect(screen.getByText("Ctrl")).toBeInTheDocument();
+    expect(screen.getByText("K")).toBeInTheDocument();
+    expect(screen.getByText("Command palette")).toBeInTheDocument();
+  });
+
+  it("hints section is aria-hidden", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="active" accruedAmount={50} totalAmount={100} />);
+    const hintsSection = screen.getByTestId("stream-progress-kbd-toggle").parentElement;
+    expect(hintsSection).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("toggle button is keyboard focusable", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="active" accruedAmount={50} totalAmount={100} />);
+    const toggle = screen.getByTestId("stream-progress-kbd-toggle");
+    expect(toggle).toHaveAttribute("type", "button");
+    toggle.focus();
+    expect(toggle).toHaveFocus();
   });
 });

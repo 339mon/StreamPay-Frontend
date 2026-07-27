@@ -9,6 +9,7 @@ StreamPay API implements rate limiting to protect against abuse, scraping, and D
 | Read (GET) | 60 requests | 1 minute |
 | Write (POST/DELETE) | 10 requests | 1 minute |
 | Reconciliation (`GET /api/reconciliation`) | 30 requests | 1 minute |
+| Webhooks (`GET|POST /api/webhooks`) | 30 requests | 1 minute |
 
 ## Identification Priority
 
@@ -68,6 +69,8 @@ All API endpoints are rate limited:
 | POST | `/api/auth/wallet` | Login (5 req/min per IP) |
 | POST | `/api/exports` | Export (5 req/min per user) |
 | GET | `/api/reconciliation` | Reconciliation (30 req/min per user) |
+| GET | `/api/webhooks` | Webhook (30 req/min per user) |
+| POST | `/api/webhooks` | Webhook (30 req/min per user) |
 
 ## Wallet Authentication Limits
 

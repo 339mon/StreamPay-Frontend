@@ -200,19 +200,17 @@ describe("WebhookDeliveryWorker - Outbox", () => {
     };
 
     // Mock the attemptDelivery to simulate success
-    const originalAttemptDelivery = worker["client"].attemptDelivery;
-    (worker as any)["client"].attemptDelivery = (jest as any)
-      .fn()
+    const spy = jest
+      .spyOn((worker as any).client, "attemptDelivery")
       .mockResolvedValue({ success: true, statusCode: 200, shouldRetry: false });
 
-    const entry = store.addToOutbox(endpoint, event);
+    const entry = webhookOutboxStore.addToOutbox(endpoint, event);
 
     await worker.processOutboxEntry(entry);
 
-    const updated = store.getOutboxEntry(entry.id);
+    const updated = webhookOutboxStore.getOutboxEntry(entry.id);
     expect(updated?.status).toBe("delivered");
 
-    // Restore original method
-    worker["client"].attemptDelivery = originalAttemptDelivery;
+    spy.mockRestore();
   });
 });

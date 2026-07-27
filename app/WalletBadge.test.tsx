@@ -6,6 +6,20 @@ import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { WalletBadge } from "./WalletBadge";
 
+/** Installs a matchMedia mock that reports the given reduced-motion preference. */
+function mockMatchMedia(prefersReduced: boolean) {
+  window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+    matches: query.includes("prefers-reduced-motion") ? prefersReduced : false,
+    media: query,
+    onchange: null,
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+    addListener: jest.fn(),
+    removeListener: jest.fn(),
+    dispatchEvent: jest.fn(),
+  }));
+}
+
 describe("WalletBadge", () => {
   it("renders disconnected state by default with connect label and SR announcement", () => {
     render(<WalletBadge providerName="Freighter" />);
@@ -132,5 +146,17 @@ describe("WalletBadge", () => {
     const badge = screen.getByTestId("wallet-badge");
     expect(badge).toHaveAttribute("role", "region");
     expect(badge).not.toHaveAttribute("tabIndex");
+  });
+
+  it("renders keyboard shortcut hint when shortcut is provided and component is interactive", () => {
+    render(<WalletBadge state="disconnected" onConnect={jest.fn()} shortcut="C" />);
+    const hint = screen.getByTestId("kbd-hint");
+    expect(hint).toBeInTheDocument();
+    expect(hint).toHaveTextContent("C");
+  });
+
+  it("does not render keyboard shortcut hint when component is not interactive", () => {
+    render(<WalletBadge state="connecting" shortcut="C" />);
+    expect(screen.queryByTestId("kbd-hint")).not.toBeInTheDocument();
   });
 });

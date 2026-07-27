@@ -67,10 +67,13 @@ function assertWalletToken(obj: unknown): void {
 
 function makeApiRequest(method: string, pathSuffix: string, body?: unknown): Request {
   const url = `http://localhost${pathSuffix}`;
-  const init: RequestInit = { method };
+  const headers = new Headers({ Authorization: "Bearer test-token" });
+  if (body !== undefined) {
+    headers.set("Content-Type", "application/json");
+  }
+  const init: RequestInit = { method, headers };
   if (body !== undefined) {
     init.body = JSON.stringify(body);
-    init.headers = { "Content-Type": "application/json" };
   }
   return new Request(url, init);
 }

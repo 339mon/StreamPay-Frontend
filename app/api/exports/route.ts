@@ -6,6 +6,8 @@ import { checkRateLimit, rateLimitResponse, type ClientIdentity } from "@/app/li
 import { getLimitForRoute } from "@/app/lib/rate-limit-config";
 import { recordRequest, recordThrottle } from "@/app/lib/rate-limit-metrics";
 import { withTimeout } from "@/src/middleware/timeout";
+import { withStrongEtag } from "@/src/middleware/etag";
+import { getCorrelationContext, logger } from "@/app/lib/logger";
 
 function getRequestUrl(request: Request): URL {
   try {
@@ -27,7 +29,8 @@ const EXPORTS_TIMEOUT_MS =
   Number(process.env.EXPORTS_TIMEOUT_MS) || 15_000;
 
 function createErrorResponse(code: string, message: string, status: number) {
-  return NextResponse.json({ error: { code, message, request_id: "mock-request-id" } }, { status });
+  const context = getCorrelationContext();
+  return NextResponse.json({ error: { code, message, request_id: context?.request_id } }, { status });
 }
 
 function createAuditRecord(exportId: string, type: "export.requested" | "export.downloaded" | "export.expired", details?: Record<string, unknown>) {
@@ -120,120 +123,157 @@ function scheduleExportJob(jobId: string) {
   exportRepository.processing.set(jobId, jobPromise);
 }
 
+function recordExportMetrics(method: string, status: number, startedAt: [number, number]) {
+  const hrtime = process.hrtime(startedAt);
+  const durationMs = hrtime[0] * 1000 + hrtime[1] / 1e6;
+  
+  if (typeof global !== "undefined" && (global as any).prometheusMetrics) {
+    const metrics = (global as any).prometheusMetrics;
+    metrics.apiRequestsTotal?.inc({ method, route: "/api/exports", status });
+    metrics.apiRequestDuration?.observe({ method, route: "/api/exports", status }, durationMs / 1000);
+  } else {
+    logger.info("Export metric recorded", { method, status, durationMs, route: "/api/exports" });
+  }
+}
+
 export async function POST(request: Request) {
-  return withTimeout(EXPORTS_TIMEOUT_MS, request, async (signal) => {
-    const { exportRepository } = getStore();
-    const actor = tryAuthenticateRequest(request);
-    if (!actor) {
-      return createErrorResponse("UNAUTHORIZED", "Missing or invalid authorization header", 401);
-    }
+  const startedAt = process.hrtime();
+  let status = 500;
 
-    // Limit by the verified wallet, after auth, so a forged bearer token can
-    // neither mint fresh buckets nor spend another user's budget.
-    const url = getRequestUrl(request);
-    const limitType = getLimitForRoute("POST", url.pathname);
-    const identity: ClientIdentity = {
-      type: "wallet",
-      value: actor.walletAddress,
-      displayValue: actor.walletAddress.slice(0, 16) + "...",
-    };
-    const rateCheck = await checkRateLimit(identity, limitType);
+  try {
+    const response = await withTimeout(EXPORTS_TIMEOUT_MS, request, async (_signal) => {
+      const { exportRepository } = getStore();
+      const actor = tryAuthenticateRequest(request);
+      if (!actor) {
+        return createErrorResponse("UNAUTHORIZED", "Missing or invalid authorization header", 401);
+      }
 
-    if (!rateCheck.allowed) {
-      recordThrottle(url.pathname, limitType, identity.type, identity.displayValue);
-      return rateLimitResponse(rateCheck.retryAfter!);
-    }
-    recordRequest(url.pathname);
+      // Limit by the verified wallet, after auth, so a forged bearer token can
+      // neither mint fresh buckets nor spend another user's budget.
+      const url = getRequestUrl(request);
+      const limitType = getLimitForRoute("POST", url.pathname);
+      const identity: ClientIdentity = {
+        type: "wallet",
+        value: actor.walletAddress,
+        displayValue: actor.walletAddress.slice(0, 16) + "...",
+      };
+      const rateCheck = await checkRateLimit(identity, limitType);
 
-    const id = crypto.randomUUID();
-    const requestedAt = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + EXPORT_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+      if (!rateCheck.allowed) {
+        recordThrottle(url.pathname, limitType, identity.type, identity.displayValue);
+        return rateLimitResponse(rateCheck.retryAfter!);
+      }
+      recordRequest(url.pathname);
 
-    const job: ExportJob = {
-      id,
-      ownerId: actor.walletAddress,
-      requestedAt,
-      status: "pending",
-      expiresAt,
-      fileName: `streampay-export-${requestedAt.slice(0, 10)}.csv`,
-      rows: 0,
-    };
+      const id = crypto.randomUUID();
+      const requestedAt = new Date().toISOString();
+      const expiresAt = new Date(Date.now() + EXPORT_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-    exportRepository.jobs.set(id, job);
-    createAuditRecord(id, "export.requested", { requestedAt, retentionDays: EXPORT_RETENTION_DAYS });
-    scheduleExportJob(id);
+      const job: ExportJob = {
+        id,
+        ownerId: actor.walletAddress,
+        requestedAt,
+        status: "pending",
+        expiresAt,
+        fileName: `streampay-export-${requestedAt.slice(0, 10)}.csv`,
+        rows: 0,
+      };
 
-    return NextResponse.json({ data: job, links: { self: `/api/exports/${id}` } }, { status: 201 });
-  });
+      exportRepository.jobs.set(id, job);
+      createAuditRecord(id, "export.requested", { requestedAt, retentionDays: EXPORT_RETENTION_DAYS });
+      scheduleExportJob(id);
+
+      return NextResponse.json({ data: job, links: { self: `/api/exports/${id}` } }, { status: 201 });
+    });
+
+    status = response.status;
+    return response;
+  } catch (error) {
+    const errResp = createErrorResponse("INTERNAL_ERROR", "Export request failed", 500);
+    status = errResp.status;
+    return errResp;
+  } finally {
+    recordExportMetrics("POST", status, startedAt);
+  }
 }
 
 export async function GET(request: Request) {
-  return withTimeout(EXPORTS_TIMEOUT_MS, request, async (signal) => {
-    const { exportRepository } = getStore();
-    const actor = tryAuthenticateRequest(request);
-    if (!actor) {
-      return createErrorResponse("UNAUTHORIZED", "Missing or invalid authorization header", 401);
-    }
+  const startedAt = process.hrtime();
+  let status = 500;
 
-    const url = getRequestUrl(request);
-    const limitType = getLimitForRoute("GET", url.pathname);
-    const identity: ClientIdentity = {
-      type: "wallet",
-      value: actor.walletAddress,
-      displayValue: actor.walletAddress.slice(0, 16) + "...",
-    };
-    const rateCheck = await checkRateLimit(identity, limitType);
+  try {
+    const response = await withTimeout(EXPORTS_TIMEOUT_MS, request, async (_signal) => {
+      const { exportRepository } = getStore();
+      const actor = tryAuthenticateRequest(request);
+      if (!actor) {
+        return createErrorResponse("UNAUTHORIZED", "Missing or invalid authorization header", 401);
+      }
 
-    if (!rateCheck.allowed) {
-      recordThrottle(url.pathname, limitType, identity.type, identity.displayValue);
-      return rateLimitResponse(rateCheck.retryAfter!);
-    }
-    recordRequest(url.pathname);
+      const url = getRequestUrl(request);
+      const limitType = getLimitForRoute("GET", url.pathname);
+      const identity: ClientIdentity = {
+        type: "wallet",
+        value: actor.walletAddress,
+        displayValue: actor.walletAddress.slice(0, 16) + "...",
+      };
+      const rateCheck = await checkRateLimit(identity, limitType);
 
-    const { searchParams } = url;
-    const cursor = searchParams.get("cursor");
-    const limitStr = searchParams.get("limit");
-    const limit = limitStr ? parseInt(limitStr, 10) : 20;
+      if (!rateCheck.allowed) {
+        recordThrottle(url.pathname, limitType, identity.type, identity.displayValue);
+        return rateLimitResponse(rateCheck.retryAfter!);
+      }
+      recordRequest(url.pathname);
 
-    if (isNaN(limit) || limit < 1 || limit > 100) {
-      return createErrorResponse("VALIDATION_ERROR", "Invalid limit parameter", 422);
-    }
+      const searchParams = url.searchParams;
+      const limit = Math.max(1, Math.min(100, Number(searchParams.get("limit")) || 10));
+      const cursor = searchParams.get("cursor");
 
-    let jobs = Array.from(exportRepository.jobs.values())
-      .filter((job) => job.ownerId === actor.walletAddress)
-      .sort((left, right) => {
-        const timeCompare = right.requestedAt.localeCompare(left.requestedAt);
-        return timeCompare !== 0 ? timeCompare : right.id.localeCompare(left.id);
+      let jobs = Array.from(exportRepository.jobs.values())
+        .filter((job) => job.ownerId === actor.walletAddress)
+        .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
+
+      let startIndex = 0;
+      if (cursor) {
+        const decoded = decodeCompositeCursor(cursor);
+        const idx = jobs.findIndex((j) => j.id === decoded?.id);
+        if (idx >= 0) {
+          startIndex = idx;
+        }
+      }
+
+      const paginatedJobs = jobs.slice(startIndex, startIndex + limit);
+      const hasNext = startIndex + limit < jobs.length;
+      let nextCursor = null;
+
+      if (hasNext) {
+        const nextJob = jobs[startIndex + limit];
+        nextCursor = encodeCompositeCursor({ id: nextJob.id, timestamp: nextJob.requestedAt });
+      }
+
+      const payload = {
+        data: paginatedJobs,
+        links: { self: `/api/exports?limit=${limit}` },
+        meta: { hasNext, nextCursor, total: jobs.length },
+      };
+
+      logger.info("Exports listed successfully", {
+        count: paginatedJobs.length,
+        total: jobs.length,
+        limit,
+        request_id: getCorrelationContext()?.request_id,
       });
 
-    if (cursor) {
-      try {
-        const decoded = decodeCompositeCursor(cursor);
-        const cursorIndex = jobs.findIndex(
-          (job) => job.requestedAt === decoded.timestamp && job.id === decoded.id
-        );
-        if (cursorIndex >= 0) {
-          jobs = jobs.slice(cursorIndex + 1);
-        }
-      } catch {
-        return createErrorResponse("INVALID_CURSOR", "Malformed cursor", 422);
-      }
-    }
-
-    const paginatedJobs = jobs.slice(0, limit);
-    const hasNext = jobs.length > limit;
-    const nextCursor =
-      hasNext && paginatedJobs.length > 0
-        ? encodeCompositeCursor(
-            paginatedJobs[paginatedJobs.length - 1].requestedAt,
-            paginatedJobs[paginatedJobs.length - 1].id
-          )
-        : null;
-
-    return NextResponse.json({
-      data: paginatedJobs,
-      links: { self: `/api/exports?limit=${limit}` },
-      meta: { hasNext, nextCursor, total: jobs.length },
+      // Strong ETag / 304 for conditional GET (Issue #1120)
+      return withStrongEtag(request, payload);
     });
-  });
+
+    status = response.status;
+    return response;
+  } catch (error) {
+    const errResp = createErrorResponse("INTERNAL_ERROR", "Export listing failed", 500);
+    status = errResp.status;
+    return errResp;
+  } finally {
+    recordExportMetrics("GET", status, startedAt);
+  }
 }

@@ -101,6 +101,13 @@ transition table and invariants.
 - Short months use actual day counts (no 30/32-day months).
 - Local time display may shift with DST; calculations remain UTC.
 
+## Webhook input validation
+
+`POST /api/webhooks` now validates request bodies with a strict Zod schema.
+Requests must include a non-empty `eventType` string. Optional fields are
+`eventId`, `timestamp` (ISO 8601), `source`, `data`, `metadata`, and `headers`.
+Unknown top-level fields now return HTTP 400 with `INVALID_INPUT`.
+
 ## Horizon/Soroban resilience notes
 
 The resilience wrapper in app/lib/stellarClient.ts provides a short-TTL read-through cache for account
@@ -288,6 +295,7 @@ Wallet-based auth uses a challenge/verify flow:
 |--------|------|------|-------------|
 | `GET` | `/api/auth/wallet` | — | Issue wallet challenge |
 | `POST` | `/api/auth/wallet` | — | Verify signature, get token |
+| `GET` | `/api/auth/wallet/health` | — | Wallet-auth subsystem health probe |
 | `GET` | `/api/v2/streams` | Bearer | List streams (v2 shape) |
 | `POST` | `/api/v2/streams` | Bearer | Create a stream |
 | `POST` | `/api/webhooks/dlq` | — | Receive DLQ webhook events |
@@ -361,6 +369,8 @@ Quick links to the long-form docs under [docs/](docs/):
 - [Privacy](docs/PRIVACY.md)
 - [Reconciliation runbook](docs/reconciliation-runbook.md)
 - [Initial render performance](docs/performance-initial-render.md)
+- [StreamTypeChip color-blind patterns](docs/streamtypechip-cb-patterns.md) — `status` prop & texture overlay API
+- [StreamTypeChip focus accessibility](docs/streamtypechip-focus-accessibility.md)
 - [Help & FAQ page](/help) — in-app support page at `app/help/page.tsx`
 [SECURITY.md](SECURITY.md) in the repository root.
 
@@ -412,6 +422,7 @@ New users see a 5-step `WelcomeTour` modal the first time they land on the home 
 - **Subsequent visits (tour seen, banner not dismissed)** — the plain banner is shown.
 - **All dismissed** — nothing is rendered.
 - Pressing **Escape** closes the tour. **ArrowRight / ArrowDown** advance, **ArrowLeft / ArrowUp** go back. Clicking a dot jumps to that step. Clicking the backdrop dismisses.
+- Pressing **?** anywhere in the app opens the Keyboard Shortcuts overlay, listing all available shortcuts. Press **?** again or **Escape** to close it.
 
 **Testing**
 

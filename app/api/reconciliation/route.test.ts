@@ -4,22 +4,24 @@
  * Coverage
  * ─────────
  * • 200 with strong ETag and valid data (existing)
- * • 400 on invalid limit parameter (existing)
+ * • 422 on invalid query parameters (Zod validation)
  * • 304 Not Modified when ETag matches (existing)
- * • 429 when rate limit is exhausted (new)
- * • 429 resets after the retry window (new)
- * • Rate limit is scoped per identity — different callers get independent buckets (new)
- * • Rate limit is NOT applied when identity is under the limit (new)
+ * • Cursor pagination over (created_at, id) (new)
+ * • 422 on malformed / empty cursor (new)
+ * • 429 when rate limit is exhausted (existing)
+ * • Rate limit is scoped per identity — different callers get independent buckets
  */
 
 import { GET } from './route';
 import { getCorrelationContext } from '@/app/lib/logger';
+import { encodeCompositeCursor } from '@/app/lib/db';
 import {
   setRateLimitStore,
   resetRateLimitStore,
   type RateLimitStore,
   type RateLimitResult,
 } from '@/app/lib/rate-limit-store';
+import { reconciliationCounter, reconciliationDuration } from '@/src/metrics/registry';
 
 // ── Logger mock ──────────────────────────────────────────────────────────────
 
@@ -32,6 +34,23 @@ jest.mock('@/app/lib/logger', () => ({
   },
   getCorrelationContext: jest.fn(),
 }));
+
+jest.mock('@/src/metrics/registry', () => {
+  const mockInc = jest.fn();
+  const mockLabels = jest.fn(() => ({ inc: mockInc }));
+  const mockEndTimer = jest.fn();
+  const mockStartTimer = jest.fn(() => mockEndTimer);
+
+  return {
+    reconciliationCounter: {
+      labels: mockLabels,
+      inc: mockInc, // Just in case it's called directly
+    },
+    reconciliationDuration: {
+      startTimer: mockStartTimer,
+    },
+  };
+});
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -111,18 +130,46 @@ describe('GET /api/reconciliation – existing behaviour', () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.status).toBe('success');
-    expect(data.data).toHaveLength(2);
+    expect(data.data).toHaveLength(3);
+    expect(data.data[0]).toHaveProperty('created_at');
+    expect(data.meta).toMatchObject({
+      total: 3,
+      hasNext: false,
+      nextCursor: null,
+    });
 
     const etag = res.headers.get('etag');
     expect(etag).toMatch(/^"[a-f0-9]{64}"$/);
   });
 
-  it('validates limit parameter — 400 on invalid value', async () => {
+  it('validates limit parameter — 422 on invalid value', async () => {
     const res = await GET(makeRequest({ search: '?limit=invalid' }));
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
     const data = await res.json();
-    expect(data.error.code).toBe('INVALID_INPUT');
+    expect(data.error.code).toBe('VALIDATION_ERROR');
+    expect(data.error.details).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'limit' }),
+      ]),
+    );
+  });
+
+  it('validates status enum — 422 on unknown value', async () => {
+    const res = await GET(makeRequest({ search: '?status=nope' }));
+
+    expect(res.status).toBe(422);
+    const data = await res.json();
+    expect(data.error.code).toBe('VALIDATION_ERROR');
+    expect(data.error.details.some((d: { field: string }) => d.field === 'status')).toBe(true);
+  });
+
+  it('filters results when a valid status is provided', async () => {
+    const res = await GET(makeRequest({ search: '?status=completed' }));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.data).toHaveLength(1);
+    expect(data.data[0].status).toBe('completed');
   });
 
   it('returns 304 Not Modified when ETag matches', async () => {
@@ -138,6 +185,42 @@ describe('GET /api/reconciliation – existing behaviour', () => {
   });
 });
 
+// ── Metrics tests ────────────────────────────────────────────────────────────
+
+describe('GET /api/reconciliation – metrics', () => {
+  it('records 200 status for successful requests', async () => {
+    await GET(makeRequest());
+    
+    expect(reconciliationDuration.startTimer).toHaveBeenCalled();
+    expect(reconciliationCounter.labels).toHaveBeenCalledWith('200');
+    // Start timer returns end timer function
+    const mockEndTimer = (reconciliationDuration.startTimer as jest.Mock).mock.results[0].value;
+    expect(mockEndTimer).toHaveBeenCalledWith({ status: '200' });
+  });
+
+  it('records 400 status for invalid input', async () => {
+    await GET(makeRequest({ search: '?limit=invalid' }));
+    
+    expect(reconciliationCounter.labels).toHaveBeenCalledWith('400');
+    const mockEndTimer = (reconciliationDuration.startTimer as jest.Mock).mock.results[0].value;
+    expect(mockEndTimer).toHaveBeenCalledWith({ status: '400' });
+  });
+
+  it('records 500 status on unexpected errors', async () => {
+    // Force an error by mocking URL to throw
+    const originalURL = global.URL;
+    global.URL = jest.fn().mockImplementation(() => { throw new Error('Boom'); }) as any;
+    
+    await GET(makeRequest());
+    
+    expect(reconciliationCounter.labels).toHaveBeenCalledWith('500');
+    const mockEndTimer = (reconciliationDuration.startTimer as jest.Mock).mock.results[0].value;
+    expect(mockEndTimer).toHaveBeenCalledWith({ status: '500' });
+    
+    global.URL = originalURL;
+  });
+});
+
 // ── Rate-limit tests ─────────────────────────────────────────────────────────
 
 describe('GET /api/reconciliation – rate limiting', () => {
@@ -148,6 +231,9 @@ describe('GET /api/reconciliation – rate limiting', () => {
     const res = await GET(makeRequest());
 
     expect(res.status).toBe(429);
+    expect(reconciliationCounter.labels).toHaveBeenCalledWith('429');
+    const mockEndTimer = (reconciliationDuration.startTimer as jest.Mock).mock.results[0].value;
+    expect(mockEndTimer).toHaveBeenCalledWith({ status: '429' });
   });
 
   it('429 response has Retry-After header', async () => {
