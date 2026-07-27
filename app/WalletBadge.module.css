@@ -40,6 +40,12 @@
 .badgeInteractive:focus-visible {
   outline: 2px solid var(--accent, #22c55e);
   outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--background, #1f2937);
+}
+
+.badgeInteractive:focus:not(:focus-visible) {
+  outline: none;
+  box-shadow: none;
 }
 
 /* Status dot indicator */
@@ -156,6 +162,12 @@
 .disconnect:focus-visible {
   outline: 2px solid var(--accent, #22c55e);
   outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--background, #1f2937);
+}
+
+.disconnect:focus:not(:focus-visible) {
+  outline: none;
+  box-shadow: none;
 }
 
 /* ─────────────────────────────────────────────────────────────
