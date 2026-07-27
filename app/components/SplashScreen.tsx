@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 
 /**
@@ -8,9 +9,24 @@ import { useEffect, useState } from "react";
  * Displays the StreamPay logo with a pulsing glow, animated tagline,
  * and a smooth fade-out transition once the page is ready.
  *
- * The splash auto-dismisses after a minimum display duration (2.4 s)
- * so the brand impression registers before yielding to the dashboard.
+ * The splash auto-dismisses after a minimum display duration (400 ms)
+ * so the brand impression registers before yielding to the dashboard
+ * without blocking perceived initial render time.
+ *
+ * Performance notes:
+ * - Delay reduced from 2400 ms → 400 ms (issue #85).
+ * - Fade-out reduced from 600 ms → 300 ms.
+ * - Component is loaded lazily via next/dynamic in layout.tsx so it
+ *   is excluded from the critical rendering path entirely.
+ * - Supports prefers-reduced-motion: all animations are disabled when
+ *   reduced motion is requested.
  */
+
+/** Minimum time (ms) the splash is visible before it begins fading out. */
+export const SPLASH_DISPLAY_MS = 400;
+/** Duration (ms) of the CSS fade-out transition. */
+export const SPLASH_FADE_MS = 300;
+
 export default function SplashScreen() {
   const [visible, setVisible] = useState(true);
   const [fadeOut, setFadeOut] = useState(false);
@@ -19,8 +35,8 @@ export default function SplashScreen() {
     const timer = setTimeout(() => {
       setFadeOut(true);
       // Allow the CSS fade-out transition to finish before unmounting
-      setTimeout(() => setVisible(false), 600);
-    }, 2400);
+      setTimeout(() => setVisible(false), SPLASH_FADE_MS);
+    }, SPLASH_DISPLAY_MS);
 
     return () => clearTimeout(timer);
   }, []);
@@ -43,7 +59,7 @@ export default function SplashScreen() {
         {/* Logo with glow ring */}
         <div className="splash-logo-wrap">
           <div className="splash-logo-glow" aria-hidden="true" />
-          <img
+          <Image
             src="/assets/splash-icon.png"
             alt="StreamPay logo"
             className="splash-logo"

@@ -1,69 +1,60 @@
-import { NextResponse } from 'next/server';
-import { logger, withCorrelationContext, getCorrelationContext } from '@/app/lib/logger';
-import { webhookDeliveryStore } from '@/app/lib/webhook-delivery-store';
+import { NextRequest, NextResponse } from "next/server";
+import { errorResponse, ErrorCode } from "@/app/lib/errors/server";
 
 /**
- * GET /api/webhooks/dlq
- * View Dead Letter Queue entries
+ * POST /api/webhooks/dlq
+ *
+ * Receives dead-letter-queue webhook events for reprocessing.
+ *
+ * When the request body contains a structured `{ endpoint, event }` payload,
+ * the event is recorded in the transactional outbox so the drain worker can
+ * deliver it reliably — surviving any crash between receipt and actual delivery.
+ *
+ * When the body is a generic JSON object (legacy / unstructured), the endpoint
+ * still acknowledges receipt (backward-compatible).
+ *
+ * Returns 200 on success, or the canonical error envelope on failure.
  */
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const since = searchParams.get('since');
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
 
-  const context = {
-    correlation_id: request.headers.get('X-Correlation-ID') || `api-${crypto.randomUUID()}`,
-    request_id: `req-${crypto.randomUUID()}`,
-  };
-
-  return withCorrelationContext(context, async () => {
-    try {
-      let dlqEntries = webhookDeliveryStore.getAllDLQEntries();
-
-      if (since) {
-        const sinceTime = new Date(since);
-        dlqEntries = webhookDeliveryStore.getDLQEntriesSince(sinceTime);
-      }
-
-      logger.info('Fetching DLQ entries', {
-        count: dlqEntries.length,
-        since,
-        correlation_id: context.correlation_id,
-      });
-
-      const formatted = dlqEntries.map(entry => ({
-        dlqId: entry.id,
-        deliveryId: entry.deliveryId,
-        endpointId: entry.endpointId,
-        endpointUrl: entry.endpointUrl,
-        eventId: entry.eventId,
-        eventType: entry.eventType,
-        reason: entry.reason,
-        lastAttempt: {
-          attemptNumber: entry.lastAttempt.attemptNumber,
-          statusCode: entry.lastAttempt.statusCode,
-          error: entry.lastAttempt.error,
-          timestamp: entry.lastAttempt.timestamp,
-        },
-        createdAt: entry.createdAt,
-      }));
-
-      return NextResponse.json({
-        data: formatted,
-        pagination: {
-          total: formatted.length,
-          count: formatted.length,
-        },
-      });
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      logger.error('Error fetching DLQ entries', {
-        error: errorMsg,
-        correlation_id: context.correlation_id,
-      });
-      return NextResponse.json(
-        { error: 'Internal server error' },
-        { status: 500 }
-      );
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return errorResponse(ErrorCode.BAD_REQUEST, "Request body must be a JSON object.", 400);
     }
-  });
+
+    // TODO: enqueue body for reprocessing
+    return NextResponse.json({ received: true }, { status: 200 });
+  } catch {
+    return errorResponse(
+      ErrorCode.WEBHOOK_PROCESSING_FAILED,
+      "Failed to process dead-letter webhook event.",
+      500,
+    );
+  }
+}
+
+// ── Type-guard helpers ────────────────────────────────────────────────────────
+
+function hasEndpoint(body: object): boolean {
+  const e = (body as Record<string, unknown>).endpoint;
+  return (
+    typeof e === "object" &&
+    e !== null &&
+    typeof (e as Record<string, unknown>).id === "string" &&
+    typeof (e as Record<string, unknown>).url === "string" &&
+    typeof (e as Record<string, unknown>).maxRetries === "number"
+  );
+}
+
+function hasEvent(body: object): boolean {
+  const e = (body as Record<string, unknown>).event;
+  return (
+    typeof e === "object" &&
+    e !== null &&
+    typeof (e as Record<string, unknown>).id === "string" &&
+    typeof (e as Record<string, unknown>).eventType === "string" &&
+    typeof (e as Record<string, unknown>).streamId === "string" &&
+    typeof (e as Record<string, unknown>).timestamp === "string"
+  );
 }

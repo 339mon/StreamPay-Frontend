@@ -1,4 +1,5 @@
 import { logger, getCorrelationContext } from './logger';
+import { decodeCompositeCursor, encodeCompositeCursor } from './db';
 import {
   WebhookDeliveryRecord,
   WebhookDeliveryAttempt,
@@ -6,6 +7,13 @@ import {
   WebhookEndpoint,
   WebhookEvent,
 } from './webhook-delivery';
+
+export interface WebhookDeliveriesPage {
+  data: WebhookDeliveryRecord[];
+  hasNext: boolean;
+  nextCursor: string | null;
+  total: number;
+}
 
 /**
  * In-memory storage for webhook deliveries and DLQ entries.
@@ -22,7 +30,8 @@ export class WebhookDeliveryStore {
   createDelivery(
     deliveryId: string,
     endpoint: WebhookEndpoint,
-    event: WebhookEvent
+    event: WebhookEvent,
+    reissuedFrom?: string,
   ): WebhookDeliveryRecord {
     const now = new Date().toISOString();
     const record: WebhookDeliveryRecord = {
@@ -34,6 +43,9 @@ export class WebhookDeliveryStore {
       attempts: [],
       createdAt: now,
       updatedAt: now,
+      event,
+      endpoint,
+      ...(reissuedFrom !== undefined ? { reissuedFrom } : {}),
     };
 
     this.deliveries.set(deliveryId, record);
@@ -115,56 +127,43 @@ export class WebhookDeliveryStore {
   /**
    * Move delivery to DLQ on final failure
    */
-  moveToDLQ(
-    deliveryId: string,
-    reason: string
-  ): DLQEntry | undefined {
+  moveToDLQ(deliveryId: string, reason: string): DLQEntry | undefined {
     const record = this.deliveries.get(deliveryId);
     if (!record || record.attempts.length === 0) {
-      logger.warn('Cannot move delivery to DLQ: record not found or no attempts', {
-        delivery_id: deliveryId,
-      });
+      logger.warn('Cannot move delivery to DLQ: record not found or no attempts', { delivery_id: deliveryId });
       return undefined;
     }
 
     const lastAttempt = record.attempts[record.attempts.length - 1];
 
-    // Find the original event by looking at delivery metadata
-    // In production, this would be stored in the record
     const dlqEntry: DLQEntry = {
       id: `dlq-${crypto.randomUUID()}`,
       deliveryId,
-      endpointId: record.endpointId,
+      endpointId:  record.endpointId,
       endpointUrl: record.endpointUrl,
-      eventId: record.eventId,
-      eventType: 'unknown', // Would come from the event
+      eventId:     record.eventId,
+      eventType:   'unknown',
       payload: {
-        id: record.eventId,
-        eventType: 'unknown',
-        streamId: '',
-        data: {},
-        timestamp: new Date().toISOString(),
+        id: record.eventId, eventType: 'unknown',
+        streamId: '', data: {}, timestamp: new Date().toISOString(),
       },
       reason,
+      // Full attempt history so operators can see every retry before DLQ.
+      allAttempts: [...record.attempts],
       lastAttempt,
       createdAt: new Date().toISOString(),
     };
 
     this.dlq.set(dlqEntry.id, dlqEntry);
-
-    // Update delivery record
-    record.status = 'dlq';
+    record.status      = 'dlq';
     record.finalizedAt = new Date().toISOString();
-    record.updatedAt = record.finalizedAt;
+    record.updatedAt   = record.finalizedAt;
     this.deliveries.set(deliveryId, record);
 
     const context = getCorrelationContext();
     logger.error('Webhook delivery moved to DLQ', {
-      delivery_id: deliveryId,
-      dlq_id: dlqEntry.id,
-      reason,
-      total_attempts: record.attempts.length,
-      endpoint_url: record.endpointUrl,
+      delivery_id: deliveryId, dlq_id: dlqEntry.id, reason,
+      total_attempts: record.attempts.length, endpoint_url: record.endpointUrl,
       correlation_id: context?.correlation_id,
     });
 
@@ -183,6 +182,47 @@ export class WebhookDeliveryStore {
    */
   getAllDeliveries(): WebhookDeliveryRecord[] {
     return Array.from(this.deliveries.values());
+  }
+
+  /**
+   * Get a stable, cursor-paginated page of delivery records.
+   *
+   * Records are ordered by (createdAt, deliveryId) descending so that
+   * ordering stays stable even when multiple deliveries share the same
+   * `createdAt` timestamp. An invalid cursor yields an empty page rather
+   * than throwing, mirroring the activity timeline's query behaviour.
+   */
+  getDeliveriesPage(params: { cursor?: string; limit: number }): WebhookDeliveriesPage {
+    const { cursor, limit } = params;
+    let sorted = Array.from(this.deliveries.values()).sort((a, b) => {
+      const tsCmp = b.createdAt.localeCompare(a.createdAt);
+      return tsCmp !== 0 ? tsCmp : b.deliveryId.localeCompare(a.deliveryId);
+    });
+
+    const total = sorted.length;
+
+    if (cursor) {
+      let cursorTimestamp: string;
+      let cursorId: string;
+      try {
+        ({ timestamp: cursorTimestamp, id: cursorId } = decodeCompositeCursor(cursor));
+      } catch {
+        return { data: [], hasNext: false, nextCursor: null, total };
+      }
+      sorted = sorted.filter((record) => {
+        const tsCmp = record.createdAt.localeCompare(cursorTimestamp);
+        return tsCmp < 0 || (tsCmp === 0 && record.deliveryId.localeCompare(cursorId) < 0);
+      });
+    }
+
+    const data = sorted.slice(0, limit);
+    const hasNext = sorted.length > limit;
+    const nextCursor =
+      hasNext && data.length > 0
+        ? encodeCompositeCursor(data[data.length - 1].createdAt, data[data.length - 1].deliveryId)
+        : null;
+
+    return { data, hasNext, nextCursor, total };
   }
 
   /**
@@ -214,6 +254,38 @@ export class WebhookDeliveryStore {
   }
 
   /**
+   * Mark a DLQ entry as replayed and link it to the new delivery.
+   *
+   * This is the idempotency anchor for the replay endpoint:
+   * once `replayedDeliveryId` is set, subsequent replay calls return the
+   * existing result without re-enqueuing.
+   *
+   * @param dlqId          The DLQ entry to mark.
+   * @param newDeliveryId  The delivery ID created by the replay worker.
+   * @returns The updated DLQEntry, or undefined if not found.
+   */
+  markReplayed(dlqId: string, newDeliveryId: string): DLQEntry | undefined {
+    const entry = this.dlq.get(dlqId);
+    if (!entry) return undefined;
+
+    const updated: DLQEntry = {
+      ...entry,
+      replayedDeliveryId: newDeliveryId,
+      replayedAt: new Date().toISOString(),
+    };
+    this.dlq.set(dlqId, updated);
+
+    const context = getCorrelationContext();
+    logger.info('DLQ entry marked as replayed', {
+      dlq_id: dlqId,
+      new_delivery_id: newDeliveryId,
+      correlation_id: context?.correlation_id,
+    });
+
+    return updated;
+  }
+
+  /**
    * Get DLQ entry
    */
   getDLQEntry(dlqId: string): DLQEntry | undefined {
@@ -225,6 +297,10 @@ export class WebhookDeliveryStore {
    */
   getAllDLQEntries(): DLQEntry[] {
     return Array.from(this.dlq.values());
+  }
+
+  getDLQEntries(): DLQEntry[] {
+    return this.getAllDLQEntries();
   }
 
   /**

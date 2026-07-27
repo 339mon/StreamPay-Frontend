@@ -1,7 +1,7 @@
 /**
  * Error Mapping Layer
  * 
- * Converts raw API errors (backend, Stellar Horizon, network)
+ * Converts raw API errors (backend, Stellar Horizon, network, Soroban)
  * into standardized StreamPayError format.
  */
 
@@ -16,6 +16,7 @@ import {
   ERROR_REGISTRY,
   HORIZON_ERROR_MAPPING,
   BACKEND_ERROR_CODE_MAPPING,
+  SOROBAN_ERROR_MAPPING,
   getErrorCodeForHttpStatus,
   getErrorMetadata,
 } from './codes';
@@ -265,7 +266,7 @@ export function normalizeNetworkError(
   let errorCode: ErrorCode = 'NETWORK_UNAVAILABLE';
   
   // Determine specific network error type
-  if (message.includes('timeout') || message.includes('etimedout')) {
+  if (message.includes('timeout') || message.includes('timed out') || message.includes('etimedout')) {
     errorCode = 'NETWORK_TIMEOUT';
   } else if (message.includes('dns') || message.includes('enotfound') || message.includes('eai_again')) {
     errorCode = 'DNS_LOOKUP_FAILED';
@@ -297,6 +298,47 @@ export function normalizeNetworkError(
     };
   }
   
+  return normalized;
+}
+
+/**
+ * Normalize a Soroban error into a StreamPayError.
+ *
+ * Soroban errors carry a typed `variant` (from the `SorobanError` enum)
+ * and optional metadata. This function maps the variant to a stable
+ * `ErrorCode`, preserves the original message in debug mode, and
+ * surfaces safe user-facing text in production.
+ */
+export function normalizeSorobanError(
+  error: Error & { variant?: string; meta?: Record<string, unknown>; statusCode?: number },
+  options: ErrorNormalizationOptions = {}
+): StreamPayError {
+  const variant = error.variant ?? 'Unknown';
+  const errorCode = SOROBAN_ERROR_MAPPING[variant] ?? 'SOROBAN_UNKNOWN';
+  const metadata = getErrorMetadata(errorCode);
+  const includeDebug = shouldIncludeDebug(options);
+  const status = error.statusCode ?? metadata.httpStatus;
+
+  const normalized: StreamPayError = {
+    type: metadata.typeUri,
+    code: errorCode,
+    title: metadata.title,
+    detail: includeDebug ? (error.message || metadata.userMessage) : metadata.userMessage,
+    status,
+    requestId: options.requestId,
+    category: 'blockchain',
+    retry: metadata.retry,
+    meta: sanitizeMetadata(error.meta),
+  };
+
+  if (includeDebug) {
+    normalized.debug = {
+      originalCode: variant,
+      originalMessage: error.message,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
   return normalized;
 }
 
@@ -343,6 +385,11 @@ export function normalizeError(
   // Already normalized
   if (isStreamPayError(error)) {
     return error;
+  }
+  
+  // Handle Soroban errors (must check before generic Error)
+  if (isSorobanError(error)) {
+    return normalizeSorobanError(error, options);
   }
   
   // Handle Response objects (from fetch)
@@ -432,6 +479,24 @@ export function isStreamPayError(error: unknown): error is StreamPayError {
 }
 
 /**
+ * Type guard: Check if error is a SorobanError.
+ *
+ * SorobanError instances carry a `variant` property that matches
+ * one of the `SorobanError` enum values.
+ */
+export function isSorobanError(
+  error: unknown
+): error is Error & { variant: string; meta?: Record<string, unknown>; statusCode?: number } {
+  if (!(error instanceof Error)) return false;
+  const e = error as unknown as Record<string, unknown>;
+  return (
+    typeof e.variant === 'string' &&
+    e.variant.length > 0 &&
+    e.variant in SOROBAN_ERROR_MAPPING
+  );
+}
+
+/**
  * Type guard: Check if error is a backend API error response
  */
 export function isBackendApiErrorResponse(error: unknown): error is BackendApiErrorResponse {
@@ -455,7 +520,9 @@ export function isHorizonError(error: unknown): error is HorizonError {
   return (
     typeof e.type === 'string' &&
     typeof e.title === 'string' &&
-    typeof e.status === 'number'
+    typeof e.status === 'number' &&
+    !('code' in e) &&
+    !('category' in e)
   );
 }
 
@@ -464,7 +531,7 @@ export function isHorizonError(error: unknown): error is HorizonError {
  */
 function isNetworkErrorMessage(message: string): boolean {
   const networkKeywords = [
-    'network', 'fetch', 'timeout', 'offline', 'internet',
+    'network', 'fetch', 'timeout', 'timed out', 'offline', 'internet',
     'connection', 'dns', 'econn', 'etimedout', 'enotfound',
     'eai_again', 'aborted', 'failed to fetch',
   ];
@@ -476,12 +543,16 @@ function isNetworkErrorMessage(message: string): boolean {
  * Type guard: Check if error is a network error
  */
 export function isNetworkError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
+  if (typeof error !== 'object' || error === null) return false;
+  const e = error as Record<string, unknown>;
   
   // TypeError from fetch typically indicates network issues
-  if (error.name === 'TypeError') return true;
+  if (e.name === 'TypeError' || e.name === 'AbortError') return true;
   
-  return isNetworkErrorMessage(error.message);
+  if (typeof e.message === 'string') {
+    return isNetworkErrorMessage(e.message);
+  }
+  return false;
 }
 
 /**

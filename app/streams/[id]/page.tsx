@@ -15,6 +15,11 @@ const MOCK_STREAMS: Record<string, Stream> = {
     updatedAt: "2024-11-20T14:30:00.000Z",
     settlementTxHash:
       "c3f8a12e4b76d09e1a23f456bc78d90e1f234a5678b9c0d1e2f3a4b5c6d7e8f9",
+    token: "XLM",
+    totalAmount: "3600000000",
+    vestedAmount: "1800000000",
+    releasedAmount: "1200000000",
+    senderAddress: "GSENDER00000000000000000000000000000000000000000000",
   },
   "stream-kemi": {
     id: "stream-kemi",
@@ -25,6 +30,11 @@ const MOCK_STREAMS: Record<string, Stream> = {
     label: "Kemi Onboarding Support",
     createdAt: "2024-11-15T11:00:00.000Z",
     updatedAt: "2024-11-15T11:00:00.000Z",
+    token: "XLM",
+    totalAmount: "1280000000",
+    vestedAmount: "0",
+    releasedAmount: "0",
+    senderAddress: "GSENDER00000000000000000000000000000000000000000000",
   },
   "stream-yusuf": {
     id: "stream-yusuf",
@@ -43,6 +53,11 @@ const MOCK_STREAMS: Record<string, Stream> = {
       lastCheckedAt: "2024-11-19T18:05:00.000Z",
       attempts: 1,
     },
+    token: "XLM",
+    totalAmount: "540000000",
+    vestedAmount: "540000000",
+    releasedAmount: "0",
+    senderAddress: "GSENDER00000000000000000000000000000000000000000000",
   },
 };
 
@@ -56,6 +71,7 @@ export default async function StreamDetailPage({ params }: Props) {
 
   if (!stream) {
     notFound();
+    return null;
   }
 
   const network =

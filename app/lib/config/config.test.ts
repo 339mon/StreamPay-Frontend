@@ -36,6 +36,9 @@ describe('Stellar Network Configuration', () => {
     delete (process.env as any).ANOMALY_SETTLE_THRESHOLD;
     delete (process.env as any).CI;
     delete (process.env as any).GITHUB_ACTIONS;
+    delete (process.env as any).INTERNAL_SERVICE_HMAC_KEYS;
+    delete (process.env as any).INTERNAL_SERVICE_CURRENT_KEY_ID;
+    delete (process.env as any).INTERNAL_SERVICE_CLOCK_SKEW_SECONDS;
   });
 
   describe('Network Profiles', () => {
@@ -237,6 +240,7 @@ describe('Stellar Network Configuration', () => {
     it('should parse HMAC key configuration', () => {
       process.env.STELLAR_NETWORK = 'testnet';
       process.env.JWT_SECRET = 'test-secret-at-least-32-characters-long';
+      process.env.ALLOWED_ORIGINS = 'http://localhost:3000';
       process.env.INTERNAL_SERVICE_HMAC_KEYS = JSON.stringify({
         current: 'a'.repeat(32),
         next: 'b'.repeat(32),
@@ -259,7 +263,8 @@ describe('Stellar Network Configuration', () => {
     it('should reject deprecated shared internal auth token in production', () => {
       process.env.STELLAR_NETWORK = 'testnet';
       process.env.JWT_SECRET = 'test-secret-at-least-32-characters-long';
-      process.env.NODE_ENV = 'production';
+      process.env.ALLOWED_ORIGINS = 'http://localhost:3000';
+      (process.env as any).NODE_ENV = 'production';
       process.env.INTERNAL_AUTH_TOKEN = 'legacy-admin-password';
 
       expect(() => validateConfig()).toThrow(ConfigValidationError);
@@ -271,6 +276,7 @@ describe('Stellar Network Configuration', () => {
     it('should require current key id to match configured HMAC keys', () => {
       process.env.STELLAR_NETWORK = 'testnet';
       process.env.JWT_SECRET = 'test-secret-at-least-32-characters-long';
+      process.env.ALLOWED_ORIGINS = 'http://localhost:3000';
       process.env.INTERNAL_SERVICE_HMAC_KEYS = JSON.stringify({
         next: 'b'.repeat(32),
       });

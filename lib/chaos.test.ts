@@ -1,56 +1,78 @@
-import { NextRequest } from 'next/server';
-import { getChaosConfig, applyChaos } from './chaos';
+/** @jest-environment node */
 
-describe('Chaos Injection Middleware', () => {
-  const originalEnv = process.env;
+import { applyChaos, getChaosConfig } from "./chaos";
 
-  beforeEach(() => {
-    jest.resetModules();
-    process.env = { ...originalEnv };
-  });
-
-  afterAll(() => {
-    process.env = originalEnv;
-  });
-
-  it('should return default disabled config when env vars are absent', () => {
-    const config = getChaosConfig();
+describe("getChaosConfig", () => {
+  it("is disabled by default", () => {
+    const config = getChaosConfig({ NODE_ENV: "test" });
     expect(config.enabled).toBe(false);
-    expect(config.latencyMs).toBe(0);
-    expect(config.errorRate).toBe(0);
   });
 
-  it('should parse configuration from headers', () => {
-    const req = new NextRequest('http://localhost/api/test', {
-      headers: {
-        'x-chaos-enabled': 'true',
-        'x-chaos-latency': '150',
-        'x-chaos-error-rate': '1.0',
-        'x-chaos-error-code': '503',
-      },
-    });
+  it("is force-disabled in production even when CHAOS_ENABLED=true", () => {
+    const config = getChaosConfig({ NODE_ENV: "production" as const, CHAOS_ENABLED: "true" });
+    expect(config.enabled).toBe(false);
+  });
 
-    const config = getChaosConfig(req);
+  it("enables in non-production when CHAOS_ENABLED=true", () => {
+    const config = getChaosConfig({ NODE_ENV: "development" as const, CHAOS_ENABLED: "true" });
     expect(config.enabled).toBe(true);
-    expect(config.latencyMs).toBe(150);
-    expect(config.errorRate).toBe(1.0);
-    expect(config.errorCode).toBe(503);
   });
 
-  it('should inject error response when errorRate is 1.0', async () => {
-    const req = new NextRequest('http://localhost/api/test', {
-      headers: {
-        'x-chaos-enabled': 'true',
-        'x-chaos-error-rate': '1.0',
-        'x-chaos-error-code': '429',
-      },
-    });
+  it("clamps the error rate into [0, 1]", () => {
+    expect(getChaosConfig({ NODE_ENV: "test", CHAOS_ERROR_RATE: "5" }).errorRate).toBe(1);
+    expect(getChaosConfig({ NODE_ENV: "test", CHAOS_ERROR_RATE: "-2" }).errorRate).toBe(0);
+    expect(getChaosConfig({ NODE_ENV: "test", CHAOS_ERROR_RATE: "0.3" }).errorRate).toBeCloseTo(0.3);
+  });
 
-    const res = await applyChaos(req);
-    expect(res).not.toBeNull();
-    expect(res?.status).toBe(429);
-    const body = await res?.json();
-    expect(body.error.code).toBe(429);
-    expect(body.error.message).toBe('Chaos injection triggered fault');
+  it("falls back to defaults for invalid numbers", () => {
+    const config = getChaosConfig({ NODE_ENV: "test", CHAOS_LATENCY_MS: "abc", CHAOS_ERROR_STATUS: "nan" });
+    expect(config.latencyMs).toBe(0);
+    expect(config.errorStatus).toBe(503);
+  });
+
+  it("clamps error status into the 4xx/5xx range", () => {
+    expect(getChaosConfig({ NODE_ENV: "test", CHAOS_ERROR_STATUS: "200" }).errorStatus).toBe(400);
+    expect(getChaosConfig({ NODE_ENV: "test", CHAOS_ERROR_STATUS: "700" }).errorStatus).toBe(599);
+  });
+});
+
+describe("applyChaos", () => {
+  it("is a no-op when disabled", async () => {
+    const sleep = jest.fn();
+    const outcome = await applyChaos(
+      { enabled: false, latencyMs: 1000, errorRate: 1, errorStatus: 503 },
+      () => 0,
+      sleep
+    );
+    expect(outcome.delayMs).toBe(0);
+    expect(outcome.injectedStatus).toBeUndefined();
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("injects latency scaled by the random source", async () => {
+    const sleep = jest.fn().mockResolvedValue(undefined);
+    const outcome = await applyChaos(
+      { enabled: true, latencyMs: 200, errorRate: 0, errorStatus: 503 },
+      () => 0.5,
+      sleep
+    );
+    expect(outcome.delayMs).toBe(100);
+    expect(sleep).toHaveBeenCalledWith(100);
+  });
+
+  it("injects an error when the random draw is below the error rate", async () => {
+    const outcome = await applyChaos(
+      { enabled: true, latencyMs: 0, errorRate: 0.5, errorStatus: 503 },
+      () => 0.1
+    );
+    expect(outcome.injectedStatus).toBe(503);
+  });
+
+  it("does not inject an error when the random draw is above the error rate", async () => {
+    const outcome = await applyChaos(
+      { enabled: true, latencyMs: 0, errorRate: 0.5, errorStatus: 503 },
+      () => 0.9
+    );
+    expect(outcome.injectedStatus).toBeUndefined();
   });
 });
