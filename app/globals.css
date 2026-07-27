@@ -648,92 +648,51 @@ a:hover {
   }
 }
 
-/* ─── Kbd Hint ──────────────────────────────────────────────────────────────── */
+/* ─── StreamProgress Responsive Breakpoints ───────────────────────────────────
+ *
+ * Narrow viewport (< 30rem / 480px):
+ *   - Stack label + remaining vertically to avoid horizontal overflow
+ *   - Reduce track height and font sizes
+ *   - Tighter gaps
+ *
+ * Mid-range (30rem – 47.9375rem / 480px – 767px):
+ *   - Keep horizontal layout but reduce gaps
+ *
+ * Desktop (>= 48rem / 768px):
+ *   - Default (as above)
+ */
 
-.kbd-hint {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem 1rem;
-  align-items: center;
+@media (max-width: 29.9375rem) {
+  .stream-progress {
+    gap: 0.375rem;
+  }
+
+  .stream-progress__track {
+    height: 8px;
+  }
+
+  .stream-progress__meta {
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+
+  .stream-progress__label {
+    font-size: 0.75rem;
+  }
+
+  .stream-progress__remaining {
+    font-size: 0.6875rem;
+  }
 }
 
-.kbd-hint__item {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-}
+@media (min-width: 30rem) and (max-width: 47.9375rem) {
+  .stream-progress {
+    gap: 0.375rem;
+  }
 
-.kbd-hint__keys {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.125rem;
-}
-
-.kbd-hint__separator {
-  color: var(--muted);
-  font-size: 0.6875rem;
-  user-select: none;
-}
-
-.kbd {
-  display: inline-block;
-  padding: 0.125rem 0.375rem;
-  font-family: inherit;
-  font-size: 0.6875rem;
-  font-weight: 700;
-  line-height: 1;
-  color: var(--muted-light);
-  background-color: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 0.25rem;
-  min-width: 1.25rem;
-  text-align: center;
-  white-space: nowrap;
-}
-
-.kbd-hint__description {
-  color: var(--muted-light);
-  font-size: 0.6875rem;
-}
-
-.stream-progress__hints {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding-top: 0.25rem;
-}
-
-.stream-progress__hints-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.125rem 0.375rem;
-  font-family: inherit;
-  font-size: 0.6875rem;
-  font-weight: 500;
-  line-height: 1;
-  color: var(--muted-light);
-  background: none;
-  border: 1px solid transparent;
-  border-radius: 0.25rem;
-  cursor: pointer;
-  transition: color 150ms ease, border-color 150ms ease;
-}
-
-.stream-progress__hints-toggle:hover {
-  color: var(--foreground);
-  border-color: var(--border);
-}
-
-.stream-progress__hints-toggle:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.stream-progress__hints-icon {
-  font-size: 0.75rem;
-  line-height: 1;
+  .stream-progress__meta {
+    gap: 0.5rem;
+  }
 }
 
 /* ─── Stream List Layout ──────────────────────────────────────────────────── */
@@ -1323,6 +1282,33 @@ a:hover {
   content: "•";
   left: 0;
   position: absolute;
+}
+
+/* ─── EmptyState Responsive Breakpoints ───────────────────────────────────────
+ *
+ * Narrow viewport (< 30rem / 480px):
+ *   - Compact padding, smaller title and description
+ *   - Reduced gap and border radius
+ */
+
+@media (max-width: 29.9375rem) {
+  .empty-state {
+    padding: 1rem;
+    gap: 0.75rem;
+    border-radius: 1.25rem;
+  }
+
+  .empty-state__content {
+    gap: 0.5rem;
+  }
+
+  .empty-state__title {
+    font-size: 1.25rem;
+  }
+
+  .empty-state__description {
+    font-size: 0.875rem;
+  }
 }
 
 /* ─── Skeletons ─── */

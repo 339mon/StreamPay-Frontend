@@ -312,6 +312,144 @@ describe("StreamProgress aria-live announcements", () => {
   });
 });
 
+// ── Responsive layout tests ─────────────────────────────────────────────────
+
+describe("StreamProgress responsive layout", () => {
+  afterEach(() => {
+    // @ts-expect-error reset between tests
+    delete window.matchMedia;
+  });
+
+  it("renders the correct BEM structure for CSS responsive hooks", () => {
+    mockMatchMedia(false);
+    const { container } = render(
+      <StreamProgress status="active" accruedAmount={50} totalAmount={100} />,
+    );
+
+    expect(container.querySelector(".stream-progress")).toBeInTheDocument();
+    expect(container.querySelector(".stream-progress__track")).toBeInTheDocument();
+    expect(container.querySelector(".stream-progress__fill")).toBeInTheDocument();
+    expect(container.querySelector(".stream-progress__meta")).toBeInTheDocument();
+    expect(container.querySelector(".stream-progress__label")).toBeInTheDocument();
+    expect(container.querySelector(".stream-progress__remaining")).toBeInTheDocument();
+  });
+
+  it("renders label and remaining amount within meta for responsive stacking", () => {
+    mockMatchMedia(false);
+    render(
+      <StreamProgress status="active" accruedAmount={50} totalAmount={100} />,
+    );
+
+    const meta = screen.getByText("50% accrued").closest(".stream-progress__meta");
+    expect(meta).toBeInTheDocument();
+    expect(meta).toContainElement(screen.getByText("50% accrued"));
+    expect(meta).toContainElement(screen.getByText("50 remaining"));
+  });
+
+  it("suppresses remaining when totalAmount is zero", () => {
+    mockMatchMedia(false);
+    render(
+      <StreamProgress status="active" accruedAmount={0} totalAmount={0} />,
+    );
+
+    expect(screen.queryByText(/remaining/i)).not.toBeInTheDocument();
+  });
+
+  it("shows zero remaining when fully accrued", () => {
+    mockMatchMedia(false);
+    render(
+      <StreamProgress status="active" accruedAmount={100} totalAmount={100} />,
+    );
+
+    expect(screen.getByText("0 remaining")).toBeInTheDocument();
+  });
+
+  it("applies tabular-nums to remaining for stable digit widths", () => {
+    mockMatchMedia(false);
+    const { container } = render(
+      <StreamProgress status="active" accruedAmount={50} totalAmount={100} />,
+    );
+
+    const remaining = container.querySelector(".stream-progress__remaining");
+    expect(remaining).toHaveClass("tabular-nums");
+  });
+
+  it("renders without remaining when totalAmount is omitted", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="active" accruedAmount={50} />);
+
+    expect(screen.queryByText(/remaining/i)).not.toBeInTheDocument();
+  });
+
+  it("renders without remaining when accruedAmount is omitted", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="active" totalAmount={100} />);
+
+    expect(screen.queryByText(/remaining/i)).not.toBeInTheDocument();
+  });
+
+  it("applies className prop to the root element for contextual overrides", () => {
+    mockMatchMedia(false);
+    const { container } = render(
+      <StreamProgress
+        status="active"
+        accruedAmount={50}
+        totalAmount={100}
+        className="stream-row__progress"
+      />,
+    );
+
+    const root = container.querySelector(".stream-progress");
+    expect(root).toHaveClass("stream-row__progress");
+  });
+
+  it("renders ended status without remaining amount calculation", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="ended" />);
+
+    expect(screen.getByText("Completed")).toBeInTheDocument();
+    expect(screen.queryByText(/remaining/i)).not.toBeInTheDocument();
+  });
+
+  it("renders draft status without remaining amount", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="draft" />);
+
+    expect(screen.getByText("Not started")).toBeInTheDocument();
+    expect(screen.queryByText(/remaining/i)).not.toBeInTheDocument();
+  });
+
+  it("renders cancelled status without remaining amount", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="cancelled" />);
+
+    expect(screen.getByText("Cancelled")).toBeInTheDocument();
+    expect(screen.queryByText(/remaining/i)).not.toBeInTheDocument();
+  });
+
+  it("renders withdrawn status without remaining amount", () => {
+    mockMatchMedia(false);
+    render(<StreamProgress status="withdrawn" />);
+
+    expect(screen.getByText("Withdrawn")).toBeInTheDocument();
+    expect(screen.queryByText(/remaining/i)).not.toBeInTheDocument();
+  });
+
+  it("empty state passes className through", () => {
+    mockMatchMedia(false);
+    render(
+      <StreamProgress
+        status="empty"
+        className="custom-empty-class"
+      />,
+    );
+
+    const section = screen.getByRole("heading", { name: "No active stream found" })
+      .closest("section")!;
+    expect(section).toHaveClass("custom-empty-class");
+  });
+});
+
 // ── Empty state tests ───────────────────────────────────────────────────────
 
 describe("StreamProgress empty state", () => {
