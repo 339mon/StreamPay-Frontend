@@ -56,6 +56,17 @@ describe("StreamProgress reduced-motion fallback", () => {
     expect(fill.style.width).toBe("50%");
   });
 
+  it("applies static class on first render, not after an effect (no flash)", () => {
+    // The hook reads matchMedia synchronously in useState so the correct modifier
+    // is present from the very first render — there's no frame where the animated
+    // class appears before being swapped out.
+    mockMatchMedia(true);
+    render(<StreamProgress status="active" accruedAmount={50} totalAmount={100} />);
+    // If state were initialised to false and corrected in useEffect, the first
+    // render would produce --animated; lazy initialisation means it's --static.
+    expect(screen.getByRole("progressbar").parentElement).toHaveClass("stream-progress--static");
+  });
+
   it("preserves the accessible progress value regardless of motion preference", () => {
     mockMatchMedia(true);
     render(<StreamProgress status="active" accruedAmount={25} totalAmount={100} />);
