@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
-import { recordPrivilegedStreamAuditEvent } from "@/app/lib/audit-log";
-import { db, idempotencyToken, withLock } from "@/app/lib/db";
-import { getCorrelationContext } from "@/app/lib/logger";
+import { streamsRateLimit } from "@/src/middleware/rateLimit";
+import { db, withLock } from "@/app/lib/db";
+import { withIdempotency, withdrawStore } from "@/app/lib/idempotency";
+import { getCorrelationContext, logger } from "@/app/lib/logger";
 import { checkStreamOrgPolicy } from "@/app/lib/org-policy";
-import { checkRateLimit, getClientIdentity, rateLimitResponse } from "@/app/lib/rate-limit";
-import { getLimitForRoute } from "@/app/lib/rate-limit-config";
-import { recordRequest, recordThrottle } from "@/app/lib/rate-limit-metrics";
+import { recordPrivilegedStreamAuditEvent } from "@/app/lib/audit-log";
 import { evaluateWithdrawalState } from "@/app/lib/withdraw-finality";
+import { maybeFeeBump } from "@/lib/feeBump";
+
+type Context = { params: Promise<{ id: string }> };
 
 function createErrorResponse(code: string, message: string, status: number) {
   const context = getCorrelationContext();
@@ -17,100 +19,105 @@ function getHeader(request: Request, name: string): string | null {
   return request.headers?.get?.(name) ?? null;
 }
 
-function getRequestUrl(request: Request, fallbackPath: string): URL {
-  try {
-    return request.url ? new URL(request.url) : new URL(`http://localhost${fallbackPath}`);
-  } catch {
-    return new URL(`http://localhost${fallbackPath}`);
-  }
-}
-
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const url = getRequestUrl(request, `/api/streams/${id}/withdraw`);
-  const limitType = getLimitForRoute("POST", url.pathname);
-  const identity = getClientIdentity(request);
-  const result = await checkRateLimit(identity, limitType);
 
-  if (!result.allowed) {
-    recordThrottle(url.pathname, limitType, identity.type, identity.displayValue);
-    return rateLimitResponse(result.retryAfter!);
+  // Rate limit guard
+  const rateCheck = await streamsRateLimit(request, "POST", `/api/streams/${id}/withdraw`);
+  if (!rateCheck.allowed) {
+    return rateCheck.response;
   }
-  recordRequest(url.pathname);
 
+  // (original id extraction moved above)
   const actorAddress = getHeader(request, "Actor-Wallet-Address");
-  const idempotencyKey = getHeader(request, "Idempotency-Key");
-  const token = idempotencyKey ? idempotencyToken(`streams.withdraw.${id}`, idempotencyKey) : null;
 
-  if (token && db.idempotency.has(token)) {
-    return NextResponse.json(db.idempotency.get(token));
-  }
-
-  return withLock(id, async () => {
-    if (token && db.idempotency.has(token)) {
-      return NextResponse.json(db.idempotency.get(token));
-    }
-
-    const stream = db.streams.get(id);
-    if (!stream) {
-      return createErrorResponse("STREAM_NOT_FOUND", `Stream '${id}' not found`, 404);
-    }
-
-    const policyResult = actorAddress ? checkStreamOrgPolicy(id, actorAddress, "withdraw") : null;
-    if (policyResult) {
-      if (!policyResult.allowed) {
-        return createErrorResponse(policyResult.code, policyResult.message, policyResult.httpStatus);
+  // IDEMPOTENCY: Withdraw is non-idempotent by nature — this wrapper ensures retries return the original response without re-executing the withdrawal
+  return withIdempotency(request, "withdraw", withdrawStore, async () => {
+    return withLock(id, async () => {
+      const stream = db.streams.get(id);
+      if (!stream) {
+        return createErrorResponse("STREAM_NOT_FOUND", `Stream '${id}' not found`, 404);
       }
-      if (policyResult.requiresApproval) {
-        return createErrorResponse(
-          "APPROVAL_REQUIRED",
-          "This action requires multi-sig approval. Please initiate an approval request.",
-          409
-        );
-      }
-    }
 
-    if (stream.status !== "ended") {
-      if (stream.status === "withdrawn") {
-        const payload = { data: stream, withdrawal: stream.withdrawal };
-        if (token) {
-          db.idempotency.set(token, payload);
+      const policyResult = actorAddress
+        ? checkStreamOrgPolicy(id, actorAddress, "withdraw")
+        : null;
+      if (policyResult) {
+        if (!policyResult.allowed) {
+          return createErrorResponse(policyResult.code, policyResult.message, policyResult.httpStatus);
         }
-        return NextResponse.json(payload);
+        if (policyResult.requiresApproval) {
+          return createErrorResponse(
+            "APPROVAL_REQUIRED",
+            "This action requires multi-sig approval. Please initiate an approval request.",
+            409
+          );
+        }
       }
-      return createErrorResponse("INVALID_STREAM_STATE", "Only ended streams can be withdrawn from", 409);
-    }
 
-    const before = structuredClone(stream);
-    const { alert, stream: updated } = await evaluateWithdrawalState(stream, new Date(), fetch);
-    db.streams.set(id, updated);
+      if (stream.status !== "ended") {
+        if (stream.status === "withdrawn") {
+          const payload = { data: stream, withdrawal: stream.withdrawal };
+          return NextResponse.json(payload);
+        }
+        return createErrorResponse("INVALID_STREAM_STATE", "Only ended streams can be withdrawn from", 409);
+      }
 
-    const payload = {
-      alert,
-      data: updated,
-      withdrawal: updated.withdrawal,
-    };
+      const before = structuredClone(stream);
+      let evaluationResult = await evaluateWithdrawalState(stream, new Date(), fetch);
 
-    recordPrivilegedStreamAuditEvent({
-      action: "stream.withdraw",
-      after: updated as unknown as Record<string, unknown>,
-      before: before as unknown as Record<string, unknown>,
-      metadata: {
-        resultingStatus: updated.status,
-        withdrawalState: updated.withdrawal?.state ?? null,
-      },
-      request,
-      streamId: id,
-      targetAccount: updated.recipient,
+      // ── Fee-bump: if the withdrawal failed due to insufficient fees,
+      //    automatically attempt a fee-bump resubmission ─────────────────
+      const { result: finalResult, feeBump } = await maybeFeeBump(
+        { stream: evaluationResult.stream, alert: evaluationResult.alert },
+        fetch,
+      );
+
+      if (feeBump.bumped) {
+        logger.info("Fee-bump transaction submitted successfully", {
+          streamId: id,
+          newTxHash: feeBump.newTxHash,
+        });
+      } else if (feeBump.error) {
+        logger.warn("Fee-bump attempt failed", {
+          streamId: id,
+          error: feeBump.error,
+        });
+      }
+
+      const updated = finalResult.stream;
+      db.streams.set(id, updated);
+
+      const payload = {
+        alert: finalResult.alert,
+        data: updated,
+        withdrawal: updated.withdrawal,
+        ...(feeBump.bumped ? { feeBump: { bumped: true, newTxHash: feeBump.newTxHash } } : {}),
+      };
+
+      recordPrivilegedStreamAuditEvent({
+        action: "stream.withdraw",
+        after: updated as any,
+        before: before as any,
+        metadata: {
+          resultingStatus: updated.status,
+          withdrawalState: updated.withdrawal?.state ?? null,
+        },
+        request,
+        streamId: id,
+        targetAccount: updated.recipient,
+      });
+
+      logger.info("Stream withdrawn successfully", {
+        streamId: id,
+        action: "withdraw",
+        status: "success",
+      });
+
+      return NextResponse.json(payload);
     });
-
-    if (token) {
-      db.idempotency.set(token, payload);
-    }
-
-    return NextResponse.json(payload);
   });
 }
