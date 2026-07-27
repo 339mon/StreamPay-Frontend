@@ -12,6 +12,7 @@ import { isStreamPayError } from "../lib/errors/mapper";
 import { formatErrorForDisplay } from "../lib/errors/handler";
 import type { StreamPayError } from "../lib/errors/types";
 import { LiveRegion } from "../../src/components/LiveRegion";
+import { KbdHint } from "../../src/components/KbdHint";
 import { colorFromId } from "../utils/colorFromId";
 
 const SWIPE_CANCEL_THRESHOLD = 80;
@@ -284,6 +285,7 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
             <span>{stream.nextAction}</span>
           )}
         </button>
+        <KbdHint keys={["Enter"]} label={stream.nextAction} aria-hidden />
         {errorMsg && (
           <p className="detail-incident-warning" role="alert">
             {errorMsg}

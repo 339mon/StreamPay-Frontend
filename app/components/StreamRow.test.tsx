@@ -120,6 +120,31 @@ describe("StreamRow", () => {
     });
   });
 
+  describe("keyboard shortcut hint", () => {
+    it("renders a kbd hint in the action area", () => {
+      const { container } = render(<StreamRow stream={baseStream} />);
+      const hint = container.querySelector("[data-testid='kbd-hint']");
+      expect(hint).not.toBeNull();
+    });
+
+    it("renders Enter as the shortcut key", () => {
+      const { container } = render(<StreamRow stream={baseStream} />);
+      const kbd = container.querySelector("[data-testid='kbd-hint'] kbd");
+      expect(kbd).toHaveTextContent("Enter");
+    });
+
+    it("hides the hint from assistive tech", () => {
+      const { container } = render(<StreamRow stream={baseStream} />);
+      const hint = container.querySelector("[data-testid='kbd-hint']");
+      expect(hint).toHaveAttribute("aria-hidden", "true");
+    });
+
+    it.each(ALL_STATUSES)("renders kbd hint for status=%s", (status) => {
+      const { container } = render(<StreamRow stream={makeMockStream(status)} />);
+      expect(container.querySelector("[data-testid='kbd-hint']")).not.toBeNull();
+    });
+  });
+
   describe("compact density variant", () => {
     it("applies stream-row--compact modifier when density=compact", () => {
       const { container } = render(

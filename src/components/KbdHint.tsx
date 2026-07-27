@@ -1,20 +1,35 @@
 import React from "react";
-import styles from "./KbdHint.module.css";
 
 export interface KbdHintProps {
-  /** The keyboard shortcut text to display */
-  shortcut: string;
-  /** Additional CSS class names */
+  /** One or more key labels, e.g. ["Ctrl", "K"] */
+  keys: string[];
+  /** Human-readable description of what the shortcut does */
+  label: string;
+  /** Hide from assistive tech when the hint is purely decorative */
+  "aria-hidden"?: boolean;
   className?: string;
 }
 
-export function KbdHint({ shortcut, className = "" }: KbdHintProps) {
-  if (!shortcut) return null;
+export function KbdHint({ keys, label, "aria-hidden": ariaHidden, className }: KbdHintProps) {
+  const wrapperProps = ariaHidden
+    ? { "aria-hidden": "true" as const }
+    : { "aria-label": `Keyboard shortcut: ${keys.join(" ")}`, title: label };
 
   return (
-    <kbd className={`${styles.kbd} ${className}`.trim()} aria-hidden="true" data-testid="kbd-hint">
-      {shortcut}
-    </kbd>
+    <span
+      className={["kbd-hint__item", className].filter(Boolean).join(" ")}
+      data-testid="kbd-hint"
+      {...wrapperProps}
+    >
+      <span className="kbd-hint__keys">
+        {keys.map((key, i) => (
+          <React.Fragment key={key}>
+            {i > 0 && <span className="kbd-hint__separator">+</span>}
+            <kbd className="kbd">{key}</kbd>
+          </React.Fragment>
+        ))}
+      </span>
+    </span>
   );
 }
 
