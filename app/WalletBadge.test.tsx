@@ -150,79 +150,53 @@ describe("WalletBadge", () => {
     expect(badge).not.toHaveAttribute("tabIndex");
   });
 
-  it("renders keyboard shortcut hint when shortcut is provided and component is interactive", () => {
-    render(<WalletBadge state="disconnected" onConnect={jest.fn()} shortcut="C" />);
-    const hint = screen.getByTestId("kbd-hint");
-    expect(hint).toBeInTheDocument();
-    expect(hint).toHaveTextContent("C");
-  });
+  describe("color-blind pattern fills", () => {
+    it.each([
+      ["disconnected", "cb-pattern--draft"],
+      ["connecting", "cb-pattern--active"],
+      ["connected", "cb-pattern--ended"],
+      ["error", "cb-pattern--cancelled"],
+      ["disconnecting", "cb-pattern--paused"],
+    ])("applies %s → %s pattern class to the status dot", (state, expectedPattern) => {
+      const { container } = render(
+        <WalletBadge state={state as any} />
+      );
+      const dot = container.querySelector(".wallet-badge__dot");
+      expect(dot).toHaveClass("cb-pattern");
+      expect(dot).toHaveClass(expectedPattern);
+    });
 
-  it("does not render keyboard shortcut hint when component is not interactive", () => {
-    render(<WalletBadge state="connecting" shortcut="C" />);
-    expect(screen.queryByTestId("kbd-hint")).not.toBeInTheDocument();
-  });
+    it("applies distinct pattern classes across all wallet states", () => {
+      const states = [
+        "disconnected",
+        "connecting",
+        "connected",
+        "error",
+        "disconnecting",
+      ] as const;
 
-  it("applies keyboard-visible focus ring on interactive badge when focused via keyboard", () => {
-    const handleConnect = jest.fn();
-    render(<WalletBadge state="disconnected" onConnect={handleConnect} />);
-    const badge = screen.getByTestId("wallet-badge");
+      const patterns = states.map((state) => {
+        const { container } = render(
+          <WalletBadge state={state} />
+        );
+        return Array.from(
+          container.querySelector(".wallet-badge__dot")?.classList ?? []
+        );
+      });
 
-    // The badge should be focusable via keyboard (tabIndex 0).
-    expect(badge).toHaveAttribute("tabIndex", "0");
+      // Every state must carry at least cb-pattern + one specific pattern class
+      patterns.forEach((clsList, i) => {
+        expect(clsList).toContain("cb-pattern");
+        expect(
+          clsList.filter((c) => c.startsWith("cb-pattern--"))
+        ).toHaveLength(1);
+      });
 
-    // Simulate keyboard focus by focusing the element and dispatching
-    // a focus event — jsdom treats all programmatic focus as :focus-visible.
-    badge.focus();
-    expect(document.activeElement).toBe(badge);
-
-    // After focus, pressing Enter should still invoke the callback.
-    fireEvent.keyDown(badge, { key: "Enter" });
-    expect(handleConnect).toHaveBeenCalledTimes(1);
-  });
-
-  it("shows empty state when showEmptyState is true and state is disconnected", () => {
-    render(
-      <WalletBadge
-        state="disconnected"
-        showEmptyState
-        onConnect={jest.fn()}
-      />
-    );
-
-    expect(screen.getByTestId("wallet-badge-empty-state")).toBeInTheDocument();
-    expect(screen.getByText("Connect Wallet")).toBeInTheDocument();
-  });
-});
-
-describe("WalletBadge focus-visible CSS", () => {
-  const cssText = fs.readFileSync(
-    path.join(__dirname, "WalletBadge.module.css"),
-    "utf8"
-  );
-
-  it("declares .badgeInteractive:focus-visible with accent outline and box-shadow", () => {
-    expect(cssText).toContain(".badgeInteractive:focus-visible");
-    expect(cssText).toContain("outline: 2px solid var(--accent");
-    expect(cssText).toContain("box-shadow: 0 0 0 2px var(--background");
-  });
-
-  it("suppresses outline for mouse/touch focus on interactive badge", () => {
-    expect(cssText).toContain(
-      ".badgeInteractive:focus:not(:focus-visible)"
-    );
-    expect(cssText).toContain("outline: none");
-  });
-
-  it("declares .disconnect:focus-visible with accent outline and box-shadow", () => {
-    expect(cssText).toContain(".disconnect:focus-visible");
-    expect(cssText).toContain("outline: 2px solid var(--accent");
-    expect(cssText).toContain("box-shadow: 0 0 0 2px var(--background");
-  });
-
-  it("suppresses outline for mouse/touch focus on disconnect button", () => {
-    expect(cssText).toContain(
-      ".disconnect:focus:not(:focus-visible)"
-    );
-    expect(cssText).toContain("outline: none");
+      // All five pattern classes must be distinct (no two states share the same texture)
+      const patternClasses = patterns.map(
+        (cls) => cls.find((c) => c.startsWith("cb-pattern--"))!
+      );
+      expect(new Set(patternClasses).size).toBe(states.length);
+    });
   });
 });

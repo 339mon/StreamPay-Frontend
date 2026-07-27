@@ -169,6 +169,22 @@ export function WalletBadge({
     }
   };
 
+  const getPatternClass = (): string => {
+    switch (state) {
+      case "connected":
+        return "cb-pattern--ended";
+      case "connecting":
+        return "cb-pattern--active";
+      case "disconnecting":
+        return "cb-pattern--paused";
+      case "error":
+        return "cb-pattern--cancelled";
+      case "disconnected":
+      default:
+        return "cb-pattern--draft";
+    }
+  };
+
   const isInteractive = Boolean(onClick || (state === "disconnected" && onConnect));
 
   if (showEmptyState && state === "disconnected") {
@@ -209,9 +225,9 @@ export function WalletBadge({
           : "background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease",
       }}
     >
-      {/* Status Dot */}
+      {/* Status Dot with color-blind-safe pattern overlay (shape + texture beyond colour) */}
       <span
-        className={`wallet-badge__dot ${styles.dot} ${getDotStyleClass()}`}
+        className={`wallet-badge__dot ${styles.dot} ${getDotStyleClass()} cb-pattern ${getPatternClass()}`}
         aria-hidden="true"
         data-reduced-motion={prefersReducedMotion ? "true" : "false"}
         style={{

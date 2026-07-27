@@ -212,6 +212,24 @@
     background-size: 8px 8px;
   }
 
+  /* ── WalletBadge dot pattern ─────────────────────────────────────────────
+   * The wallet status dot is a small (10px) circle.  We shrink the tile size
+   * so at least one full repeat of the pattern fits inside the dot, and bump
+   * opacity slightly to compensate for the smaller surface area.
+   *
+   * Pattern mapping (each wallet state maps to a unique geometric texture):
+   *   • disconnected → draft (spaced dots ···)   — "waiting / not connected"
+   *   • connecting   → active (diagonal stripes)  — "in motion / flowing"
+   *   • connected    → ended (crosshatch ×××)     — "established / complete"
+   *   • error        → cancelled (reverse-diagonal) — "failed / aborted"
+   *   • disconnecting→ paused (horizontal bars ≡) — "pausing / transitioning" */
+
+  .wallet-badge__dot.cb-pattern::before {
+    background-size: 8px 8px;
+    opacity: calc(var(--cb-pattern-opacity) * 0.85);
+    border-radius: 50%;
+  }
+
   /* ── StreamProgress fill pattern ────────────────────────────────────────
    * The progress bar fill uses the texture as a second background layer so
    * the pattern is only visible on the coloured fill portion, not the track. */

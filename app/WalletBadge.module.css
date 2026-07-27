@@ -48,13 +48,16 @@
   box-shadow: none;
 }
 
-/* Status dot indicator */
+/* Status dot indicator — size increased to 10px so the color-blind-safe
+   pattern overlay is clearly legible (the ::before pseudo-element from
+   the .cb-pattern system overlays a distinct SVG texture per state). */
 .dot {
-  width: var(--size-2, 8px);
-  height: var(--size-2, 8px);
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   display: inline-block;
   flex-shrink: 0;
+  position: relative;
   transition: background-color 0.2s ease;
 }
 
