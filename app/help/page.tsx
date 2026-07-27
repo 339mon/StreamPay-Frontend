@@ -56,6 +56,24 @@ const FAQ_SECTIONS: FaqSection[] = [
     ],
   },
   {
+    id: "keyboard-shortcuts",
+    title: "Keyboard Shortcuts",
+    items: [
+      {
+        id: "shortcuts-overlay",
+        question: "How do I view all available keyboard shortcuts?",
+        answer:
+          'Press <kbd>?</kbd> anywhere in the app to open the Keyboard Shortcuts overlay, which lists every available shortcut. Press <kbd>?</kbd> again or <kbd>Esc</kbd> to close the overlay. Press <kbd>&#8984;/Ctrl</kbd>&thinsp;+&thinsp;<kbd>K</kbd> to open the command palette for searching streams.',
+      },
+      {
+        id: "shortcuts-list",
+        question: "What keyboard shortcuts are available?",
+        answer:
+          "Global shortcuts: <kbd>?</kbd> toggles the shortcuts overlay, <kbd>&#8984;/Ctrl</kbd>&thinsp;+&thinsp;<kbd>K</kbd> opens the command palette, and <kbd>Esc</kbd> closes any open dialog or panel. Navigation shortcuts: <kbd>Tab</kbd> and <kbd>Shift</kbd>&thinsp;+&thinsp;<kbd>Tab</kbd> move focus forward and backward, arrow keys navigate lists and tabs, <kbd>Home</kbd> and <kbd>End</kbd> jump to the first and last tab, and <kbd>Enter</kbd> selects or activates the focused element.",
+      },
+    ],
+  },
+  {
     id: "payment-streams",
     title: "Payment Streams",
     items: [
