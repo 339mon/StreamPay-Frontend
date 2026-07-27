@@ -372,11 +372,14 @@ jobs:
             });
 
       - name: Slack Notification (if webhook configured)
-        if: failure() && secrets.SLACK_WEBHOOK_URL != ''
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then exit 0; fi
           curl -X POST -H 'Content-type: application/json' \
             --data '{"text":"🚨 Security scan failed in ${{ github.repository }} on ${{ github.ref_name }}\nCommit: ${{ github.sha }}\nView: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}' \
-            ${{ secrets.SLACK_WEBHOOK_URL }}
+            "$SLACK_WEBHOOK_URL"
 
   # Nightly Security Report
   nightly-report:
