@@ -214,6 +214,25 @@ describe("StreamProgress spacing/typography design tokens", () => {
     const rule = ruleBody(".stream-progress__remaining");
     expect(rule).toContain("font-size: var(--text-xs)");
   });
+
+  it("defines skeleton pointer-events and user-select disable rules", () => {
+    const rule = ruleBody(".stream-progress--skeleton");
+    expect(rule).toContain("pointer-events: none");
+    expect(rule).toContain("user-select: none");
+  });
+
+  it("skeleton-track uses pill border-radius", () => {
+    const rule = ruleBody(".stream-progress__skeleton-track");
+    expect(rule).toContain("border-radius: 999px");
+  });
+
+  it("skeleton-meta mirrors the .stream-progress__meta layout tokens", () => {
+    const rule = ruleBody(".stream-progress__skeleton-meta");
+    expect(rule).toContain("display: flex");
+    expect(rule).toContain("gap: var(--space-4)");
+    expect(rule).toContain("justify-content: space-between");
+    expect(rule).toContain("align-items: baseline");
+  });
 });
 
 // ── Aria-live announcements ─────────────────────────────────────────────────
@@ -460,6 +479,157 @@ describe("StreamProgress responsive layout", () => {
     expect(section).toHaveClass("custom-empty-class");
   });
 });
+
+// ── Loading skeleton tests ────────────────────────────────────────────────
+
+describe("StreamProgress loading skeleton", () => {
+  afterEach(() => {
+    // @ts-expect-error reset between tests
+    delete window.matchMedia;
+  });
+
+  it("renders skeleton when loading is true", () => {
+    mockMatchMedia(false);
+    const { container } = render(
+      <StreamProgress
+        status="active"
+        loading={true}
+        accruedAmount={50}
+        totalAmount={100}
+      />
+    );
+
+    const root = container.querySelector(".stream-progress");
+    expect(root).toHaveClass("stream-progress--skeleton");
+    expect(container.querySelector(".stream-progress__skeleton-track")).toBeInTheDocument();
+    expect(container.querySelector(".stream-progress__skeleton-meta")).toBeInTheDocument();
+  });
+
+  it("does not render live progress elements when loading", () => {
+    mockMatchMedia(false);
+    const { container } = render(
+      <StreamProgress
+        status="active"
+        loading={true}
+        accruedAmount={50}
+        totalAmount={100}
+      />
+    );
+
+    expect(container.querySelector(".stream-progress__track")).not.toBeInTheDocument();
+    expect(container.querySelector(".stream-progress__fill")).not.toBeInTheDocument();
+    expect(container.querySelector(".stream-progress__meta")).not.toBeInTheDocument();
+    expect(container.querySelector(".stream-progress__hints")).not.toBeInTheDocument();
+  });
+
+  it("does not render empty state when loading is true even for empty status", () => {
+    mockMatchMedia(false);
+    const { container } = render(
+      <StreamProgress status="empty" loading={true} />
+    );
+
+    expect(container.querySelector(".stream-progress--skeleton")).toBeInTheDocument();
+    expect(container.querySelector(".empty-state")).not.toBeInTheDocument();
+  });
+
+  it("marks the wrapper as aria-busy for assistive technology", () => {
+    mockMatchMedia(false);
+    render(
+      <StreamProgress
+        status="active"
+        loading={true}
+        accruedAmount={50}
+        totalAmount={100}
+      />
+    );
+
+    const root = screen.getByLabelText("Stream progress is loading");
+    expect(root).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("skeleton elements are aria-hidden from screen readers", () => {
+    mockMatchMedia(false);
+    const { container } = render(
+      <StreamProgress
+        status="active"
+        loading={true}
+        accruedAmount={50}
+        totalAmount={100}
+      />
+    );
+
+    const meta = container.querySelector(".stream-progress__skeleton-meta");
+    expect(meta).toHaveAttribute("aria-hidden", "true");
+
+    // Skeleton component itself is aria-hidden
+    const skeletons = container.querySelectorAll(".skeleton");
+    skeletons.forEach((sk) => {
+      expect(sk).toHaveAttribute("aria-hidden", "true");
+    });
+  });
+
+  it("prevents user interaction on skeleton via CSS class", () => {
+    mockMatchMedia(false);
+    const { container } = render(
+      <StreamProgress
+        status="active"
+        loading={true}
+        accruedAmount={50}
+        totalAmount={100}
+      />
+    );
+
+    const root = container.querySelector(".stream-progress--skeleton")!;
+    expect(root).toBeInTheDocument();
+    // The CSS rule is defined in globals.css (verified in design-token tests below)
+    expect(root).toHaveClass("stream-progress--skeleton");
+  });
+
+  it("applies className prop alongside skeleton class", () => {
+    mockMatchMedia(false);
+    const { container } = render(
+      <StreamProgress
+        status="active"
+        loading={true}
+        className="stream-row__progress"
+      />
+    );
+
+    const root = container.querySelector(".stream-progress");
+    expect(root).toHaveClass("stream-progress--skeleton");
+    expect(root).toHaveClass("stream-row__progress");
+  });
+
+  it("does not render skeleton when loading is false (normal render)", () => {
+    mockMatchMedia(false);
+    const { container } = render(
+      <StreamProgress status="active" accruedAmount={50} totalAmount={100} />
+    );
+
+    expect(container.querySelector(".stream-progress--skeleton")).not.toBeInTheDocument();
+    expect(container.querySelector(".stream-progress__skeleton-track")).not.toBeInTheDocument();
+    expect(container.querySelector(".stream-progress__track")).toBeInTheDocument();
+  });
+
+  it("skeleton meta element uses the same gap token as the non-loading meta", () => {
+    mockMatchMedia(false);
+    const { container } = render(
+      <StreamProgress
+        status="active"
+        loading={true}
+        accruedAmount={50}
+        totalAmount={100}
+      />
+    );
+
+    const meta = container.querySelector(".stream-progress__skeleton-meta")!;
+    expect(meta).toBeInTheDocument();
+    // Mirrors .stream-progress__meta layout (verified in design-token tests via CSS)
+    expect(meta).not.toHaveClass("stream-progress__meta");
+    expect(meta.querySelectorAll(".skeleton").length).toBe(2);
+  });
+});
+
 
 // ── Empty state tests ───────────────────────────────────────────────────────
 
