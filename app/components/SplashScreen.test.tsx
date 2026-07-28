@@ -65,7 +65,7 @@ describe("SplashScreen render", () => {
     expect(screen.queryByRole("status", { name: /loading streampay/i })).toBeNull();
   });
 
-  it("registers preference for reduced motion", () => {
+  it("registers preference for reduced motion and shows static splash", () => {
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
       value: jest.fn().mockImplementation(query => ({
@@ -80,8 +80,16 @@ describe("SplashScreen render", () => {
       })),
     });
     
-    render(<SplashScreen />);
-    // Just verifying that matchMedia is called, the CSS handles the rest
-    expect(window.matchMedia).toHaveBeenCalled();
+    const { container } = render(<SplashScreen />);
+    
+    expect(window.matchMedia).toHaveBeenCalledWith('(prefers-reduced-motion: reduce)');
+    
+    // Ensure animated elements are excluded
+    expect(container.querySelector('.splash-orb')).toBeNull();
+    expect(container.querySelector('.splash-logo-glow')).toBeNull();
+    expect(container.querySelector('.splash-loader')).toBeNull();
+    
+    // Core content should still be present
+    expect(screen.getByAltText(/streampay logo/i)).toBeInTheDocument();
   });
 });
