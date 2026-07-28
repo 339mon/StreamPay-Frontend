@@ -1,5 +1,6 @@
-import { NextRequest } from "next/server";
-import { errorResponse, ErrorCode } from "@/app/lib/errors";
+import { NextResponse } from "next/server";
+import { errorResponse, ErrorCode } from "@/app/lib/errors/server";
+import { requireInternalServiceAuth } from "@/app/lib/internal-service-auth";
 
 /**
  * POST /api/debug/kms-sign
@@ -13,17 +14,17 @@ import { errorResponse, ErrorCode } from "@/app/lib/errors";
 export async function POST(request: Request) {
   // Hard-disable in production
   if (process.env.NODE_ENV === 'production') {
-    return NextResponse.json(createError('NOT_FOUND'), { status: 404 });
+    return errorResponse(ErrorCode.NOT_FOUND, "Route not found.", 404);
   }
 
   // Internal-service auth (concealFailure hides auth failures as 404)
   const authResult = await requireInternalServiceAuth(request, { concealFailure: true });
   if (authResult instanceof NextResponse) {
-    return NextResponse.json(createError('NOT_FOUND'), { status: 404 });
+    return errorResponse(ErrorCode.NOT_FOUND, "Route not found.", 404);
   }
 
   try {
-    const body = await req.json().catch(() => null);
+    const body = await request.json().catch(() => null);
 
     if (!body || typeof body.payload !== "string" || body.payload.trim() === "") {
       return errorResponse(

@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { logger, withWebhookContext, getCorrelationContext } from './logger';
+import { getActiveSigningSecrets } from '@/app/lib/webhook-secrets';
 
 /**
  * Idempotent webhook delivery with exponential backoff + full jitter and DLQ support.
@@ -60,6 +61,28 @@ export interface WebhookDeliveryRecord {
   createdAt: string;
   updatedAt: string;
   finalizedAt?: string;
+
+  /**
+   * Full event snapshot stored at delivery creation time.
+   * Populated for deliveries created *after* the introduction of
+   * event/endpoint snapshots. Older deliveries will not have this field.
+   *
+   * Required by the admin redeliver endpoint to reissue a delivery.
+   * When absent, the caller should fall back to DLQ replay.
+   */
+  event?: WebhookEvent;
+
+  /**
+   * Full endpoint snapshot stored at delivery creation time.
+   * Same availability constraints as `event`.
+   */
+  endpoint?: WebhookEndpoint;
+
+  /**
+   * When set, this delivery was reissued from an existing delivery (redeliver).
+   * The value is the original deliveryId that triggered this reissue.
+   */
+  reissuedFrom?: string;
 }
 
 export interface DLQEntry {
@@ -308,6 +331,17 @@ function signaturesMatch(providedSignature: string, expectedSignature: string): 
   }
 
   return crypto.timingSafeEqual(provided, expected);
+}
+
+export function applyWebhookSecretsFromStore(
+  endpoint: WebhookEndpoint,
+): WebhookEndpoint {
+  const secrets = getActiveSigningSecrets();
+  return {
+    ...endpoint,
+    secret: secrets[0],
+    previousSecrets: secrets.slice(1),
+  };
 }
 
 export class WebhookDeliveryClient {

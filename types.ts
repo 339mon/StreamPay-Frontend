@@ -24,6 +24,8 @@ export interface MetricSnapshot {
   oldestPendingJobSeconds?: number;
   /** Rolling p95 latency for settlement transactions. */
   p95SettlementLatencySeconds?: number;
+  /** Stream cancellations in the observation window. */
+  streamCancels?: number;
 }
 
 /**
@@ -41,6 +43,8 @@ export interface AnomalyThresholds {
   submissionFailureThreshold?: number;
   /** Maximum DLQ depth before the depth-exceeded alert fires. */
   maxDlqDepth?: number;
+  /** Maximum stream cancels per minute before a burst alert fires. */
+  cancelBurstLimit?: number;
 }
 
 /**
@@ -53,7 +57,12 @@ export interface AnomalyAlert {
   /** Tenant the alert applies to. */
   tenantId: string;
   /** Which rule produced this alert. */
-  ruleName: "STREAM_CREATION_BURST" | "SETTLE_RATE_SPIKE" | "HIGH_SUBMISSION_FAILURE_RATE" | "DLQ_DEPTH_EXCEEDED";
+  ruleName:
+    | "STREAM_CREATION_BURST"
+    | "SETTLE_RATE_SPIKE"
+    | "HIGH_SUBMISSION_FAILURE_RATE"
+    | "DLQ_DEPTH_EXCEEDED"
+    | "STREAM_CANCEL_BURST";
   /** Value observed for the rule's metric. */
   observedValue: number;
   /** Threshold the observed value exceeded. */
@@ -132,4 +141,70 @@ export interface OnChainCancellationResult {
 export interface InvariantResult {
   isValid: boolean;
   error?: string;
+}
+
+// =============================================================================
+// Soroban Error Taxonomy
+// =============================================================================
+// Typed error enum for Soroban RPC and on-chain contract failures.
+// Every variant maps to a stable ErrorCode in app/lib/errors/ so that
+// Problem+JSON envelopes are deterministic across the stack.
+// =============================================================================
+
+/**
+ * Discriminated union of all Soroban failure modes.
+ *
+ * These variants are emitted by `lib/onChainClient.ts` (and its future
+ * production RPC-backed replacement) and consumed by the error mapper
+ * in `app/lib/errors/mapper.ts`.
+ */// =============================================================================
+// Soroban Error Taxonomy
+// =============================================================================
+
+/**
+ * Discriminated union of all Soroban failure modes.
+ */
+export enum SorobanErrorCode {
+  SimulationFailed = "SimulationFailed",
+  SimulationTimeout = "SimulationTimeout",
+  SubmitTimeout = "SubmitTimeout",
+  SubmitFailed = "SubmitFailed",
+  SubmitBadAuth = "SubmitBadAuth",
+  SubmitInsufficientFunds = "SubmitInsufficientFunds",
+  RpcUnavailable = "RpcUnavailable",
+  RpcTimeout = "RpcTimeout",
+  ContractNotFound = "ContractNotFound",
+  StreamNotFound = "StreamNotFound",
+  StreamAlreadyExists = "StreamAlreadyExists",
+  Unknown = "Unknown",
+}
+
+/**
+ * Custom error class thrown by the on-chain client.
+ */
+export class SorobanError extends Error {
+  readonly variant: SorobanErrorCode;
+  readonly meta?: Record<string, unknown>;
+  readonly statusCode?: number;
+
+  constructor(
+    variant: SorobanErrorCode,
+    message: string,
+    options?: {
+      meta?: Record<string, unknown>;
+      statusCode?: number;
+      cause?: unknown;
+    }
+  ) {
+    super(message, { cause: options?.cause });
+    this.name = "SorobanError";
+    this.variant = variant;
+    this.meta = options?.meta;
+    this.statusCode = options?.statusCode;
+    Object.setPrototypeOf(this, SorobanError.prototype);
+  }
+
+  static isSorobanError(value: unknown): value is SorobanError {
+    return value instanceof SorobanError && typeof value.variant === "string";
+  }
 }

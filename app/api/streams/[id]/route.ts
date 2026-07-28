@@ -7,6 +7,17 @@ import { getLimitForRoute } from "@/app/lib/rate-limit-config";
 import { recordRequest, recordThrottle } from "@/app/lib/rate-limit-metrics";
 import { streamCache } from "@/app/lib/cache";
 
+/**
+ * Resolve the active Stellar network identifier for cache scoping.
+ *
+ * Falls back to the string `"default"` when `STELLAR_NETWORK` is unset so
+ * `streamCache` never stores entries under the literal `undefined` segment.
+ */
+function currentNetwork(): string {
+  const network = process.env.STELLAR_NETWORK?.trim();
+  return network && network.length > 0 ? network : "default";
+}
+
 type Context = { params: Promise<{ id: string }> };
 
 /**
@@ -84,6 +95,8 @@ export async function GET(
   let stream: any | null = null;
   let cacheStatus: "HIT" | "MISS" = "MISS";
 
+  // Network-scoped: a testnet entry cannot leak into a mainnet request.
+  const cachedStream = streamCache.get(tenant, id, currentNetwork());
   if (cachedStream) {
     stream = cachedStream;
     cacheStatus = "HIT";
@@ -109,6 +122,9 @@ export async function GET(
       headers: buildCacheHeaders(etag, cacheStatus),
     });
   }
+
+  // Network-scoped write so the next read on the same network hits.
+  streamCache.set(tenant, id, stream, currentNetwork());
 
   return NextResponse.json(
     { data: stream, links: { self: `/api/v1/streams/${id}` } },
@@ -154,6 +170,8 @@ export async function POST(
   // Invalidate cache BEFORE returning response (also implicitly invalidates
   // any stale ETag the client may be holding for this resource).
   streamCache.invalidate(tenant, id);
+  // Invalidate cache BEFORE returning response, network-scoped.
+  streamCache.invalidate(tenant, id, currentNetwork());
 
   return NextResponse.json({ data: updatedStream });
 }
@@ -188,6 +206,8 @@ export async function DELETE(request: Request, { params }: Context) {
 
   // Invalidate cache BEFORE returning response.
   streamCache.invalidate(tenant, id);
+  // Invalidate cache BEFORE returning response, network-scoped.
+  streamCache.invalidate(tenant, id, currentNetwork());
 
   return new NextResponse(null, { status: 204 });
 }

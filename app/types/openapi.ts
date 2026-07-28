@@ -63,6 +63,11 @@ export interface Stream {
    */
   token: string;
   /**
+   * Total amount locked in escrow when the stream was created (raw i128 units).
+   * Required for the cancel-stream refund preview split.
+   */
+  totalAmount?: string;
+  /**
    * Present only on cancelled streams. Contains the full refund-split
    * breakdown so callers can verify the escrow-conservation invariant.
    */
@@ -81,6 +86,20 @@ export interface Stream {
    * Amount already released to the recipient before this operation (raw i128 units).
    */
   releasedAmount?: string;
+  /**
+   * ISO-8601 UTC timestamp recorded the moment the stream transitioned to
+   * `paused` status. Used by the settlement catch-up job to compute
+   * accrued-but-unsettled ticks between `pausedAt` and the subsequent
+   * `resumedAt` (i.e. the next `updatedAt` after a `start` from `paused`).
+   *
+   * - Set when:   POST /api/streams/:id/pause succeeds.
+   * - Cleared when: POST /api/streams/:id/start resumes from `paused`.
+   * - Undefined on newly created, active, ended, or withdrawn streams.
+   *
+   * Maps to the Soroban contract's `paused_at` storage field on the
+   * stream escrow account (GrantFox campaign, issue #pause-entrypoint).
+   */
+  pausedAt?: string;
 }
 
 export interface User {
@@ -89,6 +108,7 @@ export interface User {
   display_name: string;
   avatar_url: string | null;
   created_at: string;
+  last_seen: string | null;
 }
 
 export interface ApiError {

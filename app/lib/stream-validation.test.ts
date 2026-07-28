@@ -7,6 +7,9 @@
 
 import {
   validateCreateStreamBody,
+  validateListStreamsQuery,
+  validatePatchStreamBody,
+  STREAM_STATUSES,
   SUPPORTED_SCHEDULES,
 } from "./stream-validation";
 
@@ -423,4 +426,164 @@ describe("validateCreateStreamBody", () => {
     });
     expect(errors).toHaveLength(0);
   });
+});
+
+describe("validatePatchStreamBody", () => {
+  it("returns no errors for a valid body with all fields", () => {
+    const errors = validatePatchStreamBody({
+      description: "Updated description",
+      webhook_url: "https://example.com/webhook",
+      tags: ["api", "v2"],
+    });
+    expect(errors).toHaveLength(0);
+  });
+
+  it("returns no errors for a valid partial body (description only)", () => {
+    const errors = validatePatchStreamBody({
+      description: "New description",
+    });
+    expect(errors).toHaveLength(0);
+  });
+
+  it("returns no errors for an empty body", () => {
+    const errors = validatePatchStreamBody({});
+    expect(errors).toHaveLength(0);
+  });
+
+  it("returns an error for unknown fields due to strict schema", () => {
+    const errors = validatePatchStreamBody({
+      description: "A valid field",
+      unknown_field: "This should be rejected",
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0].code).toBe("UNRECOGNIZED_KEYS");
+    expect(errors[0].message).toMatch(/Unknown fields are not allowed|Unrecognized key/i);
+  });
+
+  it("returns an error for an invalid webhook_url", () => {
+    const errors = validatePatchStreamBody({
+      webhook_url: "not-a-valid-url",
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0].field).toBe("webhook_url");
+    expect(errors[0].message).toBe("Must be a valid URL.");
+  });
+
+  it("returns an error if tags is not an array", () => {
+    const errors = validatePatchStreamBody({
+      tags: "not-an-array",
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0].field).toBe("tags");
+    expect(errors[0].message).toBe("Expected array, received string");
+  });
+
+  it("returns an error if a tag is not a string", () => {
+    const errors = validatePatchStreamBody({
+      tags: ["valid", 123],
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0].field).toBe("tags.1");
+    expect(errors[0].message).toBe("Expected string, received number");
+  });
+
+  it("returns an error if tags array is too long", () => {
+    const errors = validatePatchStreamBody({
+      tags: Array.from({ length: 11 }, (_, i) => `tag${i}`),
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0].field).toBe("tags");
+    expect(errors[0].message).toBe("Cannot have more than 10 tags.");
+  });
+
+  it("returns an error if a tag is too long", () => {
+    const errors = validatePatchStreamBody({
+      tags: ["a".repeat(51)],
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0].field).toBe("tags.0");
+    expect(errors[0].message).toBe("Tag cannot exceed 50 characters.");
+  });
+
+  it("returns multiple errors for multiple invalid fields", () => {
+    const errors = validatePatchStreamBody({
+      webhook_url: "invalid",
+      tags: [123],
+    });
+    expect(errors.length).toBeGreaterThanOrEqual(2);
+    const fields = errors.map((e) => e.field);
+    expect(fields).toContain("webhook_url");
+    expect(fields).toContain("tags.0");
+  });
+
+  it("returns an error for a non-object body", () => {
+    const errors = validatePatchStreamBody("i-am-a-string");
+    expect(errors.length).toBe(1);
+    expect(errors[0].field).toBe('body');
+    expect(errors[0].message).toBe('Expected object, received string');
+  });
+});
+
+// ── GET /api/streams query ─────────────────────────────────────────────────
+
+describe("validateListStreamsQuery", () => {
+  it("returns no errors and parsed values for a valid query", () => {
+    const { errors, values } = validateListStreamsQuery({
+      limit: "25",
+      status: "active",
+      cursor: "abc",
+    });
+    expect(errors).toEqual([]);
+    expect(values).toEqual({ limit: 25, status: "active", cursor: "abc" });
+  });
+
+  it("returns no errors for an empty query", () => {
+    const { errors, values } = validateListStreamsQuery({});
+    expect(errors).toEqual([]);
+    expect(values).toEqual({});
+  });
+
+  it("rejects a non-numeric limit", () => {
+    const { errors } = validateListStreamsQuery({ limit: "abc" });
+    expect(errors.length).toBe(1);
+    expect(errors[0].field).toBe("limit");
+    expect(errors[0].code).toBe("INVALID_LIMIT");
+  });
+
+  it("rejects limits outside 1-100", () => {
+    expect(validateListStreamsQuery({ limit: "0" }).errors.length).toBe(1);
+    expect(validateListStreamsQuery({ limit: "101" }).errors.length).toBe(1);
+    expect(validateListStreamsQuery({ limit: "100" }).errors).toEqual([]);
+  });
+
+  it("accepts every known stream status and rejects others", () => {
+    for (const status of STREAM_STATUSES) {
+      expect(validateListStreamsQuery({ status }).errors).toEqual([]);
+    }
+    const { errors } = validateListStreamsQuery({ status: "bogus" });
+    expect(errors.length).toBe(1);
+    expect(errors[0].field).toBe("status");
+    expect(errors[0].code).toBe("INVALID_STATUS");
+  });
+
+  it("rejects an empty cursor", () => {
+    const { errors } = validateListStreamsQuery({ cursor: "" });
+    expect(errors.length).toBe(1);
+    expect(errors[0].field).toBe("cursor");
+    expect(errors[0].code).toBe("INVALID_CURSOR");
+  });
+});
+
+// ── Non-object bodies ──────────────────────────────────────────────────────
+
+describe("validateCreateStreamBody non-object bodies", () => {
+  it.each([null, [], "i-am-a-string", 42])(
+    "returns a single body INVALID_TYPE error for %p",
+    (body) => {
+      const errors = validateCreateStreamBody(body as Record<string, unknown>);
+      expect(errors).toHaveLength(1);
+      expect(errors[0].field).toBe("body");
+      expect(errors[0].code).toBe("INVALID_TYPE");
+    },
+  );
 });

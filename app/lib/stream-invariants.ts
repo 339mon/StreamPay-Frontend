@@ -13,6 +13,7 @@
  * 1. **Conservation of value:** `deposited === withdrawn + escrow`
  * 2. **Non-negative balances:** all balance fields ≥ 0
  * 3. **Settle limit:** amount to release ≤ current escrow balance
+ * 4. **Vested amount bound:** 0 ≤ vestedAmount ≤ totalAmount (principal)
  *
  * ## Amounts
  * All values are treated as fixed-precision numbers. For Stellar/Soroban
@@ -33,6 +34,17 @@ export interface StreamState {
   deposited: number;
   withdrawn: number;
   escrow: number;
+}
+
+/**
+ * Vested amount snapshot.
+ *
+ * @property vestedAmount - Amount that has vested (earned) at this moment.
+ * @property totalAmount  - The principal (total amount locked at stream creation).
+ */
+export interface VestedState {
+  vestedAmount: number;
+  totalAmount: number;
 }
 
 // ── Invariant checks ──────────────────────────────────────────────────────────
@@ -96,6 +108,25 @@ export function checkSettleLimit(state: StreamState, amountToRelease: number): b
   return amountToRelease <= state.escrow;
 }
 
+/**
+ * Invariant: vested amount is always between 0 and totalAmount (principal), inclusive.
+ *
+ * Asserts that `0 ≤ vestedAmount ≤ totalAmount` at any time.
+ *
+ * @param state - Vested amount and total principal.
+ * @returns     `true` if the invariant holds.
+ *
+ * @example
+ * ```ts
+ * checkVestedBound({ vestedAmount: 50, totalAmount: 100 }); // true
+ * checkVestedBound({ vestedAmount: -1, totalAmount: 100 }); // false
+ * checkVestedBound({ vestedAmount: 101, totalAmount: 100 }); // false
+ * ```
+ */
+export function checkVestedBound(state: VestedState): boolean {
+  return state.vestedAmount >= 0 && state.vestedAmount <= state.totalAmount;
+}
+
 // ── State reducer ─────────────────────────────────────────────────────────────
 
 /**
@@ -142,4 +173,47 @@ export function applyStreamEvent(
       break;
   }
   return s;
+}
+
+// ── Vested amount calculation ─────────────────────────────────────────────────
+
+/**
+ * Model function: calculate vested amount at a given time (linear vesting).
+ *
+ * This is a pure model of what the Soroban contract's `vested_amount` does.
+ *
+ * @param totalAmount  - Principal (total amount locked).
+ * @param startTime    - Vesting start time (ms since epoch).
+ * @param endTime      - Vesting end time (ms since epoch).
+ * @param now          - Current time (ms since epoch).
+ * @param pausedRanges - Array of [pausedAt, resumedAt] ranges (ms) when vesting was paused.
+ * @returns            Vested amount.
+ */
+export function calculateVestedAmount(
+  totalAmount: number,
+  startTime: number,
+  endTime: number,
+  now: number,
+  pausedRanges: Array<[number, number]> = [],
+): number {
+  if (now < startTime) return 0;
+  if (now >= endTime) return totalAmount;
+
+  const totalDuration = endTime - startTime;
+  if (totalDuration <= 0) return totalAmount;
+
+  let activeTime = now - startTime;
+
+  for (const [pauseStart, pauseEnd] of pausedRanges) {
+    const pauseBegin = Math.max(pauseStart, startTime);
+    const pauseFinish = Math.min(pauseEnd, now);
+
+    if (pauseBegin < pauseFinish) {
+      activeTime -= pauseFinish - pauseBegin;
+    }
+  }
+
+  const vestedAmount = (totalAmount * Math.max(0, activeTime)) / totalDuration;
+
+  return Math.max(0, Math.min(totalAmount, Math.floor(vestedAmount)));
 }
