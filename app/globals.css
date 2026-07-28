@@ -1012,6 +1012,10 @@ a:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .stream-row {
+    transition: none !important;
+  }
+
   .stream-row--swiping {
     transition: none !important;
   }
