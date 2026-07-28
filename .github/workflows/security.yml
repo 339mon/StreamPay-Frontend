@@ -35,8 +35,6 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
-          # Retry on transient failures
-          setup-type: manual
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3
@@ -99,7 +97,7 @@ jobs:
                 e.cve_id === vuln.cwe?.[0] || 
                 e.package === name ||
                 e.advisory_id === vuln.id ||
-                (vunn.via && vuln.via.some(v => v.url?.includes(e.advisory_id)))
+                (vuln.via && vuln.via.some(v => v.url?.includes(e.advisory_id)))
               );
               
               const vulnInfo = {
@@ -372,11 +370,14 @@ jobs:
             });
 
       - name: Slack Notification (if webhook configured)
-        if: failure() && secrets.SLACK_WEBHOOK_URL != ''
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then exit 0; fi
           curl -X POST -H 'Content-type: application/json' \
             --data '{"text":"🚨 Security scan failed in ${{ github.repository }} on ${{ github.ref_name }}\nCommit: ${{ github.sha }}\nView: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}' \
-            ${{ secrets.SLACK_WEBHOOK_URL }}
+            "$SLACK_WEBHOOK_URL"
 
   # Nightly Security Report
   nightly-report:

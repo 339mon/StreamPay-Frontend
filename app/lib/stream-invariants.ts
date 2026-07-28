@@ -196,25 +196,24 @@ export function calculateVestedAmount(
   now: number,
   pausedRanges: Array<[number, number]> = [],
 ): number {
-  // Clamp now
-  const nowClamped = Math.max(startTime, Math.min(now, endTime));
-  
-  // Calculate total paused duration
-  let totalPausedDuration = 0;
-  for (const [pausedAt, resumedAt] of pausedRanges) {
-    const effectivePausedStart = Math.max(startTime, pausedAt);
-    const effectivePausedEnd = Math.min(endTime, Math.max(effectivePausedStart, resumedAt));
-    totalPausedDuration += effectivePausedEnd - effectivePausedStart;
-  }
-  
-  // Calculate elapsed time excluding paused duration
+  if (now < startTime) return 0;
+  if (now >= endTime) return totalAmount;
+
   const totalDuration = endTime - startTime;
-  if (totalDuration <= 0) {
-    return totalAmount;
+  if (totalDuration <= 0) return totalAmount;
+
+  let activeTime = now - startTime;
+
+  for (const [pauseStart, pauseEnd] of pausedRanges) {
+    const pauseBegin = Math.max(pauseStart, startTime);
+    const pauseFinish = Math.min(pauseEnd, now);
+
+    if (pauseBegin < pauseFinish) {
+      activeTime -= pauseFinish - pauseBegin;
+    }
   }
-  
-  const elapsed = Math.max(0, (nowClamped - startTime) - totalPausedDuration);
-  
-  // Vested = totalAmount * elapsed / totalDuration (truncated to avoid over-allocation)
-  return Math.floor((totalAmount * elapsed) / totalDuration);
+
+  const vestedAmount = (totalAmount * Math.max(0, activeTime)) / totalDuration;
+
+  return Math.max(0, Math.min(totalAmount, Math.floor(vestedAmount)));
 }

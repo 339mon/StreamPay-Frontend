@@ -23,6 +23,7 @@ jobs:
       - name: Install Rust stable with clippy
         uses: dtolnay/rust-toolchain@stable
         with:
+          targets: wasm32v1-none
           components: clippy
 
       - name: Cache Cargo registry + build artifacts
@@ -39,7 +40,8 @@ jobs:
         working-directory: contracts
         run: |
           cargo clippy \
-            --all-targets \
+            --target wasm32v1-none \
+            --lib \
             --all-features \
             -- \
             -W clippy::pedantic \

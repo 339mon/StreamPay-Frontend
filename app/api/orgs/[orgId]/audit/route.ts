@@ -36,14 +36,9 @@ export async function GET(
   const role = searchParams.get("role") as AuditActorRole | null;
 
   const entries = auditLogStore.list({
-    orgId,
     action: action ?? null,
     role: role ?? null,
-    cursor: searchParams.get("cursor") ?? null,
     limit,
-    format: null,
-    startDate: null,
-    endDate: null,
   });
 
   return NextResponse.json({
