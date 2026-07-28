@@ -15,6 +15,7 @@ import { LiveRegion } from "../../src/components/LiveRegion";
 import { KbdHint } from "../../src/components/KbdHint";
 import { colorFromId } from "../utils/colorFromId";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
+import { Skeleton } from "./Skeleton";
 
 const SWIPE_CANCEL_THRESHOLD = 80;
 const SWIPE_CANCEL_MAX = 160;
@@ -41,6 +42,14 @@ export type StreamRowData = {
 type StreamRowProps = {
   stream: StreamRowData;
   density?: "cozy" | "compact";
+  /**
+   * When true, renders a themed skeleton placeholder matching the StreamRow
+   * layout — shimmer blocks for identity, meta, progress bar, and action
+   * button — while stream data is loading.
+   * The wrapper carries `aria-busy="true"` and skeleton children are
+   * `aria-hidden="true"` for screen readers.
+   */
+  loading?: boolean;
 };
 
 /**
@@ -52,8 +61,83 @@ type StreamRowProps = {
  *   - `data-status` — stream lifecycle status (active, draft, paused, etc.)
  *   - `data-reduced-motion` — "true" when the user prefers reduced motion
  *     (Issue #1038); used to gate swipe transitions and animation fallbacks.
+ */
 
-export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
+export function StreamRow({ stream, density = "cozy", loading = false }: StreamRowProps) {
+  // ── Loading skeleton (early return before any hooks) ───────────────────────
+  if (loading) {
+    const compact = density === "compact";
+    return (
+      <article
+        className={`stream-row stream-row--skeleton ${compact ? "stream-row--compact" : ""}`.trim()}
+        aria-busy="true"
+        aria-label="Stream row is loading"
+      >
+        {/* Color stripe placeholder */}
+        <div className="stream-row__color-stripe" aria-hidden="true">
+          <Skeleton width="4px" height="100%" />
+        </div>
+
+        {/* Primary section — identity + badge */}
+        <div className="stream-row__primary">
+          <div className="stream-row__identity">
+            {/* Recipient avatar skeleton */}
+            <Skeleton
+              width="40px"
+              height="40px"
+              circle
+              aria-hidden="true"
+            />
+            <div style={{ display: "grid", gap: "0.35rem", flex: 1 }}>
+              {/* Recipient name */}
+              <Skeleton variant="title" width="65%" />
+              {/* Schedule */}
+              <Skeleton variant="text" width="40%" />
+            </div>
+          </div>
+          {/* Status badge skeleton */}
+          <Skeleton variant="badge" width="5.5rem" height="2rem" />
+        </div>
+
+        {/* Meta section — Rate + Status + Burn-down */}
+        <div className="stream-row__meta" aria-hidden="true">
+          <div>
+            <dt>Rate</dt>
+            <dd><Skeleton variant="value" width="65%" /></dd>
+          </div>
+          <div>
+            <dt>Status</dt>
+            <dd><Skeleton variant="badge" width="50%" height="1.25rem" /></dd>
+          </div>
+          <div>
+            <dt>Burn-down</dt>
+            <dd><Skeleton variant="value" width="55%" /></dd>
+          </div>
+        </div>
+
+        {/* Stream progress skeleton */}
+        <div aria-hidden="true" style={{ display: "grid", gap: "0.5rem" }}>
+          <Skeleton width="100%" height="10px" />
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "baseline",
+            }}
+          >
+            <Skeleton variant="label" width="4rem" />
+            <Skeleton variant="text" width="3rem" />
+          </div>
+        </div>
+
+        {/* Action button skeleton */}
+        <div className="stream-row__action-wrap">
+          <Skeleton variant="button" width="7.5rem" height="2.75rem" />
+        </div>
+      </article>
+    );
+  }
+
   const prefersReducedMotion = usePrefersReducedMotion();
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<StreamPayError | null>(null);
