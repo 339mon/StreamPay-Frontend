@@ -340,6 +340,7 @@ Quick links to the long-form docs under [docs/](docs/):
 - [Error codes reference](docs/error-codes.md)
 - [Testing guide](docs/testing-guide.md)
 - [Glossary](docs/glossary.md)
+- [HTTP caching (ETag / 304)](docs/caching.md)
 - [State machine](docs/STATE_MACHINE.md)
 - [Network security](docs/network-security.md)
 - [Privacy](docs/PRIVACY.md)
