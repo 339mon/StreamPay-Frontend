@@ -42,6 +42,7 @@ import { LiveRegion } from "./LiveRegion";
 import { EmptyState } from "./EmptyState";
 import { KbdHint } from "@/src/components/KbdHint";
 import type { KbdShortcut } from "@/src/components/KbdHint";
+import { Skeleton } from "./Skeleton";
 
 // ── Reduced-motion ─────────────────────────────────────────────────────────────
 
@@ -118,6 +119,14 @@ export interface StreamProgressProps {
   emptyActionLabel?: string;
   /** Optional handler invoked when the empty state CTA button is pressed */
   onEmptyAction?: () => void;
+  /**
+   * When true, renders a themed skeleton placeholder matching the StreamProgress
+   * layout — a shimmer track bar and meta row — while stream data is loading.
+   * The skeleton is `aria-hidden="true"` for screen readers and wrapped in a
+   * `div[aria-busy="true"]`. The container carries `.stream-progress--skeleton`
+   * so external CSS or JS can detect the loading state.
+   */
+  loading?: boolean;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -199,7 +208,32 @@ export function StreamProgress({
   emptyDescription,
   emptyActionLabel,
   onEmptyAction,
+  loading = false,
 }: StreamProgressProps) {
+  // ── Loading skeleton (early return before any hooks) ───────────────────────
+  if (loading) {
+    return (
+      <div
+        className={`stream-progress stream-progress--skeleton ${className}`.trim()}
+        aria-busy="true"
+        aria-label="Stream progress is loading"
+      >
+        {/* Skeleton track — mirrors .stream-progress__track dimensions */}
+        <Skeleton
+          className="stream-progress__skeleton-track"
+          width="100%"
+          height="10px"
+        />
+
+        {/* Skeleton meta row — mirrors .stream-progress__meta layout */}
+        <div className="stream-progress__skeleton-meta" aria-hidden="true">
+          <Skeleton variant="label" width="6rem" />
+          <Skeleton variant="text" width="5rem" />
+        </div>
+      </div>
+    );
+  }
+
   const percent = derivePercent({ status, accruedAmount, totalAmount, startedAt, endsAt });
   const label   = deriveLabel(status, percent);
   const prefersReducedMotion = usePrefersReducedMotion();
