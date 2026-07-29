@@ -14,6 +14,7 @@ import type { StreamPayError } from "../lib/errors/types";
 import { LiveRegion } from "../../src/components/LiveRegion";
 import { KbdHint } from "../../src/components/KbdHint";
 import { colorFromId } from "../utils/colorFromId";
+import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 
 const SWIPE_CANCEL_THRESHOLD = 80;
 const SWIPE_CANCEL_MAX = 160;
@@ -42,7 +43,18 @@ type StreamRowProps = {
   density?: "cozy" | "compact";
 };
 
+/**
+ * StreamRow renders a single payment stream card with status, progress,
+ * recipient info, action controls, swipe-to-cancel, and a color-blind-safe
+ * pattern overlay.
+ *
+ * Data attributes exposed for e2e / CSS hooks:
+ *   - `data-status` — stream lifecycle status (active, draft, paused, etc.)
+ *   - `data-reduced-motion` — "true" when the user prefers reduced motion
+ *     (Issue #1038); used to gate swipe transitions and animation fallbacks.
+
 export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
+  const prefersReducedMotion = usePrefersReducedMotion();
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<StreamPayError | null>(null);
   const [isIncidentMode] = useState(false);
@@ -169,7 +181,10 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
 
   const swipeStyle =
     canSwipeCancel && swipeOffset !== 0
-      ? { transform: `translateX(${swipeOffset}px)` }
+      ? {
+          transform: `translateX(${swipeOffset}px)`,
+          transition: prefersReducedMotion ? "none" : undefined,
+        }
       : undefined;
 
   return (
@@ -183,6 +198,7 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
         .filter(Boolean)
         .join(" ")}
       data-status={stream.status}
+      data-reduced-motion={prefersReducedMotion ? "true" : "false"}
       aria-labelledby={`${stream.id}-recipient`}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
@@ -194,8 +210,16 @@ export function StreamRow({ stream, density = "cozy" }: StreamRowProps) {
           className="stream-row__cancel-reveal"
           aria-hidden="true"
           data-swipe-active={swipeOffset < -SWIPE_CANCEL_THRESHOLD}
+          data-reduced-motion={prefersReducedMotion ? "true" : "false"}
         >
-          <span className="stream-row__cancel-label">Cancel</span>
+          <span
+            className="stream-row__cancel-label"
+            style={{
+              transition: prefersReducedMotion ? "none" : undefined,
+            }}
+          >
+            Cancel
+          </span>
         </div>
       )}
 

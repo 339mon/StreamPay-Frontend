@@ -226,6 +226,120 @@ describe("StreamRow", () => {
     });
   });
 
+  // ── matchMedia mock ─────────────────────────────────────────────────────────
+
+  /** Installs a matchMedia mock that reports the given reduced-motion preference. */
+  function mockMatchMedia(prefersReduced: boolean) {
+    window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+      matches: query.includes("prefers-reduced-motion") ? prefersReduced : false,
+      media: query,
+      onchange: null,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      addListener: jest.fn(),
+      removeListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    }));
+  }
+
+  describe("reduced-motion fallback (Issue #1038)", () => {
+    afterEach(() => {
+      // @ts-expect-error reset between tests
+      delete window.matchMedia;
+    });
+
+    it("sets data-reduced-motion=false on the article element by default", () => {
+      mockMatchMedia(false);
+      const { container } = render(<StreamRow stream={baseStream} />);
+      const article = container.querySelector("article.stream-row");
+      expect(article).toHaveAttribute("data-reduced-motion", "false");
+    });
+
+    it("sets data-reduced-motion=true when prefers-reduced-motion is active", () => {
+      mockMatchMedia(true);
+      const { container } = render(<StreamRow stream={baseStream} />);
+      const article = container.querySelector("article.stream-row");
+      expect(article).toHaveAttribute("data-reduced-motion", "true");
+    });
+
+    it("sets data-reduced-motion on the cancel-reveal element", () => {
+      mockMatchMedia(true);
+      const cancellableStream: StreamRowData = {
+        ...makeMockStream("active"),
+        nextAction: "Cancel",
+      };
+      const { container } = render(<StreamRow stream={cancellableStream} />);
+      const reveal = container.querySelector(".stream-row__cancel-reveal");
+      expect(reveal).toHaveAttribute("data-reduced-motion", "true");
+    });
+
+    it("sets data-reduced-motion on the cancel-reveal to false by default", () => {
+      mockMatchMedia(false);
+      const cancellableStream: StreamRowData = {
+        ...makeMockStream("active"),
+        nextAction: "Cancel",
+      };
+      const { container } = render(<StreamRow stream={cancellableStream} />);
+      const reveal = container.querySelector(".stream-row__cancel-reveal");
+      expect(reveal).toHaveAttribute("data-reduced-motion", "false");
+    });
+
+    it("applies transition: none to cancel-label when reduced motion is requested", () => {
+      mockMatchMedia(true);
+      const cancellableStream: StreamRowData = {
+        ...makeMockStream("active"),
+        nextAction: "Cancel",
+      };
+      const { container } = render(<StreamRow stream={cancellableStream} />);
+      const label = container.querySelector(".stream-row__cancel-label") as HTMLElement;
+      expect(label.style.transition).toBe("none");
+    });
+
+    it("does not force transition: none on cancel-label when reduced motion is not requested", () => {
+      mockMatchMedia(false);
+      const cancellableStream: StreamRowData = {
+        ...makeMockStream("active"),
+        nextAction: "Cancel",
+      };
+      const { container } = render(<StreamRow stream={cancellableStream} />);
+      const label = container.querySelector(".stream-row__cancel-label") as HTMLElement;
+      expect(label.style.transition).toBe("");
+    });
+
+    it("applies transition: none to swipe style when reduced motion is requested", () => {
+      mockMatchMedia(true);
+      const cancellableStream: StreamRowData = {
+        ...makeMockStream("active"),
+        nextAction: "Cancel",
+      };
+      const { container } = render(<StreamRow stream={cancellableStream} />);
+      const article = container.querySelector("article.stream-row") as HTMLElement;
+
+      // Simulate a left swipe
+      fireEvent.touchStart(article, { touches: [{ clientX: 200, clientY: 100 }] });
+      fireEvent.touchMove(article, { touches: [{ clientX: 50, clientY: 100 }] });
+
+      expect(article.style.transition).toBe("none");
+    });
+
+    it("preserves data-status attribute regardless of motion preference", () => {
+      mockMatchMedia(true);
+      const { container } = render(<StreamRow stream={baseStream} />);
+      const article = container.querySelector("article.stream-row");
+      expect(article).toHaveAttribute("data-status", baseStream.status);
+    });
+
+    it.each(ALL_STATUSES)(
+      "sets data-reduced-motion on article for status=%s",
+      (status) => {
+        mockMatchMedia(true);
+        const { container } = render(<StreamRow stream={makeMockStream(status)} />);
+        const article = container.querySelector("article.stream-row");
+        expect(article).toHaveAttribute("data-reduced-motion", "true");
+      },
+    );
+  });
+
   describe("swipe to cancel (mobile)", () => {
     const cancellableStream: StreamRowData = {
       ...makeMockStream("active"),
