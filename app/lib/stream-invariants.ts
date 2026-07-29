@@ -11,10 +11,10 @@ export interface StreamState {
 }
 
 /**
- * Invariant: Sum of legs matches deposited amount.
+ * Invariant: Sum of vested = principal.
  * Conservation of value: deposited = withdrawn + escrow
  */
-export function checkConservationOfValue(state: StreamState): boolean {
+export function checkSumOfVestedEqualsPrincipal(state: StreamState): boolean {
   // Using a small epsilon for floating point math if needed,
   // but for Stellar/Soroban we usually use bigints or fixed precision.
   // Here we assume basic numbers with truncation handling elsewhere.
