@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db, getStore } from "@/app/lib/db";
+import { db } from "@/app/lib/db";
 import { computeETag, ifNoneMatchMatches } from "@/app/lib/etag";
 import { getCorrelationContext } from "@/app/lib/logger";
 import { checkRateLimit, getClientIdentity, rateLimitResponse } from "@/app/lib/rate-limit";
@@ -78,7 +78,6 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { streamRepository } = getStore();
   const { id } = await params;
   const rateLimited = await enforceRateLimit(request, "GET", `/api/streams/${id}`);
   if (rateLimited) {
@@ -90,41 +89,41 @@ export async function GET(
     return errorResponse("MISSING_TENANT", "Tenant ID header is required", 400);
   }
 
-  // Check cache first
-  const cachedStream = streamCache.get(tenant, id);
+  // Network-scoped cache check: a testnet entry cannot leak into a mainnet request.
+  const cachedStream = streamCache.get(tenant, id, currentNetwork());
   let stream: any | null = null;
   let cacheStatus: "HIT" | "MISS" = "MISS";
 
-  // Network-scoped: a testnet entry cannot leak into a mainnet request.
-  const cachedStream = streamCache.get(tenant, id, currentNetwork());
   if (cachedStream) {
     stream = cachedStream;
     cacheStatus = "HIT";
   } else {
-    // Fetch from DB using findOne (tenant-scoped)
+    // Fetch from DB using findOne (tenant-scoped, returns null on wrong tenant).
     stream = db.streams.findOne ? db.streams.findOne(tenant, id) : null;
     if (!stream) {
       return errorResponse("STREAM_NOT_FOUND", `Stream '${id}' not found`, 404);
     }
-    streamCache.set(tenant, id, stream);
+    // Populate the network-scoped cache so the next request on the same
+    // network short-circuits without hitting the persistence store.
+    streamCache.set(tenant, id, stream, currentNetwork());
   }
 
-  // Compute ETag and short-circuit on `If-None-Match`.
-  // Tenant is included in the digest so two tenants holding the same id
-  // cannot share an ETag (defense against cross-tenant cache poisoning).
+  // Compute a strong ETag keyed on both tenant and stream content so that:
+  //   (a) any field change flips the tag, and
+  //   (b) the same id owned by two tenants yields two distinct tags
+  //       (prevents cross-tenant cache poisoning via shared proxies).
   const etag = computeETag(tenant, stream);
+
+  // Short-circuit on `If-None-Match` (RFC 7232 §3.2).
+  // 304 carries no body but must still emit ETag + Cache-Control so the
+  // client can update its own freshness bookkeeping.
   const ifNoneMatch = request.headers.get("if-none-match");
   if (ifNoneMatchMatches(ifNoneMatch, etag)) {
-    // 304 Not Modified — RFC 7232: empty body, but Cache-Control & ETag
-    // must still be present so the client can update its revalidation state.
     return new NextResponse(null, {
       status: 304,
       headers: buildCacheHeaders(etag, cacheStatus),
     });
   }
-
-  // Network-scoped write so the next read on the same network hits.
-  streamCache.set(tenant, id, stream, currentNetwork());
 
   return NextResponse.json(
     { data: stream, links: { self: `/api/v1/streams/${id}` } },
@@ -167,17 +166,15 @@ export async function POST(
 
   db.streams.set(id, updatedStream);
 
-  // Invalidate cache BEFORE returning response (also implicitly invalidates
-  // any stale ETag the client may be holding for this resource).
-  streamCache.invalidate(tenant, id);
-  // Invalidate cache BEFORE returning response, network-scoped.
+  // Invalidate the network-scoped cache entry BEFORE returning so the next
+  // GET rebuilds from the persistence store with a fresh ETag. This also
+  // implicitly stales any ETag the client was holding for this resource.
   streamCache.invalidate(tenant, id, currentNetwork());
 
   return NextResponse.json({ data: updatedStream });
 }
 
 export async function DELETE(request: Request, { params }: Context) {
-  const { streamRepository } = getStore();
   const { id } = await params;
   const rateLimited = await enforceRateLimit(request, "DELETE", `/api/streams/${id}`);
   if (rateLimited) {
@@ -204,9 +201,8 @@ export async function DELETE(request: Request, { params }: Context) {
 
   db.streams.delete(id);
 
-  // Invalidate cache BEFORE returning response.
-  streamCache.invalidate(tenant, id);
-  // Invalidate cache BEFORE returning response, network-scoped.
+  // Invalidate the network-scoped cache entry BEFORE returning so the ETag
+  // for this id cannot be matched after the resource is gone.
   streamCache.invalidate(tenant, id, currentNetwork());
 
   return new NextResponse(null, { status: 204 });
