@@ -20,15 +20,24 @@
 
 import { NextResponse } from "next/server";
 import { db, encodeCursor, decodeCursor, idempotencyToken, getStore } from "@/app/lib/db";
+import { getCorrelationContext } from "@/app/lib/logger";
+import { getClientIdentity } from "@/app/lib/rate-limit";
+import { checkOrgDailyQuota, orgQuotaResponse } from "@/app/lib/org-quota";
 import { toV2Stream, dbStreamToV1 } from "@/app/lib/api-version";
 import type { Stream } from "@/app/types/openapi";
 
+
 function errorResponse(code: string, message: string, status: number) {
-  return NextResponse.json({ error: { code, message } }, { status });
+  const requestId = getCorrelationContext()?.request_id ?? `req-${crypto.randomUUID()}`;
+  return NextResponse.json({ error: { code, message, request_id: requestId } }, { status });
 }
 
 /** GET /api/v2/streams — paginated stream list in v2 shape. */
 export async function GET(request: Request) {
+  if (!request.headers.get("authorization")) {
+    return errorResponse("UNAUTHORIZED", "Bearer token required.", 401);
+  }
+
   const { searchParams } = new URL(request.url);
   const cursor = searchParams.get("cursor");
   const status = searchParams.get("status");
@@ -55,7 +64,7 @@ export async function GET(request: Request) {
       : null;
 
   return NextResponse.json({
-    data: page.map((stream) => toV2Stream(dbStreamToV1(stream))),
+    streams: page.map((stream) => toV2Stream(dbStreamToV1(stream))),
     meta: { hasNext, nextCursor, total: streamRepository.streams.size },
     links: { self: `/api/v2/streams?limit=${limit}` },
   });
@@ -65,6 +74,10 @@ export async function GET(request: Request) {
  * POST /api/v2/streams — create a stream, respond with v2 shape.
  */
 export async function POST(request: Request) {
+  if (!request.headers.get("authorization")) {
+    return errorResponse("UNAUTHORIZED", "Bearer token required.", 401);
+  }
+
   // ── 1. Idempotency ────────────────────────────────────────────────────────
   const idempotencyKey = request.headers.get("Idempotency-Key");
   const token = idempotencyKey
@@ -109,7 +122,7 @@ export async function POST(request: Request) {
   if (!recipient || !rate || !schedule) {
     return errorResponse(
       "VALIDATION_ERROR",
-      "Missing required fields: recipient, rate, schedule",
+      "One or more fields are invalid.",
       422,
     );
   }
@@ -131,12 +144,10 @@ export async function POST(request: Request) {
 
   db.streams.set(id, newStream);
 
-  const payload = {
-    data: toV2Stream(dbStreamToV1(newStream)),
-    links: { self: `/api/v2/streams/${id}` },
-  };
-
+  const stream = toV2Stream(dbStreamToV1(newStream));
+  const payload = stream;
+ 
   if (token) db.idempotency.set(token, payload);
-
+ 
   return NextResponse.json(payload, { status: 201 });
 }
