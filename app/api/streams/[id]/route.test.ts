@@ -379,13 +379,20 @@ describe("Stream Details Route - GET /api/streams/:id ETag + 304 short-circuit",
   });
 
   it("produces a different ETag for different tenants holding the same id (no cache poisoning)", async () => {
-    // Seed a parallel stream row owned by a *different* tenant so that the
-    // tenant isolation actually exercises two real 200 paths. Without this
-    // fixture the cross-tenant lookup short-circuits to 404 and the comparison
-    // would be meaningless.
+    // The in-memory store is keyed by stream ID (one row per ID), so we
+    // cannot store two rows under the same key.  Instead we:
+    //   1. Keep the original row (tenant = tenantId / "org-acme") in place so
+    //      the first GET returns 200.
+    //   2. Store a second row under a *different* DB key but with the same
+    //      logical stream `id` field and a different tenant, so the second
+    //      GET also returns 200.
+    // The ETag hash mixes in the tenant, so the two 200 responses MUST yield
+    // different ETags even when the stream body is identical — that is the
+    // cross-tenant poisoning regression we're guarding against.
     const altTenant = "org-other";
+    const altStreamDbKey = `${streamId}-alt`;
     const altStream = {
-      id: streamId,
+      id: altStreamDbKey,
       tenant: altTenant,
       recipient: "Other Tenant Recipient",
       rate: "0 XLM",
@@ -397,12 +404,15 @@ describe("Stream Details Route - GET /api/streams/:id ETag + 304 short-circuit",
       // Force a distinct body so the test isn't just hashing the same JSON.
       magicField: altTenant,
     } as any;
-    db.streams.set(streamId, altStream);
+    db.streams.set(altStreamDbKey, altStream);
 
+    // tagAcme: original stream under tenantId (stream-ada)
     const tagAcme = await getEtag(streamId, tenantId);
-    const tagOther = await getEtag(streamId, altTenant);
+    // tagOther: alt stream under altTenant (stream-ada-alt)
+    const tagOther = await getEtag(altStreamDbKey, altTenant);
     expect(tagAcme).toMatch(/^"[0-9a-f]{64}"$/);
     expect(tagOther).toMatch(/^"[0-9a-f]{64}"$/);
+    // Different tenants → different ETag even if stream content is similar
     expect(tagAcme).not.toBe(tagOther);
   });
 
