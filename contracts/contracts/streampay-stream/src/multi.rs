@@ -250,7 +250,11 @@ fn require_not_paused(env: &Env) -> Result<(), Error> {
     Ok(())
 }
 
-fn require_recipient_trustline(env: &Env, token: &Address, recipient: &Address) -> Result<(), Error> {
+fn require_recipient_trustline(
+    env: &Env,
+    token: &Address,
+    recipient: &Address,
+) -> Result<(), Error> {
     let balance = token::Client::new(env, token).balance(recipient);
     if balance < 0 {
         return Err(Error::RecipientTrustlineMissing);
@@ -389,8 +393,7 @@ pub fn withdraw_split(
         return Err(Error::InvalidState);
     }
 
-    let idx = find_recipient_index(&stream.recipients, &recipient)
-        .ok_or(Error::InvalidState)?;
+    let idx = find_recipient_index(&stream.recipients, &recipient).ok_or(Error::InvalidState)?;
     let mut alloc = stream.recipients.get(idx.0).ok_or(Error::InvalidState)?;
 
     let now = env.ledger().timestamp();
@@ -514,13 +517,15 @@ pub fn split_withdrawable(env: Env, stream_id: u64, recipient: Address) -> Resul
         return Ok(0);
     }
 
-    let idx = find_recipient_index(&stream.recipients, &recipient)
-        .ok_or(Error::NotFound)?;
+    let idx = find_recipient_index(&stream.recipients, &recipient).ok_or(Error::NotFound)?;
     let alloc = stream.recipients.get(idx.0).ok_or(Error::NotFound)?;
 
     let now = env.ledger().timestamp();
     let vested_for_recip = recipient_vested(&stream, now, alloc.weight)?;
-    Ok(max(0, vested_for_recip.saturating_sub(alloc.released_amount)))
+    Ok(max(
+        0,
+        vested_for_recip.saturating_sub(alloc.released_amount),
+    ))
 }
 
 pub fn split_stream_balance(env: Env, stream_id: u64) -> Result<i128, Error> {

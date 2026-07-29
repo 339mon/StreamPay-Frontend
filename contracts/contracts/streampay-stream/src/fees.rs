@@ -129,9 +129,11 @@ fn extend_accum_fee_ttl(env: &Env, stream_id: u64) {
         .ledger()
         .sequence()
         .saturating_add(ACCUM_FEE_TTL_EXTEND_TO);
-    env.storage()
-        .persistent()
-        .extend_ttl(&FeeDataKey::AccumulatedFees(stream_id), threshold, target);
+    env.storage().persistent().extend_ttl(
+        &FeeDataKey::AccumulatedFees(stream_id),
+        threshold,
+        target,
+    );
 }
 
 // ── Public API: validation ────────────────────────────────────────────────────
@@ -186,9 +188,7 @@ pub fn apply_fee(amount: i128, fee_bps: u32) -> Result<FeeResult, Error> {
         .checked_div(BPS_DIVISOR)
         .ok_or(Error::Overflow)?;
 
-    let net_amount = amount
-        .checked_sub(fee_amount)
-        .ok_or(Error::Overflow)?;
+    let net_amount = amount.checked_sub(fee_amount).ok_or(Error::Overflow)?;
 
     Ok(FeeResult {
         fee_amount,
@@ -343,9 +343,9 @@ pub fn clear_accumulated_fees(env: &Env, stream_id: u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Contract;
     use soroban_sdk::testutils::Address as _;
     use soroban_sdk::{Address, Env};
-    use crate::Contract;
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -433,7 +433,12 @@ mod tests {
     /// Fee and net amount must always sum back to the original amount.
     #[test]
     fn apply_fee_amounts_sum_to_original() {
-        for (amount, bps) in [(1, 1), (999, 100), (1_000_000, 333), (i128::MAX / 10_001, 9_999)] {
+        for (amount, bps) in [
+            (1, 1),
+            (999, 100),
+            (1_000_000, 333),
+            (i128::MAX / 10_001, 9_999),
+        ] {
             let r = apply_fee(amount, bps).unwrap();
             assert_eq!(
                 r.fee_amount + r.net_amount,

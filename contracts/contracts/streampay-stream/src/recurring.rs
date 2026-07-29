@@ -105,9 +105,11 @@ fn extend_recur_ttl(env: &Env, stream_id: u64) {
         .sequence()
         .saturating_add(RECUR_TTL_MIN_REMAINING);
     let target = ttl_target(env, RECUR_TTL_EXTEND_TO);
-    env.storage()
-        .persistent()
-        .extend_ttl(&RecurDataKey::RecurringStream(stream_id), threshold, target);
+    env.storage().persistent().extend_ttl(
+        &RecurDataKey::RecurringStream(stream_id),
+        threshold,
+        target,
+    );
 }
 
 fn extend_instance_ttl(env: &Env) {
@@ -559,9 +561,7 @@ pub fn cancel(env: Env, recurring_id: u64) -> Result<RecurringStream, Error> {
         .checked_sub(already_paid)
         .ok_or(Error::Overflow)?;
 
-    let unvested_escrow = total_escrow
-        .checked_sub(vested)
-        .ok_or(Error::Overflow)?;
+    let unvested_escrow = total_escrow.checked_sub(vested).ok_or(Error::Overflow)?;
     let sender_refund = min(unvested_escrow, remaining_in_contract);
 
     if sender_refund > 0 {

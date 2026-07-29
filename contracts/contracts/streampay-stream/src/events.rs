@@ -346,6 +346,18 @@ pub fn fee_charged(
     );
 }
 
+/// Emitted when the admin updates the per-user cooloff duration via
+/// [`Contract::set_cooloff_duration`].
+///
+/// Topics: `("stream", "cooloff_set")`.
+/// Data: `(admin, duration, timestamp)`.
+pub fn cooloff_duration_set(env: &Env, admin: &Address, duration: u64, timestamp: u64) {
+    env.events().publish(
+        (symbol_short!("stream"), symbol_short!("cooloff")),
+        (admin.clone(), duration, timestamp),
+    );
+}
+
 /// Emitted when the admin successfully sweeps accumulated protocol fees into
 /// the treasury (fee collector address).
 ///

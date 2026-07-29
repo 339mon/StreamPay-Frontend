@@ -64,4 +64,6 @@ pub enum Error {
     SweepAmountMismatch = 20,
     /// 21: Admin action is currently in cooldown.
     AdminCooldown = 21,
+    /// 22: Sender is in cooloff period and cannot create a new stream yet.
+    CooloffActive = 22,
 }

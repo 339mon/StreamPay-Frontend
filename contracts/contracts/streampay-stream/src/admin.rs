@@ -85,10 +85,7 @@ fn extend_nonce_ttl(env: &Env) {
         .ledger()
         .sequence()
         .saturating_add(NONCE_TTL_MIN_REMAINING);
-    let target = env
-        .ledger()
-        .sequence()
-        .saturating_add(NONCE_TTL_EXTEND_TO);
+    let target = env.ledger().sequence().saturating_add(NONCE_TTL_EXTEND_TO);
     env.storage().instance().extend_ttl(threshold, target);
 }
 
@@ -144,14 +141,16 @@ pub fn consume_nonce(env: &Env, provided_nonce: u64) -> Result<(), Error> {
 fn enforce_and_update_cooldown(env: &Env) -> Result<(), Error> {
     let now = env.ledger().timestamp();
     let last_action_time: Option<u64> = env.storage().instance().get(&AdminKey::LastActionTime);
-    
+
     if let Some(last) = last_action_time {
         if now < last.saturating_add(ADMIN_COOLDOWN_SECONDS) {
             return Err(Error::AdminCooldown);
         }
     }
-    
-    env.storage().instance().set(&AdminKey::LastActionTime, &now);
+
+    env.storage()
+        .instance()
+        .set(&AdminKey::LastActionTime, &now);
     // Instance TTL will be extended by `consume_nonce` immediately after this.
     Ok(())
 }

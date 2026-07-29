@@ -86,6 +86,7 @@ pub(crate) enum DataKey {
     /// Absent means no fee (equivalent to `0`). Stored in instance storage so
     /// it lives for the lifetime of the contract.
     FeeBps,
+    /// Per-stream withdrawer allowlist keyed by stream id (persistent storage).
     WithdrawerAllowlist(u64),
 }
 
@@ -421,68 +422,75 @@ pub fn get_fee_bps(env: &Env) -> u32 {
     fee.unwrap_or(0)
 }
 
-/// Adds `withdrawer` to the per-stream withdrawer allowlist.
-///
-/// This is a no-op if the withdrawer is already in the list.
+// ---------------------------------------------------------------------------
+// Withdrawer allowlist
+// ---------------------------------------------------------------------------
+
+/// Adds `withdrawer` to the per-stream allowlist for `stream_id`.
 pub fn add_withdrawer(env: &Env, stream_id: u64, withdrawer: &Address) {
-    let mut list: Vec<Address> = env
+    let mut allowlist: soroban_sdk::Vec<Address> = env
         .storage()
         .persistent()
         .get(&DataKey::WithdrawerAllowlist(stream_id))
-        .unwrap_or(Vec::new(env));
-    if !list.contains(withdrawer) {
-        list.push_back(withdrawer.clone());
+        .unwrap_or(soroban_sdk::Vec::new(env));
+
+    if !allowlist.contains(withdrawer) {
+        allowlist.push_back(withdrawer.clone());
     }
+
     env.storage()
         .persistent()
-        .set(&DataKey::WithdrawerAllowlist(stream_id), &list);
+        .set(&DataKey::WithdrawerAllowlist(stream_id), &allowlist);
     extend_withdrawer_allowlist_ttl(env, stream_id);
 }
 
-/// Removes `withdrawer` from the per-stream withdrawer allowlist.
-///
-/// This is a no-op if the withdrawer is not in the list.
+/// Removes `withdrawer` from the per-stream allowlist for `stream_id`.
 pub fn remove_withdrawer(env: &Env, stream_id: u64, withdrawer: &Address) {
-    let mut list: Vec<Address> = env
+    let mut allowlist: soroban_sdk::Vec<Address> = env
         .storage()
         .persistent()
         .get(&DataKey::WithdrawerAllowlist(stream_id))
-        .unwrap_or(Vec::new(env));
-    if let Some(pos) = list.first_index_of(withdrawer) {
-        list.remove(pos);
+        .unwrap_or(soroban_sdk::Vec::new(env));
+
+    if let Some(pos) = allowlist.first_index_of(withdrawer) {
+        allowlist.remove(pos);
     }
+
     env.storage()
         .persistent()
-        .set(&DataKey::WithdrawerAllowlist(stream_id), &list);
+        .set(&DataKey::WithdrawerAllowlist(stream_id), &allowlist);
     extend_withdrawer_allowlist_ttl(env, stream_id);
 }
 
-/// Returns `true` if `withdrawer` is in the per-stream allowlist for `stream_id`.
+/// Returns `true` if `withdrawer` is present in the per-stream allowlist for
+/// `stream_id`.
 pub fn is_withdrawer_allowed(env: &Env, stream_id: u64, withdrawer: &Address) -> bool {
-    let list: Vec<Address> = env
+    let allowlist: Option<soroban_sdk::Vec<Address>> = env
         .storage()
         .persistent()
-        .get(&DataKey::WithdrawerAllowlist(stream_id))
-        .unwrap_or(Vec::new(env));
-    if list.is_empty() {
-        return false;
+        .get(&DataKey::WithdrawerAllowlist(stream_id));
+    match allowlist {
+        Some(list) => {
+            extend_withdrawer_allowlist_ttl(env, stream_id);
+            list.contains(withdrawer)
+        }
+        None => false,
     }
-    list.contains(withdrawer)
 }
 
-/// Returns the per-stream withdrawer allowlist for `stream_id`.
-///
-/// Returns an empty list if no allowlist has been set.
-pub fn get_withdrawer_allowlist(env: &Env, stream_id: u64) -> Vec<Address> {
-    let list: Vec<Address> = env
+/// Returns the full withdrawer allowlist for `stream_id` (may be empty).
+pub fn get_withdrawer_allowlist(env: &Env, stream_id: u64) -> soroban_sdk::Vec<Address> {
+    let allowlist: Option<soroban_sdk::Vec<Address>> = env
         .storage()
         .persistent()
-        .get(&DataKey::WithdrawerAllowlist(stream_id))
-        .unwrap_or(Vec::new(env));
-    if !list.is_empty() {
-        extend_withdrawer_allowlist_ttl(env, stream_id);
+        .get(&DataKey::WithdrawerAllowlist(stream_id));
+    match allowlist {
+        Some(list) => {
+            extend_withdrawer_allowlist_ttl(env, stream_id);
+            list
+        }
+        None => soroban_sdk::Vec::new(env),
     }
-    list
 }
 
 #[cfg(test)]
@@ -790,8 +798,11 @@ mod tests {
     fn peek_next_stream_id_returns_one_when_unset() {
         let (env, contract_id) = setup();
         env.as_contract(&contract_id, || {
-            assert_eq!(peek_next_stream_id(&env), 1u64,
-                "unset counter should default to 1");
+            assert_eq!(
+                peek_next_stream_id(&env),
+                1u64,
+                "unset counter should default to 1"
+            );
         });
     }
 
@@ -803,8 +814,11 @@ mod tests {
         env.as_contract(&contract_id, || {
             let assigned = next_stream_id(&env); // consumes ID 1, counter → 2
             assert_eq!(assigned, 1u64);
-            assert_eq!(peek_next_stream_id(&env), 2u64,
-                "counter must now be 2 after one allocation");
+            assert_eq!(
+                peek_next_stream_id(&env),
+                2u64,
+                "counter must now be 2 after one allocation"
+            );
         });
     }
 
@@ -816,8 +830,10 @@ mod tests {
         env.as_contract(&contract_id, || {
             let first = peek_next_stream_id(&env);
             let second = peek_next_stream_id(&env);
-            assert_eq!(first, second,
-                "peek must be idempotent — counter must not change");
+            assert_eq!(
+                first, second,
+                "peek must be idempotent — counter must not change"
+            );
         });
     }
 
@@ -829,8 +845,11 @@ mod tests {
         let (env, contract_id) = setup();
         env.as_contract(&contract_id, || {
             set_next_stream_id_for_test(&env, 42);
-            assert_eq!(peek_next_stream_id(&env), 42u64,
-                "peek must return the value written by the test setter");
+            assert_eq!(
+                peek_next_stream_id(&env),
+                42u64,
+                "peek must return the value written by the test setter"
+            );
 
             // next_stream_id should consume 42 and advance the counter to 43
             let id = next_stream_id(&env);

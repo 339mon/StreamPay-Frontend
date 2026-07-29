@@ -189,9 +189,7 @@ fn gas_snap_initialize() {
     let data = gas_setup();
     let client = gas_client(&data.env);
 
-    let (_, snapshot) = measure_invocation(&data.env, || {
-        client.initialize(&data.admin)
-    });
+    let (_, snapshot) = measure_invocation(&data.env, || client.initialize(&data.admin));
 
     assert_budget_ceiling(&snapshot, 250_000, 60_000, 100, 1_200);
 }
@@ -244,9 +242,7 @@ fn gas_snap_set_paused() {
     let data = gas_setup();
     let client = gas_initialized(&data);
 
-    let (_, snapshot) = measure_invocation(&data.env, || {
-        client.set_paused(&data.admin, &true)
-    });
+    let (_, snapshot) = measure_invocation(&data.env, || client.set_paused(&data.admin, &true));
 
     assert_budget_ceiling(&snapshot, 200_000, 50_000, 100, 1_200);
 }
@@ -257,9 +253,7 @@ fn gas_snap_set_admin() {
     let client = gas_initialized(&data);
     let new_admin = Address::generate(&data.env);
 
-    let (_, snapshot) = measure_invocation(&data.env, || {
-        client.set_admin(&data.admin, &new_admin)
-    });
+    let (_, snapshot) = measure_invocation(&data.env, || client.set_admin(&data.admin, &new_admin));
 
     assert_budget_ceiling(&snapshot, 200_000, 50_000, 100, 1_200);
 }
@@ -305,9 +299,8 @@ fn gas_snap_set_default_fee_bps() {
     let data = gas_setup();
     let client = gas_initialized(&data);
 
-    let (_, snapshot) = measure_invocation(&data.env, || {
-        client.set_default_fee_bps(&data.admin, &100)
-    });
+    let (_, snapshot) =
+        measure_invocation(&data.env, || client.set_default_fee_bps(&data.admin, &100));
 
     assert_budget_ceiling(&snapshot, 200_000, 50_000, 100, 1_200);
 }
@@ -317,9 +310,7 @@ fn gas_snap_set_fee_bps() {
     let data = gas_setup();
     let client = gas_initialized(&data);
 
-    let (_, snapshot) = measure_invocation(&data.env, || {
-        client.set_fee_bps(&data.admin, &100)
-    });
+    let (_, snapshot) = measure_invocation(&data.env, || client.set_fee_bps(&data.admin, &100));
 
     assert_budget_ceiling(&snapshot, 200_000, 50_000, 100, 800);
 }
@@ -344,9 +335,7 @@ fn gas_snap_max_streams_per_sender_read() {
     let data = gas_setup();
     let client = gas_initialized(&data);
 
-    let (count, snapshot) = measure_invocation(&data.env, || {
-        client.max_streams_per_sender()
-    });
+    let (count, snapshot) = measure_invocation(&data.env, || client.max_streams_per_sender());
 
     assert_eq!(count, 10);
     assert_budget_ceiling(&snapshot, 100_000, 20_000, 100, 400);
@@ -357,9 +346,8 @@ fn gas_snap_sender_stream_count() {
     let data = gas_setup();
     let client = gas_initialized(&data);
 
-    let (count, snapshot) = measure_invocation(&data.env, || {
-        client.sender_stream_count(&data.sender)
-    });
+    let (count, snapshot) =
+        measure_invocation(&data.env, || client.sender_stream_count(&data.sender));
 
     assert_eq!(count, 0);
     assert_budget_ceiling(&snapshot, 100_000, 20_000, 100, 400);
@@ -380,9 +368,7 @@ fn gas_snap_get_stream() {
         &0u32,
     );
 
-    let (stream, snapshot) = measure_invocation(&data.env, || {
-        client.get_stream(&id)
-    });
+    let (stream, snapshot) = measure_invocation(&data.env, || client.get_stream(&id));
 
     assert_eq!(stream.id, id);
     assert_budget_ceiling(&snapshot, 150_000, 30_000, 100, 600);
@@ -404,9 +390,7 @@ fn gas_snap_withdrawable() {
     );
     data.env.ledger().set_timestamp(1_600); // midpoint
 
-    let (amount, snapshot) = measure_invocation(&data.env, || {
-        client.withdrawable(&id)
-    });
+    let (amount, snapshot) = measure_invocation(&data.env, || client.withdrawable(&id));
 
     assert_eq!(amount, 500);
     assert_budget_ceiling(&snapshot, 150_000, 30_000, 100, 600);
@@ -428,9 +412,7 @@ fn gas_snap_stream_balance() {
     );
     data.env.ledger().set_timestamp(1_600);
 
-    let (balance, snapshot) = measure_invocation(&data.env, || {
-        client.stream_balance(&id)
-    });
+    let (balance, snapshot) = measure_invocation(&data.env, || client.stream_balance(&id));
 
     assert_eq!(balance, 500);
     assert_budget_ceiling(&snapshot, 150_000, 30_000, 100, 600);
@@ -441,9 +423,8 @@ fn gas_snap_remaining_sender_capacity() {
     let data = gas_setup();
     let client = gas_initialized(&data);
 
-    let (cap, snapshot) = measure_invocation(&data.env, || {
-        client.remaining_sender_capacity(&data.sender)
-    });
+    let (cap, snapshot) =
+        measure_invocation(&data.env, || client.remaining_sender_capacity(&data.sender));
 
     assert_eq!(cap, 10);
     assert_budget_ceiling(&snapshot, 100_000, 20_000, 100, 400);
@@ -454,9 +435,7 @@ fn gas_snap_fee_bps_read() {
     let data = gas_setup();
     let client = gas_initialized(&data);
 
-    let (bps, snapshot) = measure_invocation(&data.env, || {
-        client.fee_bps()
-    });
+    let (bps, snapshot) = measure_invocation(&data.env, || client.fee_bps());
 
     assert_eq!(bps, 0);
     assert_budget_ceiling(&snapshot, 100_000, 20_000, 100, 400);
@@ -467,9 +446,7 @@ fn gas_snap_get_default_fee_bps() {
     let data = gas_setup();
     let client = gas_initialized(&data);
 
-    let (bps, snapshot) = measure_invocation(&data.env, || {
-        client.get_default_fee_bps()
-    });
+    let (bps, snapshot) = measure_invocation(&data.env, || client.get_default_fee_bps());
 
     assert_eq!(bps, 0);
     assert_budget_ceiling(&snapshot, 100_000, 20_000, 100, 400);
@@ -480,9 +457,7 @@ fn gas_snap_get_fee_collector() {
     let data = gas_setup();
     let client = gas_initialized(&data);
 
-    let (collector, snapshot) = measure_invocation(&data.env, || {
-        client.get_fee_collector()
-    });
+    let (collector, snapshot) = measure_invocation(&data.env, || client.get_fee_collector());
 
     assert!(collector.is_none());
     assert_budget_ceiling(&snapshot, 100_000, 20_000, 100, 400);
@@ -503,9 +478,7 @@ fn gas_snap_get_stream_fee_bps() {
         &0u32,
     );
 
-    let (bps, snapshot) = measure_invocation(&data.env, || {
-        client.get_stream_fee_bps(&id)
-    });
+    let (bps, snapshot) = measure_invocation(&data.env, || client.get_stream_fee_bps(&id));
 
     assert_eq!(bps, 0);
     assert_budget_ceiling(&snapshot, 150_000, 30_000, 100, 600);
@@ -526,9 +499,7 @@ fn gas_snap_get_accrued_fees() {
         &0u32,
     );
 
-    let (fees, snapshot) = measure_invocation(&data.env, || {
-        client.get_accrued_fees(&id)
-    });
+    let (fees, snapshot) = measure_invocation(&data.env, || client.get_accrued_fees(&id));
 
     assert_eq!(fees, 0);
     assert_budget_ceiling(&snapshot, 120_000, 25_000, 100, 600);
@@ -542,9 +513,8 @@ fn gas_snap_is_org_token_allowed() {
 
     client.set_org_token_allowed(&data.admin, &org, &data.token, &true);
 
-    let (allowed, snapshot) = measure_invocation(&data.env, || {
-        client.is_org_token_allowed(&org, &data.token)
-    });
+    let (allowed, snapshot) =
+        measure_invocation(&data.env, || client.is_org_token_allowed(&org, &data.token));
 
     assert!(allowed);
     assert_budget_ceiling(&snapshot, 120_000, 25_000, 100, 500);
@@ -606,9 +576,7 @@ fn gas_snap_start_stream() {
         &100u64,
     );
 
-    let (_stream, snapshot) = measure_invocation(&data.env, || {
-        client.start_stream(&draft_id)
-    });
+    let (_stream, snapshot) = measure_invocation(&data.env, || client.start_stream(&draft_id));
 
     assert_budget_ceiling(&snapshot, 250_000, 50_000, 100, 1_000);
 }
@@ -654,9 +622,7 @@ fn gas_snap_withdraw_partial() {
     );
     data.env.ledger().set_timestamp(1_600); // midpoint: 500 vested
 
-    let (withdrawn, snapshot) = measure_invocation(&data.env, || {
-        client.withdraw(&data.recipient, &id, &250i128)
-    });
+    let (withdrawn, snapshot) = measure_invocation(&data.env, || client.withdraw(&id, &250i128));
 
     assert_eq!(withdrawn, 250);
     assert_budget_ceiling(&snapshot, 330_000, 55_000, 100, 1_100);
@@ -678,9 +644,7 @@ fn gas_snap_withdraw_full_settle() {
     );
     data.env.ledger().set_timestamp(2_200); // past end
 
-    let (withdrawn, snapshot) = measure_invocation(&data.env, || {
-        client.withdraw(&data.recipient, &id, &1_000i128)
-    });
+    let (withdrawn, snapshot) = measure_invocation(&data.env, || client.withdraw(&id, &1_000i128));
 
     assert_eq!(withdrawn, 1_000);
     assert_budget_ceiling(&snapshot, 345_000, 55_000, 100, 1_100);
@@ -733,9 +697,7 @@ fn gas_snap_pause() {
     );
     data.env.ledger().set_timestamp(1_600);
 
-    let (_, snapshot) = measure_invocation(&data.env, || {
-        client.pause(&id)
-    });
+    let ((), snapshot) = measure_invocation(&data.env, || client.pause(&id));
 
     assert_budget_ceiling(&snapshot, 250_000, 50_000, 100, 1_000);
 }
@@ -758,9 +720,7 @@ fn gas_snap_resume() {
     client.pause(&id);
     data.env.ledger().set_timestamp(1_700);
 
-    let (_, snapshot) = measure_invocation(&data.env, || {
-        client.resume(&id)
-    });
+    let ((), snapshot) = measure_invocation(&data.env, || client.resume(&id));
 
     assert_budget_ceiling(&snapshot, 250_000, 50_000, 100, 1_000);
 }
@@ -781,9 +741,7 @@ fn gas_snap_settle() {
     );
     data.env.ledger().set_timestamp(2_200);
 
-    let ((), snapshot) = measure_invocation(&data.env, || {
-        client.settle(&id)
-    });
+    let ((), snapshot) = measure_invocation(&data.env, || client.settle(&id));
 
     assert_budget_ceiling(&snapshot, 300_000, 55_000, 100, 1_200);
 }
@@ -804,9 +762,7 @@ fn gas_snap_cancel_stream_mid() {
     );
     data.env.ledger().set_timestamp(1_600);
 
-    let (_, snapshot) = measure_invocation(&data.env, || {
-        client.cancel_stream(&id)
-    });
+    let ((), snapshot) = measure_invocation(&data.env, || client.cancel_stream(&id));
 
     assert_budget_ceiling(&snapshot, 350_000, 65_000, 200, 1_600);
 }
@@ -826,9 +782,7 @@ fn gas_snap_cancel_stream_at_start() {
         &0u32,
     );
 
-    let (_, snapshot) = measure_invocation(&data.env, || {
-        client.cancel_stream(&id)
-    });
+    let ((), snapshot) = measure_invocation(&data.env, || client.cancel_stream(&id));
 
     assert_budget_ceiling(&snapshot, 300_000, 55_000, 200, 1_400);
 }
@@ -848,9 +802,8 @@ fn gas_snap_amend_stream() {
         &0u32,
     );
 
-    let (_, snapshot) = measure_invocation(&data.env, || {
-        client.amend_stream(&id, &10i128, &2_600u64)
-    });
+    let (_, snapshot) =
+        measure_invocation(&data.env, || client.amend_stream(&id, &10i128, &2_600u64));
 
     assert_budget_ceiling(&snapshot, 280_000, 55_000, 100, 1_200);
 }
@@ -880,9 +833,8 @@ fn gas_snap_sweep_fees() {
     let mut stream_ids = soroban_sdk::Vec::new(&data.env);
     stream_ids.push_back(id);
 
-    let (_, snapshot) = measure_invocation(&data.env, || {
-        client.sweep_fees(&data.admin, &stream_ids)
-    });
+    let (_, snapshot) =
+        measure_invocation(&data.env, || client.sweep_fees(&data.admin, &stream_ids));
 
     assert_budget_ceiling(&snapshot, 350_000, 70_000, 200, 1_600);
 }
@@ -904,9 +856,7 @@ fn gas_snap_stream_snapshot() {
         &0u32,
     );
 
-    let (snap, snapshot) = measure_invocation(&data.env, || {
-        client.stream_snapshot(&id, &1_600)
-    });
+    let (snap, snapshot) = measure_invocation(&data.env, || client.stream_snapshot(&id, &1_600));
 
     assert_eq!(snap.stream_id, id);
     assert_eq!(snap.timestamp, 1_600);
@@ -931,9 +881,8 @@ fn gas_snap_diff_snapshots() {
     let snap_a = client.stream_snapshot(&id, &1_200);
     let snap_b = client.stream_snapshot(&id, &1_600);
 
-    let (diff, snapshot) = measure_invocation(&data.env, || {
-        client.diff_snapshots(&snap_a, &snap_b)
-    });
+    let (diff, snapshot) =
+        measure_invocation(&data.env, || client.diff_snapshots(&snap_a, &snap_b));
 
     assert_eq!(diff.stream_id, id);
     assert_eq!(diff.delta_vested, 400);
@@ -950,9 +899,7 @@ fn gas_snap_all_entrypoints_within_budget() {
     let client = gas_initialized(&data);
 
     // ── Admin writes ──
-    let (_, snap) = measure_invocation(&data.env, || {
-        client.set_paused(&data.admin, &true)
-    });
+    let (_, snap) = measure_invocation(&data.env, || client.set_paused(&data.admin, &true));
     assert_budget_ceiling(&snap, 200_000, 50_000, 100, 1_200);
 
     let (_, snap) = measure_invocation(&data.env, || {
@@ -981,62 +928,44 @@ fn gas_snap_all_entrypoints_within_budget() {
     assert_budget_ceiling(&snap, 310_000, 55_000, 100, 1_400);
 
     // ── Reads ──
-    let (_, snap) = measure_invocation(&data.env, || {
-        client.get_stream(&id)
-    });
+    let (_, snap) = measure_invocation(&data.env, || client.get_stream(&id));
     assert_budget_ceiling(&snap, 150_000, 30_000, 100, 600);
 
-    let (_, snap) = measure_invocation(&data.env, || {
-        client.max_streams_per_sender()
-    });
+    let (_, snap) = measure_invocation(&data.env, || client.max_streams_per_sender());
     assert_budget_ceiling(&snap, 100_000, 20_000, 100, 400);
 
-    let (_, snap) = measure_invocation(&data.env, || {
-        client.sender_stream_count(&data.sender)
-    });
+    let (_, snap) = measure_invocation(&data.env, || client.sender_stream_count(&data.sender));
     assert_budget_ceiling(&snap, 100_000, 20_000, 100, 400);
 
-    let (_, snap) = measure_invocation(&data.env, || {
-        client.remaining_sender_capacity(&data.sender)
-    });
+    let (_, snap) =
+        measure_invocation(&data.env, || client.remaining_sender_capacity(&data.sender));
     assert_budget_ceiling(&snap, 100_000, 20_000, 100, 400);
 
     // ── Read (balance) at midpoint ──
     data.env.ledger().set_timestamp(1_600);
-    let (bal, snap) = measure_invocation(&data.env, || {
-        client.stream_balance(&id)
-    });
+    let (bal, snap) = measure_invocation(&data.env, || client.stream_balance(&id));
     assert_eq!(bal, 500);
     assert_budget_ceiling(&snap, 150_000, 30_000, 100, 600);
 
     // ── Lifecycle: pause → resume ──
-    let (_stream, snap) = measure_invocation(&data.env, || {
-        client.pause(&id)
-    });
+    let (_, snap) = measure_invocation(&data.env, || client.pause(&id));
     assert_budget_ceiling(&snap, 250_000, 50_000, 100, 1_000);
 
     data.env.ledger().set_timestamp(1_700);
-    let (_stream, snap) = measure_invocation(&data.env, || {
-        client.resume(&id)
-    });
+    let (_, snap) = measure_invocation(&data.env, || client.resume(&id));
     assert_budget_ceiling(&snap, 250_000, 50_000, 100, 1_000);
 
     // ── Withdraw ──
-    let (_, snap) = measure_invocation(&data.env, || {        client.withdraw(&data.recipient, &id, &500i128)
-    });
+    let (_, snap) = measure_invocation(&data.env, || client.withdraw(&id, &500i128));
     assert_budget_ceiling(&snap, 330_000, 55_000, 100, 1_100);
 
     // ── Amend ──
-    let (_, snap) = measure_invocation(&data.env, || {
-        client.amend_stream(&id, &10i128, &3_000u64)
-    });
+    let (_, snap) = measure_invocation(&data.env, || client.amend_stream(&id, &10i128, &3_000u64));
     assert_budget_ceiling(&snap, 280_000, 55_000, 100, 1_200);
 
     // ── Cancel ──
     data.env.ledger().set_timestamp(2_000);
-    let (_, snap) = measure_invocation(&data.env, || {
-        client.cancel_stream(&id)
-    });
+    let (_, snap) = measure_invocation(&data.env, || client.cancel_stream(&id));
     assert_budget_ceiling(&snap, 350_000, 65_000, 200, 1_600);
 }
 
@@ -1093,16 +1022,12 @@ fn gas_snap_edge_cases_within_budget() {
 
     // Withdraw a tiny amount (1 unit)
     data.env.ledger().set_timestamp(1_600);
-    let (_, snap) = measure_invocation(&data.env, || {
-        client.withdraw(&data.recipient, &id, &1i128)
-        });
+    let (_, snap) = measure_invocation(&data.env, || client.withdraw(&id, &1i128));
     assert_budget_ceiling(&snap, 300_000, 55_000, 100, 1_000);
 
     // Read capacity on never-seen sender
     let unknown = Address::generate(&data.env);
-    let (cap, snap) = measure_invocation(&data.env, || {
-        client.remaining_sender_capacity(&unknown)
-    });
+    let (cap, snap) = measure_invocation(&data.env, || client.remaining_sender_capacity(&unknown));
     assert_eq!(cap, 10);
     assert_budget_ceiling(&snap, 100_000, 20_000, 100, 400);
 }
