@@ -6,7 +6,8 @@ import { checkRateLimit, rateLimitResponse, type ClientIdentity } from "@/app/li
 import { getLimitForRoute } from "@/app/lib/rate-limit-config";
 import { recordRequest, recordThrottle } from "@/app/lib/rate-limit-metrics";
 import { withTimeout } from "@/src/middleware/timeout";
-
+import { getCorrelationContext } from "@/app/lib/logger";
+import { validateExportRequest } from "@/src/validators/exports";
 function getRequestUrl(request: Request): URL {
   try {
     return new URL(request.url);
@@ -121,6 +122,17 @@ function scheduleExportJob(jobId: string) {
   exportRepository.processing.set(jobId, jobPromise);
 }
 
+/**
+ * POST /api/exports
+ * Creates a new export job for the authenticated user.
+ * 
+ * Payload:
+ * - format: "csv" | "json" (optional, default "csv")
+ * - startDate: ISO 8601 datetime (optional)
+ * - endDate: ISO 8601 datetime (optional)
+ * 
+ * Returns 422 if the payload fails validation.
+ */
 export async function POST(request: Request) {
   return withTimeout(EXPORTS_TIMEOUT_MS, request, async (signal) => {
     const { exportRepository } = getStore();
@@ -146,6 +158,42 @@ export async function POST(request: Request) {
     }
     recordRequest(url.pathname);
 
+    let body: unknown = {};
+    try {
+      const bodyText = await request.text();
+      if (bodyText) {
+        body = JSON.parse(bodyText);
+      }
+    } catch {
+      const context = getCorrelationContext();
+      return NextResponse.json(
+        {
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Malformed JSON payload",
+            request_id: context?.request_id
+          }
+        },
+        { status: 400 }
+      );
+    }
+
+    const validation = validateExportRequest(body);
+    if (!validation.success) {
+      const context = getCorrelationContext();
+      return NextResponse.json(
+        {
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Invalid request payload",
+            details: validation.errors,
+            request_id: context?.request_id
+          }
+        },
+        { status: 422 }
+      );
+    }
+
     const id = crypto.randomUUID();
     const requestedAt = new Date().toISOString();
     const expiresAt = new Date(Date.now() + EXPORT_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
@@ -156,7 +204,7 @@ export async function POST(request: Request) {
       requestedAt,
       status: "pending",
       expiresAt,
-      fileName: `streampay-export-${requestedAt.slice(0, 10)}.csv`,
+      fileName: `streampay-export-${requestedAt.slice(0, 10)}.${validation.data.format}`,
       rows: 0,
     };
 
