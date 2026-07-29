@@ -106,10 +106,9 @@ pub fn is_at_latest_version(env: &Env) -> bool {
 /// Extends the instance TTL analogously to other instance-storage
 /// writes in the contract.
 fn set_version(env: &Env, version: u32) {
-    env.storage().instance().set(
-        &VersionKey::StorageVersion,
-        &StorageVersion { version },
-    );
+    env.storage()
+        .instance()
+        .set(&VersionKey::StorageVersion, &StorageVersion { version });
     // Extend instance TTL so the version marker does not expire.
     let threshold = env
         .ledger()
@@ -345,10 +344,7 @@ mod tests {
         // and test authorization at the `require_admin` check level.
         env.mock_all_auths();
         let result = mclient.try_migrate(&impostor);
-        assert!(
-            result.is_err(),
-            "non-admin caller must be rejected"
-        );
+        assert!(result.is_err(), "non-admin caller must be rejected");
     }
 
     #[test]
@@ -378,10 +374,8 @@ mod tests {
         client.migrate(&admin);
 
         // Read the stored version directly.
-        let stored: Option<StorageVersion> = env
-            .storage()
-            .instance()
-            .get(&VersionKey::StorageVersion);
+        let stored: Option<StorageVersion> =
+            env.storage().instance().get(&VersionKey::StorageVersion);
         assert!(
             stored.is_some(),
             "version marker must be persisted after migration"
@@ -412,6 +406,9 @@ mod tests {
         // (the contract is still functional).
         // Actually we can just verify no panic by calling a read-only view.
         let paused = sp_client.is_paused();
-        assert!(!paused, "paused flag must still be readable after migration");
+        assert!(
+            !paused,
+            "paused flag must still be readable after migration"
+        );
     }
 }

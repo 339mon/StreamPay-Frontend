@@ -35,7 +35,7 @@ pub struct SplitStream {
 }
 
 /// Index into the recipients vec — returned by find_recipient_index.
-struct RecipientIdx(u64);
+struct RecipientIdx(u32);
 
 #[derive(Clone)]
 #[contracttype]
@@ -113,7 +113,7 @@ fn find_recipient_index(
     recipients: &Vec<RecipientAllocation>,
     recipient: &Address,
 ) -> Option<RecipientIdx> {
-    let mut i = 0u64;
+    let mut i = 0u32;
     let len = recipients.len();
     while i < len {
         if recipients.get(i).unwrap().recipient == *recipient {
@@ -250,7 +250,11 @@ fn require_not_paused(env: &Env) -> Result<(), Error> {
     Ok(())
 }
 
-fn require_recipient_trustline(env: &Env, token: &Address, recipient: &Address) -> Result<(), Error> {
+fn require_recipient_trustline(
+    env: &Env,
+    token: &Address,
+    recipient: &Address,
+) -> Result<(), Error> {
     let balance = token::Client::new(env, token).balance(recipient);
     if balance < 0 {
         return Err(Error::RecipientTrustlineMissing);
@@ -302,7 +306,7 @@ pub fn create_split_stream(
 
     // Validate weights are positive and compute total weight
     let mut total_weight: u64 = 0;
-    let mut i: u64 = 0;
+    let mut i: u32 = 0;
     while i < rlen {
         let w = weights.get(i).ok_or(Error::InvalidAmount)?;
         if w == 0 {
@@ -389,8 +393,7 @@ pub fn withdraw_split(
         return Err(Error::InvalidState);
     }
 
-    let idx = find_recipient_index(&stream.recipients, &recipient)
-        .ok_or(Error::InvalidState)?;
+    let idx = find_recipient_index(&stream.recipients, &recipient).ok_or(Error::InvalidState)?;
     let mut alloc = stream.recipients.get(idx.0).ok_or(Error::InvalidState)?;
 
     let now = env.ledger().timestamp();
@@ -448,7 +451,7 @@ pub fn cancel_split_stream(env: Env, stream_id: u64) -> Result<SplitStream, Erro
     // Due to integer division rounding, sum(individual shares) ≤ total_vested
     // (computed inside `recipient_vested` below).
     let mut total_paid: i128 = 0;
-    let mut i: u64 = 0;
+    let mut i: u32 = 0;
     while i < rlen {
         let mut alloc = stream.recipients.get(i).ok_or(Error::NotFound)?;
         let share = recipient_vested(&stream, now, alloc.weight)?;
@@ -514,13 +517,15 @@ pub fn split_withdrawable(env: Env, stream_id: u64, recipient: Address) -> Resul
         return Ok(0);
     }
 
-    let idx = find_recipient_index(&stream.recipients, &recipient)
-        .ok_or(Error::NotFound)?;
+    let idx = find_recipient_index(&stream.recipients, &recipient).ok_or(Error::NotFound)?;
     let alloc = stream.recipients.get(idx.0).ok_or(Error::NotFound)?;
 
     let now = env.ledger().timestamp();
     let vested_for_recip = recipient_vested(&stream, now, alloc.weight)?;
-    Ok(max(0, vested_for_recip.saturating_sub(alloc.released_amount)))
+    Ok(max(
+        0,
+        vested_for_recip.saturating_sub(alloc.released_amount),
+    ))
 }
 
 pub fn split_stream_balance(env: Env, stream_id: u64) -> Result<i128, Error> {
