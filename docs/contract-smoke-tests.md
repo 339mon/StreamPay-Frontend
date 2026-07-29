@@ -30,6 +30,8 @@ is exercised with at minimum one happy-path or expected-error invocation:
 | `get_stream` | Error-path | `NotFound` (stream 9999) |
 | `withdrawable` | Happy-path | returns `i128` |
 | `withdrawable` | Error-path | `NotFound` (stream 9999) |
+| `claim_drip` | Happy-path | returns `i128` (alias for `withdrawable`) |
+| `claim_drip` | Error-path | `NotFound` (stream 9999) |
 | `stream_balance` | Happy-path | returns `i128` |
 | `stream_balance` | Error-path | `NotFound` (stream 9999) |
 | `start_stream` | Error-path | `NotFound` (stream 9999) |
