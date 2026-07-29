@@ -1,14 +1,25 @@
 import { NextResponse } from "next/server";
-import { StreamService } from "@/app/lib/stream-service";
-import { NextResponse, NextRequest } from "next/server";
-import { db } from "@/app/lib/db";
-import { getClientIdentity, checkRateLimit, rateLimitResponse } from "@/app/lib/rate-limit";
-import { recordThrottle, recordRequest } from "@/app/lib/rate-limit-metrics";
-import { getLimitForRoute } from "@/app/lib/rate-limit-config";
+import {
+  checkIdempotency,
+  computeFingerprint,
+  db,
+  idempotencyToken,
+  setIdempotency,
+  withLock,
+} from "@/app/lib/db";
+import { getCorrelationContext, logger } from "@/app/lib/logger";
+import { checkStreamOrgPolicy } from "@/app/lib/org-policy";
+import { recordPrivilegedStreamAuditEvent } from "@/app/lib/audit-log";
+
+type Context = { params: Promise<{ id: string }> };
 
 function createErrorResponse(code: string, message: string, status: number) {
   const context = getCorrelationContext();
   return NextResponse.json({ error: { code, message, request_id: context?.request_id } }, { status });
+}
+
+function getHeader(request: Request, name: string): string | null {
+  return request.headers?.get?.(name) ?? null;
 }
 
 export async function POST(
@@ -16,68 +27,101 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const idempotencyKey = request.headers.get("Idempotency-Key") || undefined;
 
-  const result = await StreamService.applyAction(id, "stop", idempotencyKey);
+  const idempotencyKey = getHeader(request, "Idempotency-Key");
+  const actorAddress = getHeader(request, "Actor-Wallet-Address");
+  const token = idempotencyKey
+    ? idempotencyToken(`streams.stop.${id}`, idempotencyKey)
+    : null;
 
-  if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: result.status });
-  }
+  const fingerprint = computeFingerprint("POST", `/api/streams/${id}/stop`, null);
 
-  return NextResponse.json({ data: result.data });
-  const url = new URL(_request.url);
-  const limitType = getLimitForRoute("POST", url.pathname);
-  const identity = getClientIdentity(_request);
-  const result = await checkRateLimit(identity, limitType);
-
-  if (!result.allowed) {
-    recordThrottle(url.pathname, limitType, identity.type, identity.displayValue);
-    return rateLimitResponse(result.retryAfter!);
-  }
-  recordRequest(url.pathname);
-
-  const stream = db.streams.get(id);
-  if (!stream) {
-    return createErrorResponse("STREAM_NOT_FOUND", `Stream '${id}' not found`, 404);
-  }
-
-  // Org Policy Check
-  const actorAddress = _request.headers.get("Actor-Wallet-Address");
-  const policyResult = checkStreamOrgPolicy(id, actorAddress ?? "", "stop");
-
-  if (policyResult) {
-    if (!policyResult.allowed) {
-      return createErrorResponse(policyResult.code, policyResult.message, policyResult.httpStatus);
-    }
-    if (policyResult.requiresApproval) {
-      return createErrorResponse("APPROVAL_REQUIRED", "This action requires multi-sig approval. Please initiate an approval request.", 409);
+  if (token) {
+    const cached = checkIdempotency(db.idempotency, token, fingerprint);
+    if (cached) {
+      if (!cached.ok) {
+        return NextResponse.json(
+          { error: { code: "IDEMPOTENCY_CONFLICT", message: "Idempotency key has been used with a different request." } },
+          { status: 409 },
+        );
+      }
+      return NextResponse.json(cached.body, { status: cached.status });
     }
   }
 
-  if (stream.status !== "active" && stream.status !== "draft") {
-    return createErrorResponse("INVALID_STREAM_STATE", "Only active or draft streams can be stopped", 409);
-  }
+  return withLock(id, async () => {
+    if (token) {
+      const cached = checkIdempotency(db.idempotency, token, fingerprint);
+      if (cached) {
+        if (!cached.ok) {
+          return NextResponse.json(
+            { error: { code: "IDEMPOTENCY_CONFLICT", message: "Idempotency key has been used with a different request." } },
+            { status: 409 },
+          );
+        }
+        return NextResponse.json(cached.body, { status: cached.status });
+      }
+    }
 
-  const before = structuredClone(stream);
-  const updatedStream = {
-    ...stream,
-    status: "ended" as const,
-    nextAction: "withdraw" as const,
-    updatedAt: new Date().toISOString(),
-  };
+    const stream = db.streams.get(id);
+    if (!stream) {
+      return createErrorResponse("STREAM_NOT_FOUND", `Stream '${id}' not found`, 404);
+    }
 
-  db.streams.set(id, updatedStream);
-  recordPrivilegedStreamAuditEvent({
-    action: "stream.stop.override",
-    after: updatedStream,
-    before,
-    metadata: {
-      resultingStatus: updatedStream.status,
-    },
-    request,
-    streamId: id,
-    targetAccount: updatedStream.recipient,
+    const policyResult = actorAddress
+      ? checkStreamOrgPolicy(id, actorAddress, "stop")
+      : null;
+    if (policyResult) {
+      if (!policyResult.allowed) {
+        return createErrorResponse(policyResult.code, policyResult.message, policyResult.httpStatus);
+      }
+      if (policyResult.requiresApproval) {
+        return createErrorResponse(
+          "APPROVAL_REQUIRED",
+          "This action requires multi-sig approval. Please initiate an approval request.",
+          409
+        );
+      }
+    }
+
+    if (stream.status !== "active" && stream.status !== "draft") {
+      return createErrorResponse(
+        "INVALID_STREAM_STATE",
+        "Only active or draft streams can be stopped",
+        409
+      );
+    }
+
+    const before = structuredClone(stream);
+    const updatedStream = {
+      ...stream,
+      nextAction: "withdraw" as const,
+      status: "ended" as const,
+      updatedAt: new Date().toISOString(),
+    };
+    db.streams.set(id, updatedStream);
+
+    recordPrivilegedStreamAuditEvent({
+      action: "stream.stop.override",
+      after: updatedStream as unknown as Record<string, unknown>,
+      before: before as unknown as Record<string, unknown>,
+      metadata: { resultingStatus: updatedStream.status },
+      request,
+      streamId: id,
+      targetAccount: updatedStream.recipient,
+    });
+
+    const payload = { data: updatedStream };
+    if (token) {
+      setIdempotency(db.idempotency, token, fingerprint, 200, payload);
+    }
+
+    logger.info("Stream stopped successfully", {
+      streamId: id,
+      action: "stop",
+      status: "success",
+    });
+
+    return NextResponse.json(payload);
   });
-
-  return NextResponse.json({ data: updatedStream });
 }

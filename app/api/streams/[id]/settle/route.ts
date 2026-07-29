@@ -1,10 +1,24 @@
 import { NextResponse } from "next/server";
-import { db, idempotencyToken, withLock } from "@/app/lib/db";
+import { db, withLock } from "@/app/lib/db";
+import { withIdempotency, settleStore } from "@/app/lib/idempotency";
+import { getCorrelationContext, logger } from "@/app/lib/logger";
+import { checkStreamOrgPolicy } from "@/app/lib/org-policy";
+import { recordPrivilegedStreamAuditEvent } from "@/app/lib/audit-log";
 import { getStellarSettlementClient } from "@/app/lib/stellar";
+
+type Context = { params: Promise<{ id: string }> };
 
 function createErrorResponse(code: string, message: string, status: number) {
   const context = getCorrelationContext();
   return NextResponse.json({ error: { code, message, request_id: context?.request_id } }, { status });
+}
+
+function errorResponse(code: string, message: string, status: number) {
+  return createErrorResponse(code, message, status);
+}
+
+function getHeader(request: Request, name: string): string | null {
+  return request.headers?.get?.(name) ?? null;
 }
 
 export async function POST(
@@ -12,69 +26,83 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const idempotencyKey = request.headers.get("Idempotency-Key") || undefined;
+  // IDEMPOTENCY: Settle is non-idempotent by nature — this wrapper ensures retries return the original response without re-executing the settlement
+  return withIdempotency(request, "settle", settleStore, async () => {
+    return withLock(id, async () => {
+      const stream = db.streams.get(id);
+      if (!stream) {
+        return errorResponse("STREAM_NOT_FOUND", `Stream '${id}' not found`, 404);
+      }
 
-  const result = await StreamService.applyAction(id, "settle", idempotencyKey);
+      const actorAddress = getHeader(request, "Actor-Wallet-Address");
+      const policyResult = actorAddress
+        ? checkStreamOrgPolicy(id, actorAddress, "settle")
+        : null;
+      if (policyResult) {
+        if (!policyResult.allowed) {
+          return errorResponse(policyResult.code, policyResult.message, policyResult.httpStatus);
+        }
+        if (policyResult.requiresApproval) {
+          return errorResponse(
+            "APPROVAL_REQUIRED",
+            "This action requires multi-sig approval. Please initiate an approval request.",
+            409
+          );
+        }
+      }
 
-  if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: result.status });
-  }
+      if (stream.status !== "active" && stream.status !== "paused") {
+        return errorResponse("INVALID_STREAM_STATE", "Only active or paused streams can be settled", 409);
+      }
 
-  return NextResponse.json({
-    data: {
-      ...result.data,
-      settlement: {
-        txHash: `fake-tx-${crypto.randomUUID().slice(0, 8)}`,
-        settledAt: new Date().toISOString(),
-      },
-    },
-  });
-  const idempotencyKey = request.headers.get("Idempotency-Key");
-
-  // 1. Quick idempotency check before locking
-  if (idempotencyKey && db.idempotency.has(idempotencyKey)) {
-    return NextResponse.json(db.idempotency.get(idempotencyKey));
-  }
-
-  // 2. Acquire lock for this stream ID to prevent race conditions
-  return await withLock(id, async () => {
-    // 3. Double-check idempotency inside the lock
-    if (idempotencyKey && db.idempotency.has(idempotencyKey)) {
-      return NextResponse.json(db.idempotency.get(idempotencyKey));
-    }
-
-    const stream = db.streams.get(id);
-    if (!stream) {
-      return createErrorResponse("STREAM_NOT_FOUND", `Stream '${id}' not found`, 404);
-    }
-
-    // 4. Validate state (Atomic check-and-set)
-    // Only active or paused streams can be settled. If it's already ended, this is a 409 or handled by idempotency.
-    if (stream.status !== "active" && stream.status !== "paused") {
-      return createErrorResponse("INVALID_STREAM_STATE", `Stream is in '${stream.status}' state and cannot be settled.`, 409);
-    }
-
-    // 5. Update state
-    stream.status = "ended";
-    stream.nextAction = "withdraw";
-    stream.updatedAt = new Date().toISOString();
-    db.streams.set(id, stream);
-
-    const responseData = {
-      data: {
+      const before = structuredClone(stream);
+      const txHash = `fake-tx-${crypto.randomUUID().slice(0, 8)}`;
+      const now = new Date().toISOString();
+      const updatedStream = {
         ...stream,
-        settlement: {
-          txHash: `fake-tx-${crypto.randomUUID().slice(0, 8)}`,
-          settledAt: new Date().toISOString(),
+        nextAction: "withdraw" as const,
+        settlementTxHash: txHash,
+        status: "ended" as const,
+        updatedAt: now,
+        withdrawal: {
+          attempts: 0,
+          lastCheckedAt: now,
+          requestedAt: now,
+          settlementTxHash: txHash,
+          state: "pending" as const,
         },
-      },
-    };
+      };
+      db.streams.set(id, updatedStream);
 
-    // 6. Store idempotency result
-    if (idempotencyKey) {
-      db.idempotency.set(idempotencyKey, responseData);
-    }
+      try {
+        const settlement = await getStellarSettlementClient().settleStream({ streamId: id });
 
-    return NextResponse.json(responseData);
+        db.streams.set(id, updatedStream);
+
+        recordPrivilegedStreamAuditEvent({
+          action: "stream.settle",
+          after: updatedStream as any,
+          before: before as any,
+          metadata: {
+            settlementTxHash: settlement.txHash,
+          },
+          request,
+          streamId: id,
+          targetAccount: updatedStream.recipient,
+        });
+
+        const payload = { data: { ...updatedStream, settlement } };
+
+        logger.info("Stream settled successfully", {
+          streamId: id,
+          action: "settle",
+          status: "success",
+        });
+
+        return NextResponse.json(payload);
+      } catch {
+        return errorResponse("SETTLEMENT_FAILED", "Failed to settle stream on Stellar/Soroban", 502);
+      }
+    });
   });
 }

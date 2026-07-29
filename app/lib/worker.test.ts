@@ -1,7 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import { MockWorker } from './worker';
 import { MockQueue } from './queue';
 import { withCorrelationContext, logger, type CorrelationContext } from './logger';
+
+const vi = jest;
 
 describe('Mock Worker System', () => {
   let queue: MockQueue;
@@ -24,7 +26,7 @@ describe('Mock Worker System', () => {
         stream_id: 'stream-123',
       };
 
-      const processor = vi.fn().mockResolvedValue(undefined);
+      const processor = vi.fn<any>().mockResolvedValue(undefined);
       worker = new MockWorker(queue, processor);
 
       await withCorrelationContext(context, async () => {
@@ -41,7 +43,7 @@ describe('Mock Worker System', () => {
         correlation_id: 'corr-1',
       };
 
-      const processor = vi.fn().mockResolvedValue(undefined);
+      const processor = vi.fn<any>().mockResolvedValue(undefined);
       worker = new MockWorker(queue, processor);
 
       await withCorrelationContext(context, async () => {
@@ -69,7 +71,7 @@ describe('Mock Worker System', () => {
         correlation_id: 'corr-1',
       };
 
-      const processor = vi.fn().mockRejectedValue(new Error('Test error'));
+      const processor = vi.fn<any>().mockRejectedValue(new Error('Test error'));
       worker = new MockWorker(queue, processor);
 
       await withCorrelationContext(context, async () => {
@@ -98,7 +100,7 @@ describe('Mock Worker System', () => {
         stream_id: 'stream-123',
       };
 
-      const processor = vi.fn().mockResolvedValue(undefined);
+      const processor = vi.fn<any>().mockResolvedValue(undefined);
       worker = new MockWorker(queue, processor);
 
       await withCorrelationContext(context, async () => {
@@ -126,7 +128,7 @@ describe('Mock Worker System', () => {
         correlation_id: 'corr-1',
       };
 
-      const processor = vi.fn().mockRejectedValue(new Error('Test error'));
+      const processor = vi.fn<any>().mockRejectedValue(new Error('Test error'));
       worker = new MockWorker(queue, processor);
 
       await withCorrelationContext(context, async () => {
@@ -155,7 +157,7 @@ describe('Mock Worker System', () => {
         correlation_id: 'corr-1',
       };
 
-      const processor = vi.fn().mockRejectedValue(new Error('Test error'));
+      const processor = vi.fn<any>().mockRejectedValue(new Error('Test error'));
       worker = new MockWorker(queue, processor);
 
       await withCorrelationContext(context, async () => {
@@ -185,7 +187,7 @@ describe('Mock Worker System', () => {
         correlation_id: 'corr-1',
       };
 
-      const processor = vi.fn().mockResolvedValue(undefined);
+      const processor = vi.fn<any>().mockResolvedValue(undefined);
       worker = new MockWorker(queue, processor);
 
       await withCorrelationContext(context, async () => {
@@ -205,7 +207,7 @@ describe('Mock Worker System', () => {
         correlation_id: 'corr-1',
       };
 
-      const processor = vi.fn().mockResolvedValue(undefined);
+      const processor = vi.fn<any>().mockResolvedValue(undefined);
       worker = new MockWorker(queue, processor);
 
       await withCorrelationContext(context, async () => {
@@ -236,7 +238,7 @@ describe('Mock Worker System', () => {
         correlation_id: 'corr-1',
       };
 
-      const processor = vi.fn()
+      const processor = vi.fn<any>()
         .mockRejectedValueOnce(new Error('Test error'))
         .mockResolvedValue(undefined);
       worker = new MockWorker(queue, processor);

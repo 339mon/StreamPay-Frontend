@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { extractCorrelationContext, withCorrelationContext, logger, updateCorrelationContext } from '@/app/lib/logger';
+import { extractCorrelationContext, correlationContext, logger, updateCorrelationContext } from '@/app/lib/logger';
 
 // Internal headers that should not be exposed to external clients
 const INTERNAL_HEADERS = [
@@ -37,7 +37,7 @@ export async function withCorrelationMiddleware(
   });
   
   // Execute handler with correlation context
-  return withCorrelationContext(context, async () => {
+  return correlationContext.run(context, async () => {
     const response = await handler();
     
     // Strip internal headers from response
@@ -85,7 +85,8 @@ export function isTrustedInternalRequest(request: NextRequest): boolean {
   // In production, validate via auth token or service mesh identity
   const internalAuthToken = request.headers.get('x-internal-auth');
   const config = (global as any).streampayConfig;
-  if (internalAuthToken && config && internalAuthToken === config.internalAuthToken) {
+  const configuredToken = config?.internalAuthToken ?? process.env.INTERNAL_AUTH_TOKEN;
+  if (internalAuthToken && configuredToken && internalAuthToken === configuredToken) {
     return true;
   }
   

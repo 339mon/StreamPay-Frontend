@@ -5,5 +5,29 @@ coverage/
 .env
 .env.local
 .env.*.local
+.codex
 *.log
 .DS_Store
+contracts/target/
+contracts/.contracts/
+
+# Editor / IDE state
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.history/
+
+# OS junk
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Local tooling caches
+.eslintcache
+.turbo/
+.cache/
+*.tsbuildinfo
+
+litellm_config.yaml

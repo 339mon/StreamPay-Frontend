@@ -4,6 +4,8 @@
 
 This document describes the security hardening implemented for Stellar network configuration in StreamPay-Frontend. The changes prevent dangerous configuration mistakes that could lead to real asset loss.
 
+For internal worker-to-API authentication and Kubernetes network policy guidance, see `docs/internal-service-auth.md`.
+
 ## Security Problem Statement
 
 The following dangerous scenarios are now prevented:
@@ -55,7 +57,30 @@ import { bootstrapApplication } from './config/bootstrap';
 const config = bootstrapApplication();
 ```
 
-### 3. Secret Redaction in Logging
+### 3. Browser API Allowlist and CORS
+
+**Files:** `middleware.ts`, `app/lib/cors.ts`, `app/lib/config/index.ts`
+
+The public API surface is protected by an explicit `ALLOWED_ORIGINS` allowlist. The value is a comma-separated list of valid origins, such as `https://app.partner.com,http://localhost:3000`.
+
+- `ALLOWED_ORIGINS` is required for all environments.
+- In `production`, wildcard origin `*` is not permitted.
+- Preflight responses use a 10-minute cache (`Access-Control-Max-Age: 600`) to avoid breaking deploys while preserving explicit origin validation.
+- No `Access-Control-Allow-Origin` header is reflected for disallowed browser origins.
+- The API does not enable credentialed CORS by default, so bearer tokens remain the expected auth mechanism.
+
+### 4. JWKS Endpoint and JWT Rotation
+
+A public JWKS endpoint is now available at `/\.well-known/jwks.json` for verification of signed JWTs. The endpoint returns the configured signing keys and their key IDs, enabling downstream consumers to validate tokens without sharing the secret material directly.
+
+To support key rotation, the auth layer now:
+- signs new tokens with a configurable `kid` header,
+- accepts tokens signed with the current secret and an optional previous secret,
+- exposes the current and previous keys through the JWKS document when configured.
+
+This allows gradual migration to a new signing secret while preserving compatibility for already-issued tokens.
+
+### 5. Secret Redaction in Logging
 
 **File:** `app/lib/logger.ts`
 
@@ -75,7 +100,7 @@ logger.info('Configuration loaded', {
 });
 ```
 
-### 4. String Literal Removal
+### 6. String Literal Removal
 
 All hardcoded network passphrases and Horizon URLs have been removed from:
 
@@ -84,7 +109,7 @@ All hardcoded network passphrases and Horizon URLs have been removed from:
 - `app/api/identity/me/route.ts` - Now uses `getConfig().jwtSecret`
 - `detector.ts` - Now uses `getConfig().anomalyThresholds`
 
-### 5. CI Guardrails
+### 7. CI Guardrails
 
 **File:** `.github/workflows/ci.yml`
 
@@ -95,7 +120,7 @@ CI is enforced to use testnet only:
 - Fails if mainnet configuration detected
 - Fails if production JWT_SECRET detected
 
-### 6. UI Safety Labels
+### 8. UI Safety Labels
 
 **File:** `app/components/NetworkBadge.tsx`
 

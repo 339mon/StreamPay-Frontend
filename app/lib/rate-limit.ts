@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
+import { getCorrelationContext } from "./logger";
 import { RATE_LIMITS, getLimitForRoute, LimitType } from "./rate-limit-config";
 import { getRateLimitStore } from "./rate-limit-store";
 
 const JWT_SECRET = process.env.JWT_SECRET || "streampay-dev-secret-do-not-use-in-prod";
+
+function getHeader(request: Request, name: string): string | null {
+  return request.headers?.get?.(name) ?? null;
+}
 
 export interface ClientIdentity {
   type: "api_key" | "wallet" | "ip";
@@ -11,11 +16,11 @@ export interface ClientIdentity {
 }
 
 function extractApiKey(request: Request): string | null {
-  return request.headers.get("X-API-Key");
+  return getHeader(request, "X-API-Key");
 }
 
 function extractWalletFromJwt(request: Request): string | null {
-  const authHeader = request.headers.get("authorization");
+  const authHeader = getHeader(request, "authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     return null;
   }
@@ -31,8 +36,8 @@ function extractWalletFromJwt(request: Request): string | null {
 
 function extractIp(request: Request): string {
   return (
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
+    getHeader(request, "x-forwarded-for")?.split(",")[0]?.trim() ||
+    getHeader(request, "x-real-ip") ||
     "unknown"
   );
 }
@@ -71,7 +76,12 @@ export async function checkRateLimit(
   const store = getRateLimitStore();
   const config = RATE_LIMITS[limitType];
 
-  const result = await store.check(identity.value, config.limit, config.windowMs);
+  // Key per limit tier so one endpoint class cannot drain another's bucket.
+  const result = await store.check(
+    `${limitType}:${identity.value}`,
+    config.limit,
+    config.windowMs,
+  );
 
   return {
     allowed: result.allowed,
@@ -81,11 +91,13 @@ export async function checkRateLimit(
 }
 
 export function rateLimitResponse(retryAfter: number) {
+  const requestId = getCorrelationContext()?.request_id ?? `req-${crypto.randomUUID()}`;
   return NextResponse.json(
     {
       error: {
         code: "rate_limit_exceeded",
         message: "Rate limit exceeded. Please try again later.",
+        request_id: requestId,
       },
     },
     {
