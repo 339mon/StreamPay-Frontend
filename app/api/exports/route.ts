@@ -8,6 +8,7 @@ import { recordRequest, recordThrottle } from "@/app/lib/rate-limit-metrics";
 import { withTimeout } from "@/src/middleware/timeout";
 import { withStrongEtag } from "@/src/middleware/etag";
 import { getCorrelationContext, logger } from "@/app/lib/logger";
+import { logAccessEvent } from "@/src/middleware/accessLog";
 
 function getRequestUrl(request: Request): URL {
   try {
@@ -139,14 +140,20 @@ function recordExportMetrics(method: string, status: number, startedAt: [number,
 export async function POST(request: Request) {
   const startedAt = process.hrtime();
   let status = 500;
+  let actorId: string | undefined;
+  let exportJobId: string | undefined;
+  let errorCode: string | undefined;
 
   try {
     const response = await withTimeout(EXPORTS_TIMEOUT_MS, request, async (_signal) => {
       const { exportRepository } = getStore();
       const actor = tryAuthenticateRequest(request);
       if (!actor) {
+        errorCode = "UNAUTHORIZED";
         return createErrorResponse("UNAUTHORIZED", "Missing or invalid authorization header", 401);
       }
+
+      actorId = actor.walletAddress;
 
       // Limit by the verified wallet, after auth, so a forged bearer token can
       // neither mint fresh buckets nor spend another user's budget.
@@ -161,6 +168,7 @@ export async function POST(request: Request) {
 
       if (!rateCheck.allowed) {
         recordThrottle(url.pathname, limitType, identity.type, identity.displayValue);
+        errorCode = "RATE_LIMITED";
         return rateLimitResponse(rateCheck.retryAfter!);
       }
       recordRequest(url.pathname);
@@ -183,16 +191,29 @@ export async function POST(request: Request) {
       createAuditRecord(id, "export.requested", { requestedAt, retentionDays: EXPORT_RETENTION_DAYS });
       scheduleExportJob(id);
 
+      exportJobId = id;
       return NextResponse.json({ data: job, links: { self: `/api/exports/${id}` } }, { status: 201 });
     });
 
     status = response.status;
     return response;
   } catch (error) {
+    errorCode = "INTERNAL_ERROR";
     const errResp = createErrorResponse("INTERNAL_ERROR", "Export request failed", 500);
     status = errResp.status;
     return errResp;
   } finally {
+    const hrtime = process.hrtime(startedAt);
+    const durationMs = hrtime[0] * 1000 + hrtime[1] / 1e6;
+    logAccessEvent({
+      method: "POST",
+      path: "/api/exports",
+      status,
+      durationMs,
+      actorId,
+      exportJobId,
+      ...(errorCode ? { errorCode } : {}),
+    });
     recordExportMetrics("POST", status, startedAt);
   }
 }
@@ -200,14 +221,19 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
   const startedAt = process.hrtime();
   let status = 500;
+  let actorId: string | undefined;
+  let errorCode: string | undefined;
 
   try {
     const response = await withTimeout(EXPORTS_TIMEOUT_MS, request, async (_signal) => {
       const { exportRepository } = getStore();
       const actor = tryAuthenticateRequest(request);
       if (!actor) {
+        errorCode = "UNAUTHORIZED";
         return createErrorResponse("UNAUTHORIZED", "Missing or invalid authorization header", 401);
       }
+
+      actorId = actor.walletAddress;
 
       const url = getRequestUrl(request);
       const limitType = getLimitForRoute("GET", url.pathname);
@@ -220,6 +246,7 @@ export async function GET(request: Request) {
 
       if (!rateCheck.allowed) {
         recordThrottle(url.pathname, limitType, identity.type, identity.displayValue);
+        errorCode = "RATE_LIMITED";
         return rateLimitResponse(rateCheck.retryAfter!);
       }
       recordRequest(url.pathname);
@@ -270,10 +297,21 @@ export async function GET(request: Request) {
     status = response.status;
     return response;
   } catch (error) {
+    errorCode = "INTERNAL_ERROR";
     const errResp = createErrorResponse("INTERNAL_ERROR", "Export listing failed", 500);
     status = errResp.status;
     return errResp;
   } finally {
+    const hrtime = process.hrtime(startedAt);
+    const durationMs = hrtime[0] * 1000 + hrtime[1] / 1e6;
+    logAccessEvent({
+      method: "GET",
+      path: "/api/exports",
+      status,
+      durationMs,
+      actorId,
+      ...(errorCode ? { errorCode } : {}),
+    });
     recordExportMetrics("GET", status, startedAt);
   }
 }
