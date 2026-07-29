@@ -179,9 +179,6 @@ fn initialize_does_not_allowlist_tokens() {
 
 // ── `init_with_token_allowlist` (new path) ────────────────────────────────────
 
-    assert_contract_error!(data.client.try_withdraw(&data.recipient, &id, &500), Error::ContractPaused);
-}
-
 #[test]
 fn init_with_token_allowlist_handles_empty_token_list() {
     // An empty allowlist is a valid deployment choice: tokens can be
@@ -1485,6 +1482,11 @@ fn set_token_allowed_wrong_admin_returns_unauthorized() {
 
     client.initialize(&data.admin);
 
+    let result = client.try_set_token_allowed(&wrong, &data.tokens[0], &true);
+    let err = result.expect_err("wrong admin should fail");
+    assert_eq!(err, Ok(Error::Unauthorized));
+}
+
 // ── Authorization boundaries ────────────────────────────────────────────────
 
 #[test]
@@ -1515,9 +1517,9 @@ fn start_stream_wrong_sender_fails() {
         &10,
     );
 
-    data.env.ledger().set_timestamp(1_300);
-    let withdrawn = client.withdraw(&id, &large);
-    assert_eq!(withdrawn, large);
+    data.env.mock_auths(&[]);
+    data.client.start_stream(&id);
+}
 
 #[test]
 fn withdraw_wrong_recipient_fails() {
@@ -2206,13 +2208,13 @@ fn create_active_stream(data: &TestData) -> u64 {
 }
 
 #[test]
-fn init_with_token_allowlist_for_org_sets_admin_unpauses_and_allowlists() {
+fn init_token_allowlist_for_org_sets_admin_unpauses_and_allowlists() {
     let data = setup_init();
     let client = contract_client(&data.env);
 
     let org = Address::generate(&data.env);
 
-    client.init_with_token_allowlist_for_org(
+    client.init_token_allowlist_for_org(
         &data.admin,
         &to_sdk_vec(&data.env, &data.tokens),
         &org,
@@ -2255,20 +2257,20 @@ fn init_with_token_allowlist_for_org_sets_admin_unpauses_and_allowlists() {
 }
 
 #[test]
-fn init_with_token_allowlist_for_org_twice_returns_already_initialized() {
+fn init_token_allowlist_for_org_twice_returns_already_initialized() {
     let data = setup_init();
     let client = contract_client(&data.env);
 
     let org = Address::generate(&data.env);
 
-    client.init_with_token_allowlist_for_org(
+    client.init_token_allowlist_for_org(
         &data.admin,
         &to_sdk_vec(&data.env, &data.tokens),
         &org,
         &to_sdk_vec(&data.env, &data.tokens),
     );
 
-    let result = client.try_init_with_token_allowlist_for_org(
+    let result = client.try_init_token_allowlist_for_org(
         &data.admin,
         &to_sdk_vec(&data.env, &data.tokens),
         &org,
@@ -2280,13 +2282,13 @@ fn init_with_token_allowlist_for_org_twice_returns_already_initialized() {
 }
 
 #[test]
-fn init_with_token_allowlist_for_org_emits_no_events() {
+fn init_token_allowlist_for_org_emits_no_events() {
     let data = setup_init();
     let client = contract_client(&data.env);
 
     let org = Address::generate(&data.env);
 
-    client.init_with_token_allowlist_for_org(
+    client.init_token_allowlist_for_org(
         &data.admin,
         &to_sdk_vec(&data.env, &data.tokens),
         &org,
@@ -2296,20 +2298,20 @@ fn init_with_token_allowlist_for_org_emits_no_events() {
     let events = data.env.events().all();
     assert!(
         events.is_empty(),
-        "init_with_token_allowlist_for_org should emit zero events, got: {events:?}",
+        "init_token_allowlist_for_org should emit zero events, got: {events:?}",
     );
 }
 
 #[test]
 #[should_panic(expected = "HostError: Error(Auth, InvalidAction)")]
-fn init_with_token_allowlist_for_org_unauthorized_caller_fails() {
+fn init_token_allowlist_for_org_unauthorized_caller_fails() {
     let data = setup_init();
     let client = contract_client(&data.env);
     let impostor = Address::generate(&data.env);
     let org = Address::generate(&data.env);
 
     data.env.mock_auths(&[]);
-    client.init_with_token_allowlist_for_org(
+    client.init_token_allowlist_for_org(
         &impostor,
         &to_sdk_vec(&data.env, &data.tokens),
         &org,

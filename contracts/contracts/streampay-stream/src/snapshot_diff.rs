@@ -234,7 +234,7 @@ mod tests {
         start_time: u64,
         end_time: u64,
         status: StreamStatus,
-        pause_time: u64,
+        paused_at: u64,
         total_paused_duration: u64,
     ) -> Stream {
         let addr = Address::generate(env);
@@ -251,8 +251,9 @@ mod tests {
             duration,
             last_update: start_time,
             status,
-            pause_time,
+            paused_at,
             total_paused_duration,
+            fee_bps: 0,
         }
     }
 

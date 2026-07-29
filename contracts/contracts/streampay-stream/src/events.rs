@@ -198,7 +198,7 @@ pub fn paused(env: &Env, stream_id: u64, sender: &Address, pause_time: u64, time
     StreamPaused {
         stream_id,
         sender: sender.clone(),
-        paused_at,
+        paused_at: pause_time,
         timestamp,
     }
     .publish(env);

@@ -86,6 +86,7 @@ pub(crate) enum DataKey {
     /// Absent means no fee (equivalent to `0`). Stored in instance storage so
     /// it lives for the lifetime of the contract.
     FeeBps,
+    WithdrawerAllowlist(u64),
 }
 
 /// Threshold and absolute target values are expressed in ledger sequences.
@@ -418,6 +419,70 @@ pub fn get_fee_bps(env: &Env) -> u32 {
         extend_instance_ttl(env, &DataKey::FeeBps);
     }
     fee.unwrap_or(0)
+}
+
+/// Adds `withdrawer` to the per-stream withdrawer allowlist.
+///
+/// This is a no-op if the withdrawer is already in the list.
+pub fn add_withdrawer(env: &Env, stream_id: u64, withdrawer: &Address) {
+    let mut list: Vec<Address> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::WithdrawerAllowlist(stream_id))
+        .unwrap_or(Vec::new(env));
+    if !list.contains(withdrawer) {
+        list.push_back(withdrawer.clone());
+    }
+    env.storage()
+        .persistent()
+        .set(&DataKey::WithdrawerAllowlist(stream_id), &list);
+    extend_withdrawer_allowlist_ttl(env, stream_id);
+}
+
+/// Removes `withdrawer` from the per-stream withdrawer allowlist.
+///
+/// This is a no-op if the withdrawer is not in the list.
+pub fn remove_withdrawer(env: &Env, stream_id: u64, withdrawer: &Address) {
+    let mut list: Vec<Address> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::WithdrawerAllowlist(stream_id))
+        .unwrap_or(Vec::new(env));
+    if let Some(pos) = list.first_index_of(withdrawer) {
+        list.remove(pos);
+    }
+    env.storage()
+        .persistent()
+        .set(&DataKey::WithdrawerAllowlist(stream_id), &list);
+    extend_withdrawer_allowlist_ttl(env, stream_id);
+}
+
+/// Returns `true` if `withdrawer` is in the per-stream allowlist for `stream_id`.
+pub fn is_withdrawer_allowed(env: &Env, stream_id: u64, withdrawer: &Address) -> bool {
+    let list: Vec<Address> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::WithdrawerAllowlist(stream_id))
+        .unwrap_or(Vec::new(env));
+    if list.is_empty() {
+        return false;
+    }
+    list.contains(withdrawer)
+}
+
+/// Returns the per-stream withdrawer allowlist for `stream_id`.
+///
+/// Returns an empty list if no allowlist has been set.
+pub fn get_withdrawer_allowlist(env: &Env, stream_id: u64) -> Vec<Address> {
+    let list: Vec<Address> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::WithdrawerAllowlist(stream_id))
+        .unwrap_or(Vec::new(env));
+    if !list.is_empty() {
+        extend_withdrawer_allowlist_ttl(env, stream_id);
+    }
+    list
 }
 
 #[cfg(test)]

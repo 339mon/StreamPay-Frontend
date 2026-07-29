@@ -59,7 +59,7 @@ fn to_weights(env: &Env, weights: &[u64; 3]) -> Vec<u64> {
     v
 }
 
-fn client(env: &Env, admin: &Address) -> crate::ContractClient<'_> {
+fn client<'a>(env: &'a Env, admin: &'a Address) -> crate::ContractClient<'a> {
     let contract_id = env.register(Contract, ());
     let client = crate::ContractClient::new(env, &contract_id);
     client.initialize(admin);
@@ -227,7 +227,7 @@ fn create_split_stream_emits_event() {
         })
         .expect("should find split_created event");
     let (_, _, data) = ev;
-    let (ev_id, ..): (u64, ..) = soroban_sdk::IntoVal::into_val(&td.env, &data);
+    let ev_id: u64 = soroban_sdk::IntoVal::into_val(&td.env, &data);
     assert_eq!(ev_id, id);
 }
 
@@ -374,7 +374,7 @@ fn withdraw_split_emits_event() {
         })
         .expect("should find split_withdrawn event");
     let (_, _, data) = ev;
-    let (ev_id, ..): (u64, ..) = soroban_sdk::IntoVal::into_val(&td.env, &data);
+    let ev_id: u64 = soroban_sdk::IntoVal::into_val(&td.env, &data);
     assert_eq!(ev_id, id);
 }
 
@@ -529,7 +529,7 @@ fn cancel_split_stream_emits_event() {
         })
         .expect("should find split_cancelled event");
     let (_, _, data) = ev;
-    let (ev_id, ..): (u64, ..) = soroban_sdk::IntoVal::into_val(&td.env, &data);
+    let ev_id: u64 = soroban_sdk::IntoVal::into_val(&td.env, &data);
     assert_eq!(ev_id, id);
 }
 
