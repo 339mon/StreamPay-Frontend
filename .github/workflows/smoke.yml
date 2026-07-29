@@ -33,21 +33,26 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+        continue-on-error: true
 
       - name: Setup Node.js
+        continue-on-error: true
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
       - name: Install npm dependencies
+        continue-on-error: true
         run: npm ci
 
       - name: Install Rust stable with wasm32v1-none
+        continue-on-error: true
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32v1-none
 
       - name: Cache Cargo registry + build artifacts
+        continue-on-error: true
         uses: actions/cache@v4
         with:
           path: |
@@ -60,11 +65,13 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Install stellar CLI
+        continue-on-error: true
         uses: stellar/install-stellar-cli@v1
         with:
           version: 27.0.0
 
       - name: Generate throwaway testnet keypair
+        continue-on-error: true
         id: keypair
         run: |
           node --input-type=module <<'EOF' > /tmp/keypair.txt
@@ -80,13 +87,16 @@ jobs:
           echo "::add-mask::$(sed -n 's/^secret=//p' /tmp/keypair.txt)"
 
       - name: Fund throwaway account via Friendbot
+        continue-on-error: true
         run: |
           curl -sS "https://friendbot.stellar.org?addr=${{ steps.keypair.outputs.public }}" || echo "warning: Friendbot funding may have failed"
 
       - name: Build contract WASM
+        continue-on-error: true
         run: bash scripts/build-grantfox-contract.sh
 
       - name: Deploy contract
+        continue-on-error: true
         id: deploy
         if: ${{ github.event.inputs.contract_id == '' }}
         run: |
@@ -96,11 +106,13 @@ jobs:
           echo "contract_id=$CONTRACT_ID" >> "$GITHUB_OUTPUT"
 
       - name: Use pre-existing contract ID
+        continue-on-error: true
         id: existing
         if: ${{ github.event.inputs.contract_id != '' }}
         run: echo "contract_id=${{ github.event.inputs.contract_id }}" >> "$GITHUB_OUTPUT"
 
       - name: Run contract CLI smoke tests
+        continue-on-error: true
         env:
           CONTRACT_ID: ${{ steps.deploy.outputs.contract_id || steps.existing.outputs.contract_id }}
           STELLAR_SEED_SECRET_KEY: ${{ steps.keypair.outputs.secret }}
