@@ -23,9 +23,17 @@
  *   A `<LiveRegion>` announces status changes (submitting, success, error)
  *   so screen-reader users receive feedback without visual focus shifts.
  *
+ * ### tokens-v7 — Design-token spacing & typography
+ *   All spacing, typography, and border-radius values now reference global
+ *   CSS custom properties (see `app/globals.css`, `.create-stream-form`
+ *   rule block). Inline `React.CSSProperties` objects have been replaced
+ *   with BEM-style class names so updates to the design token scale
+ *   propagate automatically across dark, light, and high-contrast themes.
+ *
  * ## Accessibility (WCAG 2.1 AA)
  * - All form controls have associated `<label>` elements.
- * - Focus-visible ring is inherited from `globals.css` (`@layer focus`).
+ * - Focus-visible ring is provided by `app/styles/focus.css` (`@layer focus`)
+ *   via the `.csf-field` class; inline `border` no longer overrides it.
  * - Keyboard shortcuts do not override browser or OS reserved combos.
  * - Skeleton is marked `aria-hidden` and includes an `aria-busy` attribute
  *   on the parent so ATs know content is loading.
@@ -66,25 +74,6 @@ export interface CreateStreamFormProps {
   className?: string;
 }
 
-// ── Shared styles ─────────────────────────────────────────────────────────────
-
-const fieldStyle: React.CSSProperties = {
-  width: "100%",
-  background: "var(--panel)",
-  border: "1px solid var(--border)",
-  color: "var(--foreground)",
-  padding: "0.75rem",
-  borderRadius: "var(--radius-md, 0.5rem)",
-  fontSize: "var(--text-base, 1rem)",
-};
-
-const labelStyle: React.CSSProperties = {
-  display: "block",
-  fontSize: "var(--text-sm, 0.875rem)",
-  marginBottom: "0.5rem",
-  color: "var(--muted-light, #a1a1aa)",
-};
-
 // ── Skeleton layout ───────────────────────────────────────────────────────────
 
 /**
@@ -92,34 +81,36 @@ const labelStyle: React.CSSProperties = {
  * from loading→loaded is as jump-free as possible.
  *
  * All skeleton elements are `aria-hidden`; the parent carries `aria-busy`.
+ * Spacing uses `.csf-skeleton` and `.csf-skeleton__*` classes that reference
+ * `--space-*` tokens (see `app/globals.css`).
  */
 function FormSkeleton() {
   return (
     <div
       aria-hidden="true"
-      style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}
+      className="csf-skeleton"
       data-testid="create-stream-skeleton"
     >
       {/* Recipient field skeleton */}
-      <div>
-        <Skeleton variant="label" style={{ marginBottom: "0.5rem" } as React.CSSProperties} />
+      <div className="csf-skeleton__field">
+        <Skeleton variant="label" className="skeleton--label" />
         <Skeleton variant="text" width="100%" height="2.75rem" />
       </div>
 
       {/* Amount + Token grid skeleton */}
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "1rem" }}>
-        <div>
-          <Skeleton variant="label" style={{ marginBottom: "0.5rem" } as React.CSSProperties} />
+      <div className="csf-skeleton__grid">
+        <div className="csf-skeleton__field">
+          <Skeleton variant="label" className="skeleton--label" />
           <Skeleton variant="text" width="100%" height="2.75rem" />
         </div>
-        <div>
-          <Skeleton variant="label" style={{ marginBottom: "0.5rem" } as React.CSSProperties} />
+        <div className="csf-skeleton__field">
+          <Skeleton variant="label" className="skeleton--label" />
           <Skeleton variant="badge" width="100%" height="2.75rem" />
         </div>
       </div>
 
       {/* Action buttons skeleton */}
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: "1rem" }}>
+      <div className="csf-skeleton__actions">
         <Skeleton variant="button" />
         <Skeleton variant="button" />
       </div>
@@ -225,7 +216,16 @@ export function CreateStreamForm({
   // ── Render form ────────────────────────────────────────────────────────────
 
   return (
-    <div className={className} data-testid="create-stream-form-wrapper">
+    /*
+     * .create-stream-form — scoping root for all CSS token rules.
+     * Spacing, typography, and border-radius are applied via class names
+     * defined in app/globals.css (.csf-*) rather than inline styles, so
+     * the design token scale propagates automatically to all themes.
+     */
+    <div
+      className={`create-stream-form${className ? ` ${className}` : ""}`}
+      data-testid="create-stream-form-wrapper"
+    >
       {/* Screen reader live region — announces state changes */}
       <LiveRegion
         message={announcement}
@@ -236,13 +236,13 @@ export function CreateStreamForm({
       <form
         data-form="create-stream"
         onSubmit={handleSubmit}
-        style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}
         noValidate
       >
         {/* ── Recipient ─────────────────────────────────────────────── */}
-        <div>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-            <label htmlFor="csf-recipient" style={labelStyle}>
+        <div className="csf-field-group">
+          {/* Label row: label + Alt+R KbdHint side by side */}
+          <div className="csf-label-row">
+            <label htmlFor="csf-recipient" className="csf-label">
               Recipient address
             </label>
             {/* Keyboard shortcut hint: Alt+R focuses this field */}
@@ -262,22 +262,24 @@ export function CreateStreamForm({
             placeholder="GABC…"
             autoComplete="off"
             spellCheck={false}
-            style={fieldStyle}
+            className="csf-field"
             aria-describedby="csf-recipient-hint"
           />
-          <p
-            id="csf-recipient-hint"
-            style={{ margin: "0.25rem 0 0", fontSize: "var(--text-xs, 0.75rem)", color: "var(--muted, #71717a)" }}
-          >
+          <p id="csf-recipient-hint" className="csf-hint">
             Stellar address of the stream recipient.
           </p>
         </div>
 
         {/* ── Amount + Token ─────────────────────────────────────────── */}
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "1rem" }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-              <label htmlFor="csf-amount" style={labelStyle}>
+        {/*
+         * .csf-grid → `display: grid; grid-template-columns: 2fr 1fr;
+         *              gap: var(--space-4)`  (see globals.css)
+         */}
+        <div className="csf-grid">
+          <div className="csf-field-group">
+            {/* Label row: label + Alt+A KbdHint side by side */}
+            <div className="csf-label-row">
+              <label htmlFor="csf-amount" className="csf-label">
                 Amount
               </label>
               {/* Keyboard shortcut hint: Alt+A focuses this field */}
@@ -297,18 +299,18 @@ export function CreateStreamForm({
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="100"
-              style={fieldStyle}
+              className="csf-field"
             />
           </div>
-          <div>
-            <label htmlFor="csf-token" style={{ ...labelStyle, marginBottom: "0.5rem" }}>
+          <div className="csf-field-group">
+            <label htmlFor="csf-token" className="csf-label">
               Token
             </label>
             <select
               id="csf-token"
               value={token}
               onChange={(e) => setToken(e.target.value as StreamToken)}
-              style={fieldStyle}
+              className="csf-field"
             >
               <option value="XLM">XLM</option>
               <option value="USDC">USDC</option>
@@ -317,11 +319,15 @@ export function CreateStreamForm({
         </div>
 
         {/* ── Actions ────────────────────────────────────────────────── */}
-        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "1rem" }}>
+        {/*
+         * .csf-actions → `display: flex; justify-content: flex-end;
+         *                 align-items: center; gap: var(--space-4)`
+         */}
+        <div className="csf-actions">
           {/* Cancel button with Esc hint */}
           <button
             type="button"
-            className="button button--secondary"
+            className="button button--secondary csf-field"
             onClick={handleCancel}
             aria-label="Cancel stream creation"
           >
@@ -337,7 +343,7 @@ export function CreateStreamForm({
           {/* Submit button with Ctrl+Enter hint */}
           <button
             type="submit"
-            className={`button button--primary${isSubmitting ? " button--busy" : ""}`}
+            className={`button button--primary csf-field${isSubmitting ? " button--busy" : ""}`}
             disabled={isSubmitting}
             aria-label={isSubmitting ? "Creating stream, please wait" : "Create stream"}
           >

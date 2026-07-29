@@ -120,6 +120,12 @@
   --space-6: 1.5rem;    /* 24px */
   --space-8: 2rem;      /* 32px */
 
+  /* ── Border Radius Scale ── */
+  --radius-sm: 4px;       /* small chips, badges */
+  --radius-md: 0.5rem;    /* 8px — form fields, cards (CreateStreamForm) */
+  --radius-full: 9999px;  /* pill buttons, progress bars */
+  --radius-xl: 1.25rem;   /* 20px — large cards (StreamRow) */
+
   /* ── Typography Scale ── */
   --text-xs: 0.75rem;
   --text-sm: 0.875rem;
@@ -1034,6 +1040,124 @@ a:hover {
   text-decoration: underline;
   text-underline-offset: 2px;
   text-transform: uppercase;
+}
+
+/* ─── CreateStreamForm — design tokens v7 ────────────────────────────────
+ *
+ * All spacing, typography, and radius values use design tokens from :root.
+ * Inline styles in CreateStreamForm.tsx have been replaced with these classes
+ * so that future token updates propagate automatically across themes (dark,
+ * light, high-contrast) without touching the component source.
+ *
+ * BEM-style naming mirrors the .stream-row pattern:
+ *   .create-stream-form         — wrapper
+ *   .csf-field-group            — a label + input pair
+ *   .csf-label-row              — flex row holding label + KbdHint
+ *   .csf-label                  — <label> element
+ *   .csf-field                  — <input> / <select> element (also in focus.css)
+ *   .csf-hint                   — helper text beneath a field
+ *   .csf-grid                   — 2-col amount/token grid
+ *   .csf-actions                — flex row for Cancel + Submit buttons
+ *   .csf-skeleton               — skeleton wrapper
+ *   .csf-skeleton__field        — individual skeleton field group
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+.create-stream-form {
+  /* no extra styles needed on the wrapper; className is used as scoping hook */
+}
+
+/* Top-level form: vertical stack with token gap */
+.create-stream-form form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* Label + KbdHint row */
+.csf-label-row {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+/* <label> typography */
+.csf-label {
+  color: var(--muted-light, #a1a1aa);
+  display: block;
+  font-size: var(--text-sm);
+  /* margin-bottom is applied by .csf-label-row when used inside the flex row,
+     or directly on the element when used standalone */
+  margin-bottom: var(--space-2);
+}
+
+/* Standalone label (not inside a flex row) — no extra margin needed
+   when the wrapper already provides it */
+.csf-label-row .csf-label {
+  margin-bottom: 0;
+}
+
+/* <input> and <select> — field chrome */
+.csf-field {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--foreground);
+  font-size: var(--text-base);
+  padding: var(--space-3);
+  width: 100%;
+}
+
+/* Helper / hint text beneath a field */
+.csf-hint {
+  color: var(--muted, #71717a);
+  font-size: var(--text-xs);
+  margin: var(--space-1) 0 0;
+}
+
+/* Amount + Token two-column grid */
+.csf-grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: 2fr 1fr;
+}
+
+/* Action button row */
+.csf-actions {
+  align-items: center;
+  display: flex;
+  gap: var(--space-4);
+  justify-content: flex-end;
+}
+
+/* Skeleton layout — mirrors the real form structure so the
+   loading → loaded transition is jump-free */
+.csf-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.csf-skeleton__field {
+  /* Skelton items within a field group */
+}
+
+.csf-skeleton__field .skeleton--label {
+  margin-bottom: var(--space-2);
+}
+
+/* Skeleton grid (amount + token) */
+.csf-skeleton__grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: 2fr 1fr;
+}
+
+/* Skeleton action row */
+.csf-skeleton__actions {
+  display: flex;
+  gap: var(--space-4);
+  justify-content: flex-end;
 }
 
 /* ─── Density Toggle ─────────────────────────────────────────────────────── */
