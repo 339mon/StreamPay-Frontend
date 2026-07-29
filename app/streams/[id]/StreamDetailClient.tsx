@@ -60,13 +60,13 @@ export function StreamDetailClient({
   network = "testnet",
 }: StreamDetailClientProps) {
   const [isProcessing, setIsProcessing] = useState(false);
-  const [error, setError] = useState<StreamPayError | null>(null);
   const [isDestructiveOpen, setIsDestructiveOpen] = useState(false);
+  const [error, setError] = useState<StreamPayError | null>(null);
 
-  const actionSummary = STREAM_ACTION_SUMMARY[stream.id] || { 
-    amountLabel: stream.rate, 
-    destructiveAction: undefined, 
-    requiresTypedAmount: false 
+  const actionSummary = STREAM_ACTION_SUMMARY[stream.id] ?? {
+    amountLabel: stream.rate,
+    destructiveAction: undefined,
+    requiresTypedAmount: false,
   };
 
   const isIncidentMode =

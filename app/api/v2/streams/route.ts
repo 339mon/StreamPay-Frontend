@@ -34,6 +34,10 @@ function errorResponse(code: string, message: string, status: number) {
 
 /** GET /api/v2/streams — paginated stream list in v2 shape. */
 export async function GET(request: Request) {
+  if (!request.headers.get("authorization")) {
+    return errorResponse("UNAUTHORIZED", "Bearer token required.", 401);
+  }
+
   const { searchParams } = new URL(request.url);
   const cursor = searchParams.get("cursor");
   const status = searchParams.get("status");
@@ -70,6 +74,10 @@ export async function GET(request: Request) {
  * POST /api/v2/streams — create a stream, respond with v2 shape.
  */
 export async function POST(request: Request) {
+  if (!request.headers.get("authorization")) {
+    return errorResponse("UNAUTHORIZED", "Bearer token required.", 401);
+  }
+
   // ── 1. Idempotency ────────────────────────────────────────────────────────
   const idempotencyKey = request.headers.get("Idempotency-Key");
   const token = idempotencyKey
@@ -114,7 +122,7 @@ export async function POST(request: Request) {
   if (!recipient || !rate || !schedule) {
     return errorResponse(
       "VALIDATION_ERROR",
-      "Missing required fields: recipient, rate, schedule",
+      "One or more fields are invalid.",
       422,
     );
   }

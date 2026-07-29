@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { resolveRequestId } from './requestId';
 
 export const CSRF_COOKIE_NAME = 'csrf-token';
 export const CSRF_HEADER_NAME = 'x-csrf-token';
@@ -89,7 +90,7 @@ export function validateCsrfToken(cookieToken: string | null, headerToken: strin
 
 export function attachCsrfCookie(response: NextResponse, request: NextRequest | Request): NextResponse {
   const existingToken = getCsrfCookieValue(request);
-  if (existingToken) {
+  if (existingToken && /^[a-f0-9]{64}$/i.test(existingToken)) {
     return response;
   }
 
@@ -106,12 +107,12 @@ export function attachCsrfCookie(response: NextResponse, request: NextRequest | 
 }
 
 export function createCsrfForbiddenResponse(request: NextRequest | Request): NextResponse {
-  const requestId = request.headers.get('x-request-id') ?? `req_${Date.now().toString(36)}`;
+  const requestId = resolveRequestId(request.headers);
   return NextResponse.json(
     {
       error: {
-        code: 'FORBIDDEN',
-        message: 'CSRF token missing or invalid.',
+        code: 'CSRF_TOKEN_INVALID',
+        message: 'CSRF token validation failed.',
         request_id: requestId,
       },
     },

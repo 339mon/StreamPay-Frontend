@@ -359,6 +359,24 @@ pub fn list_streams_by_sender_and_status(
     }
 }
 
+/// Returns a bitmask of the contract's supported capabilities.
+///
+/// This read-only view allows off-chain indexers and dApps to programmatically
+/// discover which features are enabled in the currently deployed contract version.
+///
+/// # Capabilities Map
+/// - `1 << 0` (0x01): Basic linear streaming
+/// - `1 << 1` (0x02): Paginated stream enumeration (this module)
+/// - `1 << 2` (0x04): Multi-recipient split streams
+/// - `1 << 3` (0x08): Protocol fee configuration and sweeps
+/// - `1 << 4` (0x10): Per-organisation token allowlists
+///
+/// # Returns
+/// A `u32` bitmask where a set bit indicates the capability is supported.
+pub fn capabilities(_env: &Env) -> u32 {
+    0x1F // 1 | 2 | 4 | 8 | 16
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -404,6 +422,7 @@ mod tests {
                 },
                 paused_at: 0,
                 total_paused_duration: 0,
+                fee_bps: 0,
             };
             storage::set_stream(env, i, &stream);
         }
@@ -534,8 +553,13 @@ mod tests {
         env.as_contract(&contract_id, || {
             let (_sender_a, _sender_b, recipient) = setup_test_streams(&env);
 
-        let page =
-            list_streams_by_recipient_and_status(&env, &recipient, StreamStatus::Paused, None, 10);
+            let page = list_streams_by_recipient_and_status(
+                &env,
+                &recipient,
+                StreamStatus::Paused,
+                None,
+                10,
+            );
 
             // Streams 3, 4 are Paused
             assert_eq!(page.streams.len(), 2);
@@ -551,8 +575,8 @@ mod tests {
         env.as_contract(&contract_id, || {
             let (sender_a, _sender_b, _recipient) = setup_test_streams(&env);
 
-        let page =
-            list_streams_by_sender_and_status(&env, &sender_a, StreamStatus::Active, None, 10);
+            let page =
+                list_streams_by_sender_and_status(&env, &sender_a, StreamStatus::Active, None, 10);
 
             // sender_a has odd IDs (1, 3, 5); only 1 is Active
             assert_eq!(page.streams.len(), 1);
@@ -585,6 +609,7 @@ mod tests {
                     status: StreamStatus::Active,
                     paused_at: 0,
                     total_paused_duration: 0,
+                    fee_bps: 0,
                 };
                 storage::set_stream(&env, *i, &stream);
             }
@@ -626,6 +651,15 @@ mod tests {
 
             assert_eq!(page.streams.len(), 0);
             assert_eq!(page.next_cursor, None);
+        });
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let (env, contract_id) = setup_env();
+        env.as_contract(&contract_id, || {
+            let caps = capabilities(&env);
+            assert_eq!(caps, 0x1F);
         });
     }
 }

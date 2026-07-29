@@ -51,3 +51,70 @@ Breaking change note: these endpoints previously returned `400 BAD_REQUEST`
 for malformed input (and `500` for a non-JSON body); both now return `422`.
 
 Rate limits are unchanged, see [rate-limits.md](../rate-limits.md).
+
+## GET /api/auth/wallet/health
+
+Health probe for the wallet-auth subsystem's runtime dependencies.
+
+**No authentication or rate-limiting** is applied to this endpoint. It is
+intended for infrastructure health probes (load balancers, Kubernetes
+readiness checks, uptime monitors) and does not expose any sensitive data.
+
+### Response
+
+| Scenario | HTTP status | `status` field |
+| -------- | ----------- | -------------- |
+| All checks pass | `200 OK` | `"ok"` |
+| Any check fails | `503 Service Unavailable` | `"degraded"` |
+
+#### Body shape
+
+```json
+{
+  "status": "ok",
+  "checks": {
+    "jwt_secret": {
+      "status": "ok",
+      "checked_at": "2026-07-25T17:00:00.000Z"
+    },
+    "config": {
+      "status": "ok",
+      "checked_at": "2026-07-25T17:00:00.000Z"
+    },
+    "challenge_store": {
+      "status": "ok",
+      "checked_at": "2026-07-25T17:00:00.000Z"
+    }
+  }
+}
+```
+
+When a check is `"degraded"` a human-readable `message` field is added:
+
+```json
+{
+  "status": "degraded",
+  "checks": {
+    "jwt_secret": {
+      "status": "degraded",
+      "message": "JWT_SECRET environment variable is required.",
+      "checked_at": "2026-07-25T17:00:00.000Z"
+    },
+    ...
+  }
+}
+```
+
+### Checks
+
+| Check | What is probed | Degrades when |
+| ----- | -------------- | ------------- |
+| `jwt_secret` | `JWT_SECRET` env var is present and `≥ 32` characters | Variable is absent, too short, or still set to the insecure dev placeholder |
+| `config` | App configuration passes `validateConfig()` | `STELLAR_NETWORK`, `ALLOWED_ORIGINS`, or other required env vars are missing or invalid |
+| `challenge_store` | The wallet-auth route module (and its in-process challenge store) can be loaded | Module resolution or import fails at runtime |
+
+### Logging
+
+Every invocation emits a structured `info`-level log entry including
+`duration_ms`, `status`, `request_id`, and `correlation_id` for observability.
+

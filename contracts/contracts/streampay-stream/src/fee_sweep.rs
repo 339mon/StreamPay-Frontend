@@ -92,11 +92,7 @@ pub struct SweepResult {
 /// All storage writes (zeroing per-stream balances) and the token transfer
 /// either all succeed or all roll back.  Soroban aborts and reverts the
 /// entire transaction on any error or panic.
-pub fn sweep_fees(
-    env: &Env,
-    admin: &Address,
-    stream_ids: &Vec<u64>,
-) -> Result<SweepResult, Error> {
+pub fn sweep_fees(env: &Env, admin: &Address, stream_ids: &Vec<u64>) -> Result<SweepResult, Error> {
     // ── 1. Authorisation ─────────────────────────────────────────────────────
     // Consume the admin's auth token first, before reading any state, so that
     // a failed auth cannot leak information about internal balances.
@@ -127,8 +123,7 @@ pub fn sweep_fees(
     // We build two parallel Vecs: one of stream IDs that have a non-zero
     // balance, and one of (token, amount) pairs, because we need to do the
     // token transfers after zeroing all balances.
-    let mut streams_with_fees: soroban_sdk::Vec<(u64, Address, i128)> =
-        soroban_sdk::Vec::new(env);
+    let mut streams_with_fees: soroban_sdk::Vec<(u64, Address, i128)> = soroban_sdk::Vec::new(env);
     let mut total_swept: i128 = 0;
 
     for stream_id in stream_ids.iter() {
@@ -147,9 +142,7 @@ pub fn sweep_fees(
         };
 
         // Checked accumulation to prevent integer manipulation attacks.
-        total_swept = total_swept
-            .checked_add(balance)
-            .ok_or(Error::Overflow)?;
+        total_swept = total_swept.checked_add(balance).ok_or(Error::Overflow)?;
 
         streams_with_fees.push_back((stream_id, stream.token, balance));
     }
@@ -201,9 +194,7 @@ pub fn sweep_fees(
         let mut token_total: i128 = 0;
         for (_stream_id, t, amount) in streams_with_fees.iter() {
             if t == token_addr {
-                token_total = token_total
-                    .checked_add(amount)
-                    .ok_or(Error::Overflow)?;
+                token_total = token_total.checked_add(amount).ok_or(Error::Overflow)?;
             }
         }
         if token_total > 0 {

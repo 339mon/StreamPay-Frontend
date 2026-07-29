@@ -2,9 +2,24 @@
 
 import { GET, POST } from "./route";
 import { resetDb, getStore } from "@/app/lib/db";
+import { runWithTimeout, TimeoutError } from "@/app/lib/with-timeout";
+
+jest.mock("@/app/lib/with-timeout", () => {
+  const actual = jest.requireActual("@/app/lib/with-timeout");
+  return {
+    ...actual,
+    runWithTimeout: jest.fn(actual.runWithTimeout),
+  };
+});
+
 import { resetRateLimitStore, setRateLimitStore } from "@/app/lib/rate-limit-store";
 import { _resetAllowlistForTesting, addAllowedToken } from "@/app/lib/token-allowlist";
+import { logAccessEvent } from "@/src/middleware/accessLog";
 import type { Stream } from "@/app/types/openapi";
+
+jest.mock("@/src/middleware/accessLog", () => ({
+  logAccessEvent: jest.fn(),
+}));
 
 const VALID_RECIPIENT = "GDSBCG3OKHCMMWS5EBH2X7XOYTJRWXN2YYQPCNS5OFBU4IDO4X7OFSQA";
 
@@ -44,6 +59,7 @@ beforeEach(() => {
   resetRateLimitStore();
   _resetAllowlistForTesting();
   addAllowedToken("XLM");
+  (logAccessEvent as jest.Mock).mockClear();
 });
 
 afterEach(() => {
@@ -51,6 +67,16 @@ afterEach(() => {
 });
 
 describe("GET /api/streams", () => {
+  describe("timeout", () => {
+    it("returns 504 when handler exceeds timeout", async () => {
+      (runWithTimeout as jest.Mock).mockRejectedValueOnce(new TimeoutError());
+      const res = await GET(getRequest());
+      expect(res.status).toBe(504);
+      const body = await res.json();
+      expect(body.error.code).toBe("GATEWAY_TIMEOUT");
+    });
+  });
+
   describe("rate limiting", () => {
     it("returns 200 when under rate limit", async () => {
       const res = await GET(getRequest());
@@ -212,9 +238,73 @@ describe("GET /api/streams", () => {
       expect(body.error.request_id).toBe("test-req-456");
     });
   });
+
+  describe("structured access logs", () => {
+    it("logs a 200 access event with method, path, status and duration on success", async () => {
+      seedStream(2);
+      const res = await GET(getRequest());
+      expect(res.status).toBe(200);
+
+      expect(logAccessEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "GET",
+          path: "/api/streams",
+          status: 200,
+          durationMs: expect.any(Number),
+        }),
+      );
+    });
+
+    it("logs a 429 access event with an error code when rate limited", async () => {
+      setRateLimitStore({
+        check: async () => ({ allowed: false, remaining: 0, resetAt: 123456, retryAfter: 60 }),
+      });
+
+      await GET(getRequest());
+
+      expect(logAccessEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "GET",
+          path: "/api/streams",
+          status: 429,
+          errorCode: "rate_limit_exceeded",
+        }),
+      );
+    });
+
+    it("logs a 422 access event for invalid query params", async () => {
+      await GET(getRequest("?limit=abc"));
+
+      expect(logAccessEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ method: "GET", status: 422, errorCode: "VALIDATION_ERROR" }),
+      );
+    });
+
+    it("logs a 304 access event on a matching If-None-Match", async () => {
+      const initialRes = await GET(getRequest());
+      const etag = initialRes.headers.get("etag")!;
+      (logAccessEvent as jest.Mock).mockClear();
+
+      await GET(new Request("http://localhost/api/streams", { headers: { "if-none-match": etag } }));
+
+      expect(logAccessEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ method: "GET", status: 304 }),
+      );
+    });
+  });
 });
 
 describe("POST /api/streams", () => {
+  describe("timeout", () => {
+    it("returns 504 when handler exceeds timeout", async () => {
+      (runWithTimeout as jest.Mock).mockRejectedValueOnce(new TimeoutError());
+      const res = await POST(postRequest({ recipient: VALID_RECIPIENT, rate: "50", schedule: "month" }));
+      expect(res.status).toBe(504);
+      const body = await res.json();
+      expect(body.error.code).toBe("GATEWAY_TIMEOUT");
+    });
+  });
+
   describe("rate limiting", () => {
     it("returns 201 when under rate limit", async () => {
       const res = await POST(postRequest({ recipient: VALID_RECIPIENT, rate: "50", schedule: "month" }));
@@ -361,6 +451,43 @@ describe("POST /api/streams", () => {
 
       const body = await res2.json();
       expect(body.error.code).toBe("IDEMPOTENCY_CONFLICT");
+    });
+  });
+
+  describe("structured access logs", () => {
+    it("logs a 201 access event on successful creation", async () => {
+      const res = await POST(postRequest({ recipient: VALID_RECIPIENT, rate: "50", schedule: "month" }));
+      expect(res.status).toBe(201);
+
+      expect(logAccessEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "POST",
+          path: "/api/streams",
+          status: 201,
+          durationMs: expect.any(Number),
+        }),
+      );
+    });
+
+    it("logs a 400 access event for a non-JSON body", async () => {
+      const req = new Request("http://localhost/api/streams", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "not json",
+      });
+      await POST(req);
+
+      expect(logAccessEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ method: "POST", status: 400, errorCode: "INVALID_REQUEST" }),
+      );
+    });
+
+    it("logs a 422 access event for validation failures", async () => {
+      await POST(postRequest({}));
+
+      expect(logAccessEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ method: "POST", status: 422, errorCode: "VALIDATION_ERROR" }),
+      );
     });
   });
 });

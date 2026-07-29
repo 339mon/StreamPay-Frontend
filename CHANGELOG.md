@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- `POST /api/webhooks` now applies strict Zod body validation. Requests must include a non-empty `eventType`; unknown top-level fields now return `400 INVALID_INPUT`.
+
 All notable API changes to StreamPay are documented here.  
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).  
 API versioning follows the policy in [README.md#api-versioning](README.md#api-versioning).
@@ -7,6 +12,19 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
 ---
 
 ## [Unreleased]
+
+### Fixed
+- **CreateStreamForm responsive breakpoints** (#1042 v7): Audited and fixed
+  responsive layout for `CreateStreamForm` (`app/streams/new/page.tsx`) across
+  narrow, mobile, and wide viewports. The Amount+Token grid now collapses to a
+  single column below 360px (`22.4375rem`), action buttons stack vertically on
+  extra-narrow screens, and the multi-recipient CTA banner adapts with tighter
+  padding on small viewports. Introduced `.csf-field-row`, `.csf-actions`,
+  `.csf-cta-banner`, and `.csf-section` CSS classes with media-query overrides
+  in `globals.css`. Added `data-testid` attributes for each responsive container
+  and a focused test suite (`page.resp.test.tsx`) covering class presence,
+  structural integrity, and mobile bottom-sheet behaviour. All 19
+  CreateStreamForm tests pass.
 
 ### Performance (issue #85 — reduce initial render time)
 - **SplashScreen delay reduced**: mandatory display time cut from 2 400 ms to
@@ -30,6 +48,10 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
   (gzip/brotli for all responses).
 
 ### Added
+- Cursor pagination on `GET /api/reconciliation` over stable
+  `(created_at, id)` ordering with `meta.nextCursor` / `meta.hasNext`.
+  Malformed cursors return `422 INVALID_CURSOR`. Documented in
+  `docs/api/reconciliation-cursor.md`.
 - MRU (most-recently-used) wallet ordering on the connect modal: the
   provider a user picked last surfaces at the top of `WalletModal`,
   persisted under the `streampay_mru_wallet` `localStorage` key via
@@ -56,6 +78,9 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
   and the middleware dispatch surface.
 
 ### Security
+- Per-user rate limit on `GET|POST /api/webhooks`: 30 requests/min per
+  caller (API key / JWT wallet / IP), returning the standard `429`
+  envelope with `Retry-After`. Override via `WEBHOOK_RATE_LIMIT`.
 - Per-user rate limit on `POST /api/exports`: 5 requests/min per
   authenticated wallet, checked after JWT verification so forged tokens
   cannot spend a victim's budget, returning the standard `429` envelope with
@@ -90,6 +115,9 @@ API versioning follows the policy in [README.md#api-versioning](README.md#api-ve
   to the broader streams list.
 - `StreamProgress` now emits shared color-blind pattern classes on its fill so
   stream state remains distinguishable beyond color alone.
+- `StreamTypeChip` now uses shared design-token spacing, typography, and focus
+  styling for more consistent rendering across light, dark, and high-contrast
+  themes.
 
 ### Fixed
 - `GET /api/orgs/:orgId/members` and `POST /api/orgs/:orgId/members` now return
