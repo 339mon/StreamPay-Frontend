@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db, getStore } from "@/app/lib/db";
+import { computeETag, ifNoneMatchMatches } from "@/app/lib/etag";
 import { getCorrelationContext } from "@/app/lib/logger";
 import { checkRateLimit, getClientIdentity, rateLimitResponse } from "@/app/lib/rate-limit";
 import { getLimitForRoute } from "@/app/lib/rate-limit-config";
@@ -18,6 +19,28 @@ function currentNetwork(): string {
 }
 
 type Context = { params: Promise<{ id: string }> };
+
+/**
+ * Headers we attach to every successful stream GET response.
+ *
+ * - `ETag`: strong validator; SHA-256 over a canonical serialization of the
+ *   stream + tenant, so any change to the resource (or a tenant swap) flips it.
+ * - `Cache-Control: private, max-age=0, must-revalidate`:
+ *     • `private` — never let a shared cache (e.g. CDN) reuse the response
+ *       since the body is tenant-scoped.
+ *     • `max-age=0, must-revalidate` — forces intermediaries to revalidate via
+ *       ETag on every request instead of trusting the freshness lifetime.
+ * - `X-Cache`: HIT/MISS observability for the in-memory stream cache.
+ */
+const CACHE_CONTROL_PRIVATE_REVALIDATE = "private, max-age=0, must-revalidate";
+
+function buildCacheHeaders(etag: string, cacheStatus: "HIT" | "MISS"): Record<string, string> {
+  return {
+    ETag: etag,
+    "Cache-Control": CACHE_CONTROL_PRIVATE_REVALIDATE,
+    "X-Cache": cacheStatus,
+  };
+}
 
 function createErrorResponse(code: string, message: string, status: number) {
   const context = getCorrelationContext();
@@ -67,19 +90,37 @@ export async function GET(
     return errorResponse("MISSING_TENANT", "Tenant ID header is required", 400);
   }
 
+  // Check cache first
+  const cachedStream = streamCache.get(tenant, id);
+  let stream: any | null = null;
+  let cacheStatus: "HIT" | "MISS" = "MISS";
+
   // Network-scoped: a testnet entry cannot leak into a mainnet request.
   const cachedStream = streamCache.get(tenant, id, currentNetwork());
   if (cachedStream) {
-    return NextResponse.json(
-      { data: cachedStream, links: { self: `/api/v1/streams/${id}` } },
-      { headers: { "X-Cache": "HIT" } }
-    );
+    stream = cachedStream;
+    cacheStatus = "HIT";
+  } else {
+    // Fetch from DB using findOne (tenant-scoped)
+    stream = db.streams.findOne ? db.streams.findOne(tenant, id) : null;
+    if (!stream) {
+      return errorResponse("STREAM_NOT_FOUND", `Stream '${id}' not found`, 404);
+    }
+    streamCache.set(tenant, id, stream);
   }
 
-  // Fetch from DB using findOne
-  const stream = db.streams.findOne ? db.streams.findOne(tenant, id) : null;
-  if (!stream) {
-    return errorResponse("STREAM_NOT_FOUND", `Stream '${id}' not found`, 404);
+  // Compute ETag and short-circuit on `If-None-Match`.
+  // Tenant is included in the digest so two tenants holding the same id
+  // cannot share an ETag (defense against cross-tenant cache poisoning).
+  const etag = computeETag(tenant, stream);
+  const ifNoneMatch = request.headers.get("if-none-match");
+  if (ifNoneMatchMatches(ifNoneMatch, etag)) {
+    // 304 Not Modified — RFC 7232: empty body, but Cache-Control & ETag
+    // must still be present so the client can update its revalidation state.
+    return new NextResponse(null, {
+      status: 304,
+      headers: buildCacheHeaders(etag, cacheStatus),
+    });
   }
 
   // Network-scoped write so the next read on the same network hits.
@@ -87,7 +128,7 @@ export async function GET(
 
   return NextResponse.json(
     { data: stream, links: { self: `/api/v1/streams/${id}` } },
-    { headers: { "X-Cache": "MISS" } }
+    { headers: buildCacheHeaders(etag, cacheStatus) }
   );
 }
 
@@ -126,6 +167,9 @@ export async function POST(
 
   db.streams.set(id, updatedStream);
 
+  // Invalidate cache BEFORE returning response (also implicitly invalidates
+  // any stale ETag the client may be holding for this resource).
+  streamCache.invalidate(tenant, id);
   // Invalidate cache BEFORE returning response, network-scoped.
   streamCache.invalidate(tenant, id, currentNetwork());
 
@@ -160,6 +204,8 @@ export async function DELETE(request: Request, { params }: Context) {
 
   db.streams.delete(id);
 
+  // Invalidate cache BEFORE returning response.
+  streamCache.invalidate(tenant, id);
   // Invalidate cache BEFORE returning response, network-scoped.
   streamCache.invalidate(tenant, id, currentNetwork());
 
