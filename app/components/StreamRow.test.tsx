@@ -340,6 +340,92 @@ describe("StreamRow", () => {
     );
   });
 
+  describe("loading skeleton (Issue #1033)", () => {
+    afterEach(() => {
+      // @ts-expect-error reset between tests
+      delete window.matchMedia;
+    });
+
+    it("renders skeleton when loading is true", () => {
+      const { container } = render(<StreamRow stream={baseStream} loading={true} />);
+      const article = container.querySelector("article.stream-row");
+      expect(article).toHaveClass("stream-row--skeleton");
+    });
+
+    it("applies aria-busy on the article element when loading", () => {
+      const { container } = render(<StreamRow stream={baseStream} loading={true} />);
+      const article = container.querySelector("article.stream-row");
+      expect(article).toHaveAttribute("aria-busy", "true");
+    });
+
+    it("applies aria-label to indicate loading state", () => {
+      render(<StreamRow stream={baseStream} loading={true} />);
+      expect(screen.getByLabelText("Stream row is loading")).toBeInTheDocument();
+    });
+
+    it("does not render live content (recipient, action button) when loading", () => {
+      const { container } = render(<StreamRow stream={baseStream} loading={true} />);
+      expect(container.querySelector("h2")).toBeNull();
+      expect(container.querySelector("button")).toBeNull();
+      expect(container.querySelector(".status-badge")).toBeNull();
+      expect(container.querySelector(".stream-progress")).toBeNull();
+      expect(container.querySelector(".stream-row__pattern")).toBeNull();
+    });
+
+    it("renders Skeleton elements inside the row", () => {
+      const { container } = render(<StreamRow stream={baseStream} loading={true} />);
+      const skeletons = container.querySelectorAll(".skeleton");
+      expect(skeletons.length).toBeGreaterThan(0);
+    });
+
+    it("renders skeleton avatar (circle)", () => {
+      const { container } = render(<StreamRow stream={baseStream} loading={true} />);
+      const circles = container.querySelectorAll("[style*='border-radius: 50%']");
+      expect(circles.length).toBeGreaterThan(0);
+    });
+
+    it("skeleton elements are aria-hidden from screen readers", () => {
+      const { container } = render(<StreamRow stream={baseStream} loading={true} />);
+      const skeletons = container.querySelectorAll(".skeleton");
+      skeletons.forEach((sk) => {
+        expect(sk).toHaveAttribute("aria-hidden", "true");
+      });
+    });
+
+    it("applies stream-row--compact modifier when density=compact and loading", () => {
+      const { container } = render(
+        <StreamRow stream={makeMockStream("paused")} density="compact" loading={true} />
+      );
+      const article = container.querySelector("article.stream-row");
+      expect(article).toHaveClass("stream-row--compact");
+      expect(article).toHaveClass("stream-row--skeleton");
+    });
+
+    it("renders skeleton for the color stripe placeholder", () => {
+      const { container } = render(<StreamRow stream={baseStream} loading={true} />);
+      const stripe = container.querySelector(".stream-row__color-stripe");
+      expect(stripe).not.toBeNull();
+      expect(stripe).toHaveAttribute("aria-hidden", "true");
+    });
+
+    it("renders meta section with dt elements in skeleton", () => {
+      const { container } = render(<StreamRow stream={baseStream} loading={true} />);
+      const dts = container.querySelectorAll("dt");
+      expect(dts.length).toBeGreaterThan(0);
+    });
+
+    it("does not render skeleton when loading is false (normal render)", () => {
+      const { container } = render(<StreamRow stream={baseStream} />);
+      expect(container.querySelector(".stream-row--skeleton")).toBeNull();
+      expect(container.querySelector("button")).not.toBeNull();
+    });
+
+    it("does not render skeleton when loading is undefined (normal render)", () => {
+      const { container } = render(<StreamRow stream={baseStream} />);
+      expect(container.querySelector(".stream-row--skeleton")).toBeNull();
+    });
+  });
+
   describe("swipe to cancel (mobile)", () => {
     const cancellableStream: StreamRowData = {
       ...makeMockStream("active"),
