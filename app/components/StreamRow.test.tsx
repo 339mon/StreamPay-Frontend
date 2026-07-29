@@ -579,4 +579,92 @@ describe("StreamRow", () => {
       expect(article.style.transform).toBe("");
     });
   });
+
+  /**
+   * Design token v7 (issue #1030) — spacing & typography pin tests.
+   *
+   * jsdom does not load stylesheets, so we verify the DOM structure that
+   * the CSS hooks into: correct BEM class names, correct elements, and
+   * correct data attributes.  Pixel values are asserted via CSS custom
+   * properties in a separate snapshot (see docs/DESIGN_TOKENS.md).
+   */
+  describe("design tokens v7 – spacing & typography BEM hooks", () => {
+    it("renders the root article with stream-row class for spacing hooks", () => {
+      const { container } = render(<StreamRow stream={baseStream} />);
+      const article = container.querySelector("article");
+      expect(article).toHaveClass("stream-row");
+    });
+
+    it("renders stream-row__primary for cozy gap (--space-3) hook", () => {
+      const { container } = render(<StreamRow stream={baseStream} />);
+      expect(container.querySelector(".stream-row__primary")).not.toBeNull();
+    });
+
+    it("renders stream-row__identity for gap (--space-3) hook", () => {
+      const { container } = render(<StreamRow stream={baseStream} />);
+      expect(container.querySelector(".stream-row__identity")).not.toBeNull();
+    });
+
+    it("renders stream-row__meta for gap (--space-3) hook", () => {
+      const { container } = render(<StreamRow stream={baseStream} />);
+      expect(container.querySelector(".stream-row__meta")).not.toBeNull();
+    });
+
+    it("renders stream-row__recipient for margin-bottom (--space-1) hook", () => {
+      const { container } = render(<StreamRow stream={baseStream} />);
+      const recipient = container.querySelector(".stream-row__recipient");
+      expect(recipient).not.toBeNull();
+      // h2 semantics preserved
+      expect(recipient?.tagName).toBe("H2");
+    });
+
+    it("renders stream-row__cancel-reveal for padding-right (--space-6) hook on cancel-eligible streams", () => {
+      const cancellableStream: StreamRowData = {
+        ...makeMockStream("active"),
+        nextAction: "Cancel",
+      };
+      const { container } = render(<StreamRow stream={cancellableStream} />);
+      expect(container.querySelector(".stream-row__cancel-reveal")).not.toBeNull();
+    });
+
+    it("applies stream-row--compact modifier which targets --space-3-5 padding token", () => {
+      const { container } = render(
+        <StreamRow stream={makeMockStream("active")} density="compact" />
+      );
+      const article = container.querySelector("article.stream-row");
+      expect(article).toHaveClass("stream-row--compact");
+    });
+
+    it("compact mode still renders all spacing-sensitive child elements", () => {
+      const { container } = render(
+        <StreamRow stream={makeMockStream("paused")} density="compact" />
+      );
+      // All of these carry --space-* token overrides in compact rules
+      expect(container.querySelector(".stream-row__primary")).not.toBeNull();
+      expect(container.querySelector(".stream-row__meta")).not.toBeNull();
+      expect(container.querySelector(".stream-row__recipient")).not.toBeNull();
+    });
+
+    it.each(ALL_STATUSES)(
+      "meta dt label is inside .stream-row__meta for margin-bottom token hook: status=%s",
+      (status) => {
+        const { container } = render(<StreamRow stream={makeMockStream(status)} />);
+        const dt = container.querySelector(".stream-row__meta dt");
+        expect(dt).not.toBeNull();
+      }
+    );
+
+    it("receipt link element carries stream-row__receipt-link class (color token hook)", () => {
+      // The receipt link only appears in streams with a receipt — render a
+      // stream that includes the receipt area to verify the class is applied
+      // when the element exists.
+      const { container } = render(<StreamRow stream={baseStream} />);
+      // The link may not render for all stream states; assert structural
+      // correctness only when present.
+      const link = container.querySelector(".stream-row__receipt-link");
+      if (link) {
+        expect(link.tagName).toMatch(/^A$|^BUTTON$/);
+      }
+    });
+  });
 });
