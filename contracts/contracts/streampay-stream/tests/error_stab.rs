@@ -125,6 +125,7 @@ fn err_conversion_roundtrip() {
         Error::SweepNoFees,
         Error::SweepAmountMismatch,
         Error::AdminCooldown,
+        Error::CooloffActive,
     ];
 
     for &variant in &variants {
@@ -139,9 +140,9 @@ fn err_conversion_roundtrip() {
 /// [`Error`] variant) via [`TryFrom<u32>`] must fail.
 #[test]
 fn err_invalid_code_conversion_fails() {
-    // The valid range is 1..=21, so values outside that range are invalid.
+    // The valid range is 1..=22, so values outside that range are invalid.
     assert!(Error::try_from(0_u32).is_err());
-    assert!(Error::try_from(22_u32).is_err());
+    assert!(Error::try_from(23_u32).is_err());
     assert!(Error::try_from(u32::MAX).is_err());
 }
 

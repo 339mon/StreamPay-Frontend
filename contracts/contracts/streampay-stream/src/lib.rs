@@ -17,7 +17,9 @@
 //! - Allow or block individual token contracts ([`Contract::set_token_allowed`]).
 #![no_std]
 
+pub mod admin;
 mod allowlist;
+mod cooloff;
 mod error;
 mod events;
 mod fee_sweep;
@@ -30,42 +32,23 @@ mod release;
 mod snapshot_diff;
 mod storage;
 mod views;
-pub mod admin;
 mod withdrawer;
 
 #[cfg(test)]
 mod fee_sweep_test;
 
 pub use error::Error;
+pub use multi::{RecipientAllocation, SplitStream};
 pub use recurring::RecurringStream;
+pub use snapshot_diff::{SnapshotDiff, StreamSnapshot};
 use soroban_sdk::contracttype;
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env};
-pub use multi::{RecipientAllocation, SplitStream};
-pub use snapshot_diff::{SnapshotDiff, StreamSnapshot};
-pub use storage::{Stream, StreamStatus};
 pub(crate) use storage::DataKey;
+pub use storage::{Stream, StreamStatus};
 
 /// The `StreamPay` contract entry point registered with the Soroban host.
 #[contract]
 pub struct Contract;
-
-/// Ledger storage keys used internally by this contract.
-///
-/// Not exposed to callers; listed here for auditability.
-#[derive(Clone)]
-#[contracttype]
-enum DataKey {
-    /// The privileged admin [`Address`].
-    Admin,
-    /// Global emergency pause flag (`bool`).
-    Paused,
-    /// Monotonic counter; value is the **next** stream ID to assign.
-    NextStreamId,
-    /// Per-stream record keyed by numeric ID.
-    Stream(u64),
-    /// Per-token allowlist entry. Absent or `true` → allowed; `false` → blocked.
-    TokenAllowed(Address),
-}
 
 #[allow(clippy::needless_pass_by_value, clippy::must_use_candidate)]
 #[contractimpl]
@@ -76,7 +59,7 @@ impl Contract {
     /// and [`Contract::set_token_allowed`]. Sets the global pause flag to
     /// `false`.
     ///
-    /// @param `admin` — Address that will have admin privileges over this contract. 
+    /// @param `admin` — Address that will have admin privileges over this contract.
     /// Records `admin` as the privileged address for `set_paused` and
     /// `set_token_allowed`. Sets the global pause flag to `false`.
     ///
@@ -96,7 +79,7 @@ impl Contract {
         events::deprecated_entrypoint(
             &env,
             &admin,
-            soroban_sdk::symbol_short!("initialize"),
+            soroban_sdk::Symbol::new(&env, "initialize"),
             env.ledger().timestamp(),
         );
         Ok(())
@@ -121,10 +104,10 @@ impl Contract {
     /// subsequently blocked via `set_token_allowed`.
     ///
     ///
-    /// @param `admin`  - The privileged address authorised to call 
+    /// @param `admin`  - The privileged address authorised to call
     /// admin entrypoints (`set_paused`, `set_admin`,
     /// `set_token_allowed`).
-    /// @param `tokens` - The list of token contract addresses to 
+    /// @param `tokens` - The list of token contract addresses to
     /// register in the allowlist. May be empty if the contract
     /// intends to stream the native asset or add tokens lazily
     /// via `set_token_allowed` later.
@@ -188,17 +171,17 @@ impl Contract {
     /// with both global and per-org configurations.
     ///
     ///
-    /// @param `admin` - The privileged address authorised to call admin entrypoints. 
-    /// @param `tokens` - The list of token contract addresses to register in the global allowlist. 
-    /// @param `org` - The organisation to configure a per-org allowlist for. 
-    /// @param `org_tokens` - The list of token contract addresses to allow for `org`. 
+    /// @param `admin` - The privileged address authorised to call admin entrypoints.
+    /// @param `tokens` - The list of token contract addresses to register in the global allowlist.
+    /// @param `org` - The organisation to configure a per-org allowlist for.
+    /// @param `org_tokens` - The list of token contract addresses to allow for `org`.
     ///
     ///
     /// @custom:error `Error::AlreadyInitialized` if the contract has already been initialised.
     ///
     ///
     /// @custom:auth Requires authorisation from `admin`.
-    pub fn init_with_token_allowlist_for_org(
+    pub fn init_allowlist_for_org(
         env: Env,
         admin: Address,
         tokens: soroban_sdk::Vec<Address>,
@@ -260,9 +243,9 @@ impl Contract {
     /// `allowed = false` blocks the token; `allowed = true` re-enables it.
     /// Existing streams using a subsequently blocked token are unaffected.
     ///
-    /// @param `admin`   — Must match the admin set at initialisation. 
-    /// @param `token`   — Stellar asset contract address to configure. 
-    /// @param `allowed` — `true` to allow; `false` to block. 
+    /// @param `admin`   — Must match the admin set at initialisation.
+    /// @param `token`   — Stellar asset contract address to configure.
+    /// @param `allowed` — `true` to allow; `false` to block.
     ///
     /// @custom:error [`Error::Unauthorized`] if `admin` is not the initialised admin.
     /// @custom:error [`Error::NotFound`] if the contract has not been initialised.
@@ -288,8 +271,8 @@ impl Contract {
     /// to the recipient regardless of `fee_bps`. Setting a non-`None` collector
     /// activates fee collection on all streams whose `fee_bps > 0`.
     ///
-    /// @param `admin`     — Must match the admin set at initialisation. 
-    /// @param `collector` — Address that will receive future fee transfers. 
+    /// @param `admin`     — Must match the admin set at initialisation.
+    /// @param `collector` — Address that will receive future fee transfers.
     ///
     /// @custom:error [`Error::Unauthorized`] if `admin` is not the initialised admin.
     ///
@@ -320,8 +303,8 @@ impl Contract {
     ///
     /// The value must be in `[0, 10_000]` (0 % – 100 %).
     ///
-    /// @param `admin`   — Must match the admin set at initialisation. 
-    /// @param `fee_bps` — Default fee in basis points. 
+    /// @param `admin`   — Must match the admin set at initialisation.
+    /// @param `fee_bps` — Default fee in basis points.
     ///
     /// @custom:error [`Error::Unauthorized`] if `admin` is not the initialised admin.
     /// @custom:error [`Error::InvalidFeeBps`] if `fee_bps > 10_000`.
@@ -426,10 +409,10 @@ impl Contract {
     /// [`Contract::create_stream_for_org`]. Setting `allowed = false` records an
     /// explicit per-org block.
     ///
-    /// @param `admin`   — Must match the admin set at initialisation. 
-    /// @param `org`     — Organisation address the rule applies to. 
-    /// @param `token`   — Token contract address being configured. 
-    /// @param `allowed` — `true` to allow for this org; `false` to block. 
+    /// @param `admin`   — Must match the admin set at initialisation.
+    /// @param `org`     — Organisation address the rule applies to.
+    /// @param `token`   — Token contract address being configured.
+    /// @param `allowed` — `true` to allow for this org; `false` to block.
     ///
     /// @custom:error [`Error::Unauthorized`] if `admin` is not the initialised admin.
     /// @custom:error [`Error::NotFound`] if the contract has not been initialised.
@@ -512,8 +495,8 @@ impl Contract {
     /// [`Error::StreamLimitExceeded`] until an existing stream transitions
     /// to a terminal state (`Settled` or `Cancelled`).
     ///
-    /// @param `admin` — Must match the admin set at initialisation. 
-    /// @param `limit` — Maximum number of concurrent active streams per sender. 
+    /// @param `admin` — Must match the admin set at initialisation.
+    /// @param `limit` — Maximum number of concurrent active streams per sender.
     ///
     /// @custom:error [`Error::Unauthorized`] if `admin` is not the initialised admin.
     ///
@@ -539,7 +522,7 @@ impl Contract {
 
     /// Returns the number of active streams currently attributed to `sender`.
     ///
-    /// @param `sender` — Address to query. 
+    /// @param `sender` — Address to query.
     ///
     /// @return The count of non-terminal streams for `sender`. Returns `0` if the
     /// @return sender has never created a stream or all their streams are settled.
@@ -552,7 +535,7 @@ impl Contract {
     /// Returns how many more streams `sender` may create before reaching the
     /// configured per-sender limit (`0` once the limit is reached).
     ///
-    /// @param `sender` — Address to query. 
+    /// @param `sender` — Address to query.
     ///
     /// @return The remaining capacity: `limit - current_count`. Returns `0` once the
     /// @return sender is at or above the limit.
@@ -560,6 +543,56 @@ impl Contract {
     /// @custom:error This entrypoint is read-only and never returns an error.
     pub fn remaining_sender_capacity(env: Env, sender: Address) -> u64 {
         limits::remaining_sender_capacity(&env, &sender)
+    }
+
+    /// Sets the per-user cooloff duration (in seconds) between stream creations.
+    ///
+    /// After creating a stream, the sender must wait `duration` seconds before
+    /// creating another stream.  A duration of `0` disables the cooloff check
+    /// (the default).
+    ///
+    /// The cooloff applies to [`Contract::create_stream`],
+    /// [`Contract::create_stream_for_org`], and
+    /// [`Contract::create_draft_stream`].
+    ///
+    /// @param `admin`    — Must match the admin set at initialisation.
+    /// @param `duration` — Cooloff period in seconds.  `0` disables the check.
+    ///
+    /// @custom:error [`Error::Unauthorized`] if `admin` is not the initialised admin.
+    /// @custom:error [`Error::NotFound`] if the contract has not been initialised.
+    ///
+    /// @custom:auth Requires authorisation from `admin`.
+    pub fn set_cooloff_duration(env: Env, admin: Address, duration: u64) -> Result<(), Error> {
+        require_admin(&env, &admin)?;
+        cooloff::set_cooloff_duration(&env, duration);
+        events::cooloff_duration_set(&env, &admin, duration, env.ledger().timestamp());
+        Ok(())
+    }
+
+    /// Returns the current per-user cooloff duration in seconds.
+    ///
+    /// A return value of `0` means cooloff is disabled (the default).
+    ///
+    /// @return The cooloff duration in seconds.
+    ///
+    /// @custom:error This entrypoint is read-only and never returns an error.
+    pub fn get_cooloff_duration(env: Env) -> u64 {
+        cooloff::get_cooloff_duration(&env)
+    }
+
+    /// Returns the ledger timestamp until which `sender` is blocked from
+    /// creating a new stream.
+    ///
+    /// Returns `0` if the sender has no active cooloff (never created a stream
+    /// or the cooloff period has already expired).
+    ///
+    /// @param `sender` — Address to query.
+    ///
+    /// @return The cooloff expiry timestamp, or `0` if no cooloff is active.
+    ///
+    /// @custom:error This entrypoint is read-only and never returns an error.
+    pub fn get_cooloff_until(env: Env, sender: Address) -> u64 {
+        cooloff::get_cooloff_until(&env, &sender)
     }
 
     /// Sets the protocol-level fee in basis points charged on each withdrawal.
@@ -571,8 +604,8 @@ impl Contract {
     /// [`Contract::withdraw`] entrypoint is never modified and remains
     /// fee-free to preserve backward compatibility.
     ///
-    /// @param `admin`   — Must match the admin set at initialisation. 
-    /// @param `fee_bps` — New fee in basis points. Must be in the range `[0, 10_000]`. 
+    /// @param `admin`   — Must match the admin set at initialisation.
+    /// @param `fee_bps` — New fee in basis points. Must be in the range `[0, 10_000]`.
     ///
     /// @custom:error [`Error::Unauthorized`] if `admin` is not the initialised admin.
     /// @custom:error [`Error::NotFound`] if the contract has not been initialised.
@@ -637,10 +670,10 @@ impl Contract {
     /// callers that do not want fee-aware withdrawals continue to work as
     /// before.
     ///
-    /// @param `stream_id`    — Numeric ID of the stream to withdraw from. 
-    /// @param `amount`       — Token amount (base units) to withdraw. Must be > 0 and 
+    /// @param `stream_id`    — Numeric ID of the stream to withdraw from.
+    /// @param `amount`       — Token amount (base units) to withdraw. Must be > 0 and
     /// ≤ the currently accrued withdrawable balance.
-    /// @param `max_fee_bps`  — Caller's maximum acceptable fee in basis points 
+    /// @param `max_fee_bps`  — Caller's maximum acceptable fee in basis points
     /// (0–10 000). The call reverts if `current_fee_bps > max_fee_bps`.
     ///
     /// @return The `amount` that was charged against the stream balance on success
@@ -798,6 +831,7 @@ impl Contract {
         require_not_paused(&env)?;
         sender.require_auth();
         limits::check_sender_limit(&env, &sender)?;
+        cooloff::check_and_update_cooloff(&env, &sender)?;
 
         // Validate fee_bps before any side effects.
         fees::validate_fee_bps(fee_bps)?;
@@ -898,6 +932,7 @@ impl Contract {
     ) -> Result<u64, Error> {
         require_not_paused(&env)?;
         sender.require_auth();
+        cooloff::check_and_update_cooloff(&env, &sender)?;
 
         if total_amount <= 0 {
             return Err(Error::InvalidAmount);
@@ -964,7 +999,7 @@ impl Contract {
     /// Sets `status = Active`, `start_time = now`, `last_update = now`, and
     /// `end_time = now + duration`. No token transfer occurs.
     ///
-    /// @param `stream_id` — Numeric ID of the stream to activate. 
+    /// @param `stream_id` — Numeric ID of the stream to activate.
     ///
     /// @return The updated [`Stream`] record after activation.
     ///
@@ -1007,7 +1042,7 @@ impl Contract {
     ///
     /// This is a read-only call and is never blocked by the pause flag.
     ///
-    /// @param `stream_id` — Numeric ID of the stream to look up. 
+    /// @param `stream_id` — Numeric ID of the stream to look up.
     ///
     /// @return The [`Stream`] record stored on-chain.
     ///
@@ -1022,7 +1057,7 @@ impl Contract {
     /// using overflow-safe linear accrual. It never mutates state or requires
     /// auth, and is unaffected by the global pause flag.
     ///
-    /// @param `stream_id` — Numeric ID of the stream to query. 
+    /// @param `stream_id` — Numeric ID of the stream to query.
     ///
     /// @return The currently withdrawable token amount (base units). Always non-negative.
     ///
@@ -1030,7 +1065,7 @@ impl Contract {
     /// @custom:error [`Error::Overflow`] if the vested-amount computation overflows.
     pub fn withdrawable(env: Env, stream_id: u64) -> Result<i128, Error> {
         let stream = get_existing_stream(&env, stream_id)?;
-        Ok(release::withdrawable(&stream, env.ledger().timestamp()))
+        release::withdrawable(&stream, env.ledger().timestamp())
     }
 
     /// Returns the stream balance (total vested amount) at the current ledger
@@ -1039,7 +1074,7 @@ impl Contract {
     /// This is a read-only view that never mutates state or requires auth.
     /// It is unaffected by the global pause flag.
     ///
-    /// @param `stream_id` — Numeric ID of the stream to query. 
+    /// @param `stream_id` — Numeric ID of the stream to query.
     ///
     /// @return The total vested token amount (base units). Always in `[0, total_amount]`.
     ///
@@ -1047,7 +1082,7 @@ impl Contract {
     /// @custom:error [`Error::Overflow`] if the vested-amount computation overflows.
     pub fn stream_balance(env: Env, stream_id: u64) -> Result<i128, Error> {
         let stream = get_existing_stream(&env, stream_id)?;
-        Ok(release::vested_amount(&stream, env.ledger().timestamp()))
+        release::vested_amount(&stream, env.ledger().timestamp())
     }
 
     /// Captures a point-in-time [`StreamSnapshot`] for `stream_id` at `at_timestamp`.
@@ -1059,8 +1094,8 @@ impl Contract {
     /// This is a **read-only** entrypoint: it never mutates state and requires
     /// no authorisation. It is unaffected by the global pause flag.
     ///
-    /// @param `stream_id`    — Numeric ID of the stream to snapshot. 
-    /// @param `at_timestamp` — Ledger timestamp at which to evaluate accrual. 
+    /// @param `stream_id`    — Numeric ID of the stream to snapshot.
+    /// @param `at_timestamp` — Ledger timestamp at which to evaluate accrual.
     ///
     /// @return A [`StreamSnapshot`] containing all financial fields at `at_timestamp`.
     ///
@@ -1088,8 +1123,8 @@ impl Contract {
     /// This is a **read-only** entrypoint: it never mutates state and requires
     /// no authorisation. It is unaffected by the global pause flag.
     ///
-    /// @param `before` — Snapshot at the earlier point in time. 
-    /// @param `after`  — Snapshot at the later point in time. 
+    /// @param `before` — Snapshot at the earlier point in time.
+    /// @param `after`  — Snapshot at the later point in time.
     ///
     /// @return A [`SnapshotDiff`] with field-by-field deltas and elapsed time.
     ///
@@ -1112,10 +1147,10 @@ impl Contract {
     /// If the stream has a per-stream `fee_bps` and a fee collector has been
     /// configured, the fee is deducted before the transfer.
     ///
-    /// @param `caller`    — Address initiating the withdrawal (must be recipient or 
+    /// @param `caller`    — Address initiating the withdrawal (must be recipient or
     /// allowlisted withdrawer).
-    /// @param `stream_id` — Numeric ID of the stream to withdraw from. 
-    /// @param `amount`    — Token amount (base units) to withdraw. Must be > 0 and 
+    /// @param `stream_id` — Numeric ID of the stream to withdraw from.
+    /// @param `amount`    — Token amount (base units) to withdraw. Must be > 0 and
     /// ≤ the currently accrued withdrawable balance.
     ///
     /// @return The `amount` that was withdrawn on success.
@@ -1130,7 +1165,12 @@ impl Contract {
     /// @custom:error [`Error::OverWithdraw`] if `amount` exceeds accrued funds.
     ///
     /// @custom:auth Requires authorisation from `caller`.
-    pub fn withdraw(env: Env, caller: Address, stream_id: u64, amount: i128) -> Result<i128, Error> {
+    pub fn withdraw(
+        env: Env,
+        caller: Address,
+        stream_id: u64,
+        amount: i128,
+    ) -> Result<i128, Error> {
         require_not_paused(&env)?;
         if amount <= 0 {
             return Err(Error::InvalidAmount);
@@ -1151,7 +1191,7 @@ impl Contract {
         }
 
         let now = env.ledger().timestamp();
-        let available = release::withdrawable(&stream, now);
+        let available = release::withdrawable(&stream, now)?;
         if amount > available {
             return Err(Error::OverWithdraw);
         }
@@ -1231,11 +1271,7 @@ impl Contract {
     /// @custom:error [`Error::Unauthorized`] if the caller is not the stream sender.
     ///
     /// @custom:auth Requires authorisation from the stream's `sender`.
-    pub fn add_withdrawer(
-        env: Env,
-        stream_id: u64,
-        withdrawer: Address,
-    ) -> Result<(), Error> {
+    pub fn add_withdrawer(env: Env, stream_id: u64, withdrawer: Address) -> Result<(), Error> {
         let stream = get_existing_stream(&env, stream_id)?;
         stream.sender.require_auth();
         storage::add_withdrawer(&env, stream_id, &withdrawer);
@@ -1251,11 +1287,7 @@ impl Contract {
     /// @custom:error [`Error::Unauthorized`] if the caller is not the stream sender.
     ///
     /// @custom:auth Requires authorisation from the stream's `sender`.
-    pub fn remove_withdrawer(
-        env: Env,
-        stream_id: u64,
-        withdrawer: Address,
-    ) -> Result<(), Error> {
+    pub fn remove_withdrawer(env: Env, stream_id: u64, withdrawer: Address) -> Result<(), Error> {
         let stream = get_existing_stream(&env, stream_id)?;
         stream.sender.require_auth();
         storage::remove_withdrawer(&env, stream_id, &withdrawer);
@@ -1404,7 +1436,13 @@ impl Contract {
 
         limits::decrement_sender_stream_count(&env, &stream.sender);
         storage::set_stream(&env, stream_id, &stream);
-        events::settled(&env, stream_id, &stream.recipient, stream.released_amount, now);
+        events::settled(
+            &env,
+            stream_id,
+            &stream.recipient,
+            stream.released_amount,
+            now,
+        );
 
         Ok(())
     }
@@ -1425,7 +1463,7 @@ impl Contract {
     ///
     /// The stream transitions to [`StreamStatus::Cancelled`] (terminal state).
     ///
-    /// @param `stream_id` — Numeric ID of the stream to cancel. 
+    /// @param `stream_id` — Numeric ID of the stream to cancel.
     ///
     /// @return The updated [`Stream`] record after cancellation.
     ///
@@ -1591,7 +1629,7 @@ impl Contract {
     /// This is a read-only view that never mutates state or requires auth.
     /// It is unaffected by the global pause flag.
     ///
-    /// @param `stream_id` — Numeric ID of the stream to query. 
+    /// @param `stream_id` — Numeric ID of the stream to query.
     ///
     /// @return The unsettled accrual amount (vested minus released). Always non-negative.
     ///
@@ -1608,8 +1646,8 @@ impl Contract {
     /// storage (streams, admin, allowlist) is preserved across the upgrade.
     /// Only the contract admin may call this.
     ///
-    /// @param `admin`         — Must match the admin set at initialisation. 
-    /// @param `new_wasm_hash` — The WASM hash of the new contract code, obtained 
+    /// @param `admin`         — Must match the admin set at initialisation.
+    /// @param `new_wasm_hash` — The WASM hash of the new contract code, obtained
     /// via [`Env::deployer`]`::upload_contract_wasm`.
     ///
     /// @custom:error [`Error::Unauthorized`] if `admin` is not the initialised admin.
@@ -1638,7 +1676,7 @@ impl Contract {
     /// contract has been migrated to version N, there is no supported path
     /// back to version N−1.
     ///
-    /// @param `admin` — Must match the admin set at initialisation. 
+    /// @param `admin` — Must match the admin set at initialisation.
     ///
     /// @custom:error [`Error::Unauthorized`] if `admin` is not the initialised admin.
     /// @custom:error [`Error::NotFound`] if the contract has not been initialised.
@@ -1695,10 +1733,10 @@ impl Contract {
     /// [`Contract::get_admin_nonce`]) as `nonce`. After a successful call the
     /// stored nonce is incremented so the same `nonce` value cannot be reused.
     ///
-    /// @param `admin`        — Must be the initialised contract admin. 
-    /// @param `nonce`        — Current monotonic nonce; consumed on success. 
-    /// @param `stream_id`    — ID of the stream to override. 
-    /// @param `new_end_time` — Replacement `end_time` for the stream. 
+    /// @param `admin`        — Must be the initialised contract admin.
+    /// @param `nonce`        — Current monotonic nonce; consumed on success.
+    /// @param `stream_id`    — ID of the stream to override.
+    /// @param `new_end_time` — Replacement `end_time` for the stream.
     ///
     /// @return The updated [`Stream`] after applying the override.
     ///
@@ -1735,9 +1773,9 @@ impl Contract {
     /// The global pause flag does not affect this call.
     ///
     ///
-    /// @param `start_after` — Exclusive cursor: return streams with `id > start_after`. 
+    /// @param `start_after` — Exclusive cursor: return streams with `id > start_after`.
     /// Pass `None` to start from the beginning (stream ID 1).
-    /// @param `limit` — Maximum number of streams to return. Capped at [`MAX_PAGE_SIZE`]. 
+    /// @param `limit` — Maximum number of streams to return. Capped at [`MAX_PAGE_SIZE`].
     ///
     ///
     /// @return A [`StreamPage`] with up to `limit` streams. If `next_cursor` is `Some(id)`,
@@ -1751,9 +1789,9 @@ impl Contract {
     /// This is a read-only view that never mutates state or requires auth.
     ///
     ///
-    /// @param `sender` — Filter: only return streams where `stream.sender == sender`. 
-    /// @param `start_after` — Exclusive cursor: return streams with `id > start_after`. 
-    /// @param `limit` — Maximum number of streams to return. Capped at [`MAX_PAGE_SIZE`]. 
+    /// @param `sender` — Filter: only return streams where `stream.sender == sender`.
+    /// @param `start_after` — Exclusive cursor: return streams with `id > start_after`.
+    /// @param `limit` — Maximum number of streams to return. Capped at [`MAX_PAGE_SIZE`].
     ///
     ///
     /// @return A [`StreamPage`] with up to `limit` streams sent by `sender`.
@@ -1771,9 +1809,9 @@ impl Contract {
     /// This is a read-only view that never mutates state or requires auth.
     ///
     ///
-    /// @param `recipient` — Filter: only return streams where `stream.recipient == recipient`. 
-    /// @param `start_after` — Exclusive cursor: return streams with `id > start_after`. 
-    /// @param `limit` — Maximum number of streams to return. Capped at [`MAX_PAGE_SIZE`]. 
+    /// @param `recipient` — Filter: only return streams where `stream.recipient == recipient`.
+    /// @param `start_after` — Exclusive cursor: return streams with `id > start_after`.
+    /// @param `limit` — Maximum number of streams to return. Capped at [`MAX_PAGE_SIZE`].
     ///
     ///
     /// @return A [`StreamPage`] with up to `limit` streams received by `recipient`.
@@ -1791,9 +1829,9 @@ impl Contract {
     /// This is a read-only view that never mutates state or requires auth.
     ///
     ///
-    /// @param `status` — Filter: only return streams where `stream.status == status`. 
-    /// @param `start_after` — Exclusive cursor: return streams with `id > start_after`. 
-    /// @param `limit` — Maximum number of streams to return. Capped at [`MAX_PAGE_SIZE`]. 
+    /// @param `status` — Filter: only return streams where `stream.status == status`.
+    /// @param `start_after` — Exclusive cursor: return streams with `id > start_after`.
+    /// @param `limit` — Maximum number of streams to return. Capped at [`MAX_PAGE_SIZE`].
     ///
     ///
     /// @return A [`StreamPage`] with up to `limit` streams in the given status.
@@ -1812,10 +1850,10 @@ impl Contract {
     /// active/paused/settled streams.
     ///
     ///
-    /// @param `recipient` — Filter: only return streams where `stream.recipient == recipient`. 
-    /// @param `status` — Filter: only return streams where `stream.status == status`. 
-    /// @param `start_after` — Exclusive cursor: return streams with `id > start_after`. 
-    /// @param `limit` — Maximum number of streams to return. Capped at [`MAX_PAGE_SIZE`]. 
+    /// @param `recipient` — Filter: only return streams where `stream.recipient == recipient`.
+    /// @param `status` — Filter: only return streams where `stream.status == status`.
+    /// @param `start_after` — Exclusive cursor: return streams with `id > start_after`.
+    /// @param `limit` — Maximum number of streams to return. Capped at [`MAX_PAGE_SIZE`].
     ///
     ///
     /// @return A [`StreamPage`] with up to `limit` streams matching both filters.
@@ -1838,13 +1876,13 @@ impl Contract {
     /// immediately. Each recipient receives `total_vested * weight / total_weight`
     /// as tokens vest linearly over the stream duration.
     ///
-    /// @param `sender`       — Address funding the stream. 
-    /// @param `token`        — Stellar asset contract address. 
-    /// @param `total_amount` — Total tokens (base units) to lock in escrow. Must be > 0. 
-    /// @param `start_time`   — Ledger timestamp when vesting begins. 
-    /// @param `end_time`     — Ledger timestamp when vesting ends. 
-    /// @param `recipients`   — Recipient addresses (must match `weights` in length). 
-    /// @param `weights`      — Proportional weights for each recipient (all > 0). 
+    /// @param `sender`       — Address funding the stream.
+    /// @param `token`        — Stellar asset contract address.
+    /// @param `total_amount` — Total tokens (base units) to lock in escrow. Must be > 0.
+    /// @param `start_time`   — Ledger timestamp when vesting begins.
+    /// @param `end_time`     — Ledger timestamp when vesting ends.
+    /// @param `recipients`   — Recipient addresses (must match `weights` in length).
+    /// @param `weights`      — Proportional weights for each recipient (all > 0).
     ///
     /// @return The numeric ID of the newly created split stream.
     ///
@@ -1868,7 +1906,16 @@ impl Contract {
         recipients: soroban_sdk::Vec<Address>,
         weights: soroban_sdk::Vec<u64>,
     ) -> Result<u64, Error> {
-        multi::create_split_stream(env, sender, token, total_amount, start_time, end_time, recipients, weights)
+        multi::create_split_stream(
+            env,
+            sender,
+            token,
+            total_amount,
+            start_time,
+            end_time,
+            recipients,
+            weights,
+        )
     }
 
     /// Withdraws accrued tokens from a split stream for a specific recipient.
@@ -1877,9 +1924,9 @@ impl Contract {
     /// The `amount` must not exceed the recipient's currently withdrawable
     /// balance.
     ///
-    /// @param `stream_id` — Numeric ID of the split stream. 
-    /// @param `recipient` — The recipient withdrawing (must match an allocation). 
-    /// @param `amount`    — Token amount (base units) to withdraw. Must be > 0. 
+    /// @param `stream_id` — Numeric ID of the split stream.
+    /// @param `recipient` — The recipient withdrawing (must match an allocation).
+    /// @param `amount`    — Token amount (base units) to withdraw. Must be > 0.
     ///
     /// @return The `amount` withdrawn on success.
     ///
@@ -1903,7 +1950,7 @@ impl Contract {
     /// Cancels a split stream, distributing vested-but-unreleased amounts to
     /// each recipient and returning unvested funds to the sender.
     ///
-    /// @param `stream_id` — Numeric ID of the split stream to cancel. 
+    /// @param `stream_id` — Numeric ID of the split stream to cancel.
     ///
     /// @return The final [`SplitStream`] record after cancellation.
     ///
@@ -1921,7 +1968,7 @@ impl Contract {
     /// This is a read-only view that never mutates state or requires auth.
     /// It is unaffected by the global pause flag.
     ///
-    /// @param `stream_id` — Numeric ID of the split stream to look up. 
+    /// @param `stream_id` — Numeric ID of the split stream to look up.
     ///
     /// @return The [`SplitStream`] record stored on-chain, containing all recipients,
     /// @return their weights, and cumulative release amounts.
@@ -1937,8 +1984,8 @@ impl Contract {
     /// This is a read-only view that never mutates state or requires auth.
     /// It is unaffected by the global pause flag.
     ///
-    /// @param `stream_id` — Numeric ID of the split stream. 
-    /// @param `recipient` — The recipient address to query. 
+    /// @param `stream_id` — Numeric ID of the split stream.
+    /// @param `recipient` — The recipient address to query.
     ///
     /// @return The withdrawable token amount (base units) for `recipient`. Always
     /// @return non-negative.
@@ -1955,7 +2002,7 @@ impl Contract {
     /// This is a read-only view that never mutates state or requires auth.
     /// It is unaffected by the global pause flag.
     ///
-    /// @param `stream_id` — Numeric ID of the split stream. 
+    /// @param `stream_id` — Numeric ID of the split stream.
     ///
     /// @return The total vested token amount (base units) across all recipients.
     ///
@@ -1970,10 +2017,10 @@ impl Contract {
     /// This is a read-only view that never mutates state or requires auth.
     ///
     ///
-    /// @param `sender` — Filter: only return streams where `stream.sender == sender`. 
-    /// @param `status` — Filter: only return streams where `stream.status == status`. 
-    /// @param `start_after` — Exclusive cursor: return streams with `id > start_after`. 
-    /// @param `limit` — Maximum number of streams to return. Capped at [`MAX_PAGE_SIZE`]. 
+    /// @param `sender` — Filter: only return streams where `stream.sender == sender`.
+    /// @param `status` — Filter: only return streams where `stream.status == status`.
+    /// @param `start_after` — Exclusive cursor: return streams with `id > start_after`.
+    /// @param `limit` — Maximum number of streams to return. Capped at [`MAX_PAGE_SIZE`].
     ///
     ///
     /// @return A [`StreamPage`] with up to `limit` streams matching both filters.
@@ -2057,10 +2104,7 @@ impl Contract {
     /// @custom:error [`Error::InvalidState`] if the stream is not `Active`.
     ///
     /// @custom:auth No authorisation required (permissionless).
-    pub fn process_recurring_stream(
-        env: Env,
-        recurring_id: u64,
-    ) -> Result<RecurringStream, Error> {
+    pub fn process_recurring_stream(env: Env, recurring_id: u64) -> Result<RecurringStream, Error> {
         recurring::process(env, recurring_id)
     }
 
@@ -2115,10 +2159,7 @@ impl Contract {
     /// @custom:error [`Error::Overflow`] if any arithmetic step overflows.
     ///
     /// @custom:auth Requires authorisation from the stream `sender`.
-    pub fn cancel_recurring_stream(
-        env: Env,
-        recurring_id: u64,
-    ) -> Result<RecurringStream, Error> {
+    pub fn cancel_recurring_stream(env: Env, recurring_id: u64) -> Result<RecurringStream, Error> {
         recurring::cancel(env, recurring_id)
     }
 

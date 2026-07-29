@@ -28,11 +28,11 @@ fn create_default(env: &Env, sender: &Address, recipient: &Address, token: &Addr
         sender.clone(),
         recipient.clone(),
         token.clone(),
-        100,      // amount_per_cycle
-        1000,     // cycle_duration
-        10,       // total_cycles
+        100,       // amount_per_cycle
+        1000,      // cycle_duration
+        10,        // total_cycles
         now + 100, // start_time
-        0,        // fee_bps
+        0,         // fee_bps
     )
     .unwrap()
 }
@@ -81,7 +81,17 @@ fn test_create_recurring_stream_zero_amount_fails() {
     env.ledger().set_timestamp(1_000);
     let (sender, recipient, token_id) = init_and_settle_contract(&env);
 
-    let result = create(env.clone(), sender, recipient, token_id, 0, 1000, 10, 1_100, 0);
+    let result = create(
+        env.clone(),
+        sender,
+        recipient,
+        token_id,
+        0,
+        1000,
+        10,
+        1_100,
+        0,
+    );
     assert_eq!(result, Err(Error::InvalidAmount));
 }
 
@@ -92,7 +102,17 @@ fn test_create_recurring_stream_zero_cycles_fails() {
     env.ledger().set_timestamp(1_000);
     let (sender, recipient, token_id) = init_and_settle_contract(&env);
 
-    let result = create(env.clone(), sender, recipient, token_id, 100, 1000, 0, 1_100, 0);
+    let result = create(
+        env.clone(),
+        sender,
+        recipient,
+        token_id,
+        100,
+        1000,
+        0,
+        1_100,
+        0,
+    );
     assert_eq!(result, Err(Error::InvalidAmount));
 }
 
@@ -103,7 +123,17 @@ fn test_create_recurring_stream_zero_duration_fails() {
     env.ledger().set_timestamp(1_000);
     let (sender, recipient, token_id) = init_and_settle_contract(&env);
 
-    let result = create(env.clone(), sender, recipient, token_id, 100, 0, 10, 1_100, 0);
+    let result = create(
+        env.clone(),
+        sender,
+        recipient,
+        token_id,
+        100,
+        0,
+        10,
+        1_100,
+        0,
+    );
     assert_eq!(result, Err(Error::InvalidTimeRange));
 }
 
@@ -115,7 +145,17 @@ fn test_create_recurring_stream_self_stream_fails() {
     let (sender, _, _) = init_and_settle_contract(&env);
     let token_id = Address::generate(&env);
 
-    let result = create(env.clone(), sender.clone(), sender, token_id, 100, 1000, 10, 1_100, 0);
+    let result = create(
+        env.clone(),
+        sender.clone(),
+        sender,
+        token_id,
+        100,
+        1000,
+        10,
+        1_100,
+        0,
+    );
     assert_eq!(result, Err(Error::SelfStream));
 }
 
@@ -126,7 +166,17 @@ fn test_create_recurring_stream_past_start_fails() {
     env.ledger().set_timestamp(1_000);
     let (sender, recipient, token_id) = init_and_settle_contract(&env);
 
-    let result = create(env.clone(), sender, recipient, token_id, 100, 1000, 10, 500, 0);
+    let result = create(
+        env.clone(),
+        sender,
+        recipient,
+        token_id,
+        100,
+        1000,
+        10,
+        500,
+        0,
+    );
     assert_eq!(result, Err(Error::InvalidTimeRange));
 }
 
@@ -137,7 +187,17 @@ fn test_create_recurring_stream_invalid_fee_bps_fails() {
     env.ledger().set_timestamp(1_000);
     let (sender, recipient, token_id) = init_and_settle_contract(&env);
 
-    let result = create(env.clone(), sender, recipient, token_id, 100, 1000, 10, 1_100, 10_001);
+    let result = create(
+        env.clone(),
+        sender,
+        recipient,
+        token_id,
+        100,
+        1000,
+        10,
+        1_100,
+        10_001,
+    );
     assert_eq!(result, Err(Error::InvalidFeeBps));
 }
 
@@ -190,10 +250,8 @@ fn test_create_emits_event() {
         .iter()
         .filter(|e| {
             let topics = e.0.clone();
-            topics.get(0)
-                == Some(Symbol::new(&env, "recurring").into_val(&env))
-                && topics.get(1)
-                    == Some(Symbol::new(&env, "created").into_val(&env))
+            topics.get(0) == Some(Symbol::new(&env, "recurring").into_val(&env))
+                && topics.get(1) == Some(Symbol::new(&env, "created").into_val(&env))
         })
         .collect();
     assert_eq!(created_events.len(), 1);
@@ -295,10 +353,8 @@ fn test_process_emits_event() {
         .iter()
         .filter(|e| {
             let topics = e.0.clone();
-            topics.get(0)
-                == Some(Symbol::new(&env, "recurring").into_val(&env))
-                && topics.get(1)
-                    == Some(Symbol::new(&env, "processed").into_val(&env))
+            topics.get(0) == Some(Symbol::new(&env, "recurring").into_val(&env))
+                && topics.get(1) == Some(Symbol::new(&env, "processed").into_val(&env))
         })
         .collect();
     assert_eq!(processed_events.len(), 1);
@@ -437,10 +493,8 @@ fn test_withdraw_emits_event() {
         .iter()
         .filter(|e| {
             let topics = e.0.clone();
-            topics.get(0)
-                == Some(Symbol::new(&env, "recurring").into_val(&env))
-                && topics.get(1)
-                    == Some(Symbol::new(&env, "withdrawn").into_val(&env))
+            topics.get(0) == Some(Symbol::new(&env, "recurring").into_val(&env))
+                && topics.get(1) == Some(Symbol::new(&env, "withdrawn").into_val(&env))
         })
         .collect();
     assert_eq!(withdrawn_events.len(), 1);
@@ -514,10 +568,8 @@ fn test_cancel_emits_event() {
         .iter()
         .filter(|e| {
             let topics = e.0.clone();
-            topics.get(0)
-                == Some(Symbol::new(&env, "recurring").into_val(&env))
-                && topics.get(1)
-                    == Some(Symbol::new(&env, "cancelled").into_val(&env))
+            topics.get(0) == Some(Symbol::new(&env, "recurring").into_val(&env))
+                && topics.get(1) == Some(Symbol::new(&env, "cancelled").into_val(&env))
         })
         .collect();
     assert_eq!(cancelled_events.len(), 1);
@@ -765,14 +817,7 @@ fn test_create_requires_auth() {
 
     env.mock_auths(&[]);
     client.create_recurring_stream(
-        &sender,
-        &recipient,
-        &token_id,
-        &100i128,
-        &1_000u64,
-        &10u64,
-        &1_100u64,
-        &0u32,
+        &sender, &recipient, &token_id, &100i128, &1_000u64, &10u64, &1_100u64, &0u32,
     );
 }
 
@@ -795,14 +840,7 @@ fn test_withdraw_requires_auth() {
     client.initialize(&admin);
 
     let id = client.create_recurring_stream(
-        &sender,
-        &recipient,
-        &token_id,
-        &100i128,
-        &1_000u64,
-        &10u64,
-        &1_100u64,
-        &0u32,
+        &sender, &recipient, &token_id, &100i128, &1_000u64, &10u64, &1_100u64, &0u32,
     );
 
     env.ledger().set_timestamp(1_100 + 3 * 1_000);
@@ -830,14 +868,7 @@ fn test_cancel_requires_auth() {
     let client = crate::ContractClient::new(&env, &contract_id);
     client.initialize(&admin);
     let id = client.create_recurring_stream(
-        &sender,
-        &recipient,
-        &token_id,
-        &100i128,
-        &1_000u64,
-        &10u64,
-        &1_100u64,
-        &0u32,
+        &sender, &recipient, &token_id, &100i128, &1_000u64, &10u64, &1_100u64, &0u32,
     );
 
     env.mock_auths(&[]);

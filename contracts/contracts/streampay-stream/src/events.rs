@@ -198,7 +198,7 @@ pub fn paused(env: &Env, stream_id: u64, sender: &Address, pause_time: u64, time
     StreamPaused {
         stream_id,
         sender: sender.clone(),
-        paused_at,
+        paused_at: pause_time,
         timestamp,
     }
     .publish(env);
@@ -343,6 +343,18 @@ pub fn fee_charged(
     env.events().publish(
         (symbol_short!("stream"), symbol_short!("fee")),
         (stream_id, fee_amount, fee_bps, collector.clone(), timestamp),
+    );
+}
+
+/// Emitted when the admin updates the per-user cooloff duration via
+/// [`Contract::set_cooloff_duration`].
+///
+/// Topics: `("stream", "cooloff_set")`.
+/// Data: `(admin, duration, timestamp)`.
+pub fn cooloff_duration_set(env: &Env, admin: &Address, duration: u64, timestamp: u64) {
+    env.events().publish(
+        (symbol_short!("stream"), symbol_short!("cooloff")),
+        (admin.clone(), duration, timestamp),
     );
 }
 
