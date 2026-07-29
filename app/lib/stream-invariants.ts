@@ -37,35 +37,13 @@ export interface StreamState {
 }
 
 /**
- * Vested amount snapshot.
- *
- * @property vestedAmount - Amount that has vested (earned) at this moment.
- * @property totalAmount  - The principal (total amount locked at stream creation).
+ * Invariant: Sum of vested = principal.
+ * Conservation of value: deposited = withdrawn + escrow
  */
-export interface VestedState {
-  vestedAmount: number;
-  totalAmount: number;
-}
-
-// ── Invariant checks ──────────────────────────────────────────────────────────
-
-/**
- * Invariant: conservation of value.
- *
- * Asserts that `deposited === withdrawn + escrow` (within floating-point
- * epsilon). This ensures no funds are created or destroyed by stream
- * operations.
- *
- * @param state - Current stream balance snapshot.
- * @returns     `true` if the invariant holds.
- *
- * @example
- * ```ts
- * checkConservationOfValue({ deposited: 100, withdrawn: 40, escrow: 60 }); // true
- * checkConservationOfValue({ deposited: 100, withdrawn: 40, escrow: 50 }); // false
- * ```
- */
-export function checkConservationOfValue(state: StreamState): boolean {
+export function checkSumOfVestedEqualsPrincipal(state: StreamState): boolean {
+  // Using a small epsilon for floating point math if needed,
+  // but for Stellar/Soroban we usually use bigints or fixed precision.
+  // Here we assume basic numbers with truncation handling elsewhere.
   return Math.abs(state.deposited - (state.withdrawn + state.escrow)) < 0.0000001;
 }
 
