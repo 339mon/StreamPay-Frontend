@@ -59,7 +59,7 @@ fn to_weights(env: &Env, weights: &[u64; 3]) -> Vec<u64> {
     v
 }
 
-fn client(env: &Env, admin: &Address) -> crate::ContractClient<'_> {
+fn client<'a>(env: &'a Env, admin: &'a Address) -> crate::ContractClient<'a> {
     let contract_id = env.register(Contract, ());
     let client = crate::ContractClient::new(env, &contract_id);
     client.initialize(admin);

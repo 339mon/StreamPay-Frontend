@@ -1475,6 +1475,11 @@ fn set_token_allowed_wrong_admin_returns_unauthorized() {
     client.initialize(&data.admin);
 }
 
+    let result = client.try_set_token_allowed(&wrong, &data.tokens[0], &true);
+    let err = result.expect_err("wrong admin should fail");
+    assert_eq!(err, Ok(Error::Unauthorized));
+}
+
 // ── Authorization boundaries ────────────────────────────────────────────────
 
 #[test]
