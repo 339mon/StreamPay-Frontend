@@ -24,6 +24,7 @@ mod error;
 mod events;
 mod fee_sweep;
 mod fees;
+mod handshake;
 mod limits;
 mod migrate;
 mod multi;
@@ -39,6 +40,7 @@ mod withdrawer;
 // mod fee_sweep_test;
 
 pub use error::Error;
+pub use handshake::{HandshakeState, current_protocol_version, get_handshake, get_negotiated_version, is_handshake_complete, max_compatible_version, min_compatible_version, version_from_parts, version_to_parts};
 pub use multi::{RecipientAllocation, SplitStream};
 pub use recurring::RecurringStream;
 pub use snapshot_diff::{SnapshotDiff, StreamSnapshot};
