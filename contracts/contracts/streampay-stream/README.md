@@ -20,6 +20,7 @@ Linear payment streams on Stellar/Soroban.
 | `settle` | Yes | `stream.recipient` | Ends a stream and releases all remaining funds to recipient. |
 | `get_stream` | No | None | Returns the stream record. |
 | `withdrawable` | No | None | Returns the currently withdrawable amount. |
+| `claim_drip` | No | None | Returns the unsettled accrual (vested minus released) — a convenience alias for `withdrawable`. |
 | `stream_balance` | No | None | Returns the vested balance at the current time. |
 | `stream_snapshot` | No | None | Captures a `StreamSnapshot` (vested, released, locked, withdrawable, status) at a given ledger timestamp. |
 | `diff_snapshots` | No | None | Computes the field-by-field `SnapshotDiff` delta between two `StreamSnapshot` values from the same stream. |

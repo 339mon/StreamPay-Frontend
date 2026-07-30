@@ -2436,3 +2436,92 @@ mod cancel_stream_test {
         assert!(result.is_err());
     }
 }
+
+#[cfg(test)]
+mod claim_drip_test {
+    use super::*;
+    use soroban_sdk::testutils::{Address as _, Ledger as _};
+
+    fn setup() -> (Env, ContractClient<'static>) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(Contract, ());
+        let client = ContractClient::new(&env, &contract_id);
+        (env, client)
+    }
+
+    fn addresses(env: &Env) -> (Address, Address) {
+        let sender = Address::generate(env);
+        let recipient = Address::generate(env);
+        (sender, recipient)
+    }
+
+    fn token_and_client<'a>(env: &'a Env, admin: &'a Address) -> (Address, token::Client<'a>) {
+        let token_addr = env.register_stellar_asset_contract_v2(admin.clone()).address();
+        let tkn = token::Client::new(env, &token_addr);
+        (token_addr, tkn)
+    }
+
+    #[test]
+    fn claim_drip_returns_zero_before_start_time() {
+        let (env, client) = setup();
+        let (sender, recipient) = addresses(&env);
+        let (token, _) = token_and_client(&env, &sender);
+
+        client.initialize(&sender);
+        env.ledger().set_timestamp(1_000);
+        let id = client.create_stream(
+            &sender, &recipient, &token, &1000i128, &1_100u64, &2_000u64, &0u32,
+        );
+
+        // Before start_time (1 100) → nothing vested
+        assert_eq!(client.claim_drip(&id), 0);
+    }
+
+    #[test]
+    fn claim_drip_returns_half_at_midpoint() {
+        let (env, client) = setup();
+        let (sender, recipient) = addresses(&env);
+        let (token, _) = token_and_client(&env, &sender);
+
+        client.initialize(&sender);
+        env.ledger().set_timestamp(1_000);
+        let id = client.create_stream(
+            &sender, &recipient, &token, &1000i128, &1_000u64, &2_000u64, &0u32,
+        );
+
+        env.ledger().set_timestamp(1_500);
+        assert_eq!(client.claim_drip(&id), 500);
+    }
+
+    #[test]
+    fn claim_drip_decreases_after_withdrawal() {
+        let (env, client) = setup();
+        let (sender, recipient) = addresses(&env);
+        let (token, _) = token_and_client(&env, &sender);
+
+        client.initialize(&sender);
+        env.ledger().set_timestamp(1_000);
+        let id = client.create_stream(
+            &sender, &recipient, &token, &1000i128, &1_000u64, &2_000u64, &0u32,
+        );
+
+        env.ledger().set_timestamp(1_500);
+        assert_eq!(client.claim_drip(&id), 500);
+
+        client.withdraw(&recipient, &id, &200);
+        assert_eq!(client.claim_drip(&id), 300);
+    }
+
+    #[test]
+    fn claim_drip_nonexistent_stream_returns_not_found() {
+        let (env, client) = setup();
+        let (sender, _recipient) = addresses(&env);
+
+        client.initialize(&sender);
+
+        let result = client.try_claim_drip(&9999u64);
+        let err = result.expect_err("claim_drip on missing stream should fail");
+        assert_eq!(err, Ok(Error::NotFound));
+    }
+}
