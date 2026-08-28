@@ -9,6 +9,7 @@ import { PaymentTimeline } from "../../components/PaymentTimeline";
 import { ErrorToast } from "../../components/ErrorToast";
 import { ConfirmCancel } from "../../components/ConfirmCancel";
 import { CancelStreamModal } from "../../components/CancelStreamModal";
+import { SwitchNetwork } from "../../components/SwitchNetwork";
 import { Timestamp } from "../../components/Timestamp";
 import { CopyAddress } from "../../components/CopyAddress";
 import { fetchWithIdempotency } from "../../../lib/apiClient";
@@ -20,6 +21,8 @@ import type { CancelInput } from "../../lib/cancel-stream";
 type StreamDetailClientProps = {
   stream: Stream;
   network?: "testnet" | "mainnet";
+  walletNetwork?: "testnet" | "mainnet";
+  onSwitchNetwork?: (network: string) => Promise<void> | void;
 };
 
 const ACTION_MAP: Record<string, string> = {
@@ -58,6 +61,8 @@ const STREAM_ACTION_SUMMARY: Record<
 export function StreamDetailClient({
   stream,
   network = "testnet",
+  walletNetwork,
+  onSwitchNetwork,
 }: StreamDetailClientProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDestructiveOpen, setIsDestructiveOpen] = useState(false);
@@ -72,6 +77,9 @@ export function StreamDetailClient({
   const isIncidentMode =
     process.env.NEXT_PUBLIC_DISABLE_ONCHAIN_OPERATIONS === "true";
   const nextAction = ACTION_MAP[stream.status] || "Action";
+  const networkMismatch =
+    walletNetwork !== undefined && walletNetwork.toLowerCase() !== network.toLowerCase();
+  const mutationsDisabled = isIncidentMode || networkMismatch;
 
   const handleDismissError = () => {
     setError(null);
@@ -104,6 +112,11 @@ export function StreamDetailClient({
   const handleAction = async () => {
     if (isIncidentMode) {
       alert("On-chain operations are temporarily paused during incident mode.");
+      return;
+    }
+
+    if (networkMismatch) {
+      alert(`Switch wallet to ${network} before continuing.`);
       return;
     }
 
@@ -143,7 +156,7 @@ export function StreamDetailClient({
 
   const handleDestructiveAction = async () => {
     const actionRoute = actionSummary.destructiveAction;
-    if (!actionRoute || isIncidentMode) return;
+    if (!actionRoute || mutationsDisabled) return;
 
     setIsProcessing(true);
     setError(null);
@@ -368,6 +381,13 @@ export function StreamDetailClient({
               Execute lifecycle actions directly on the Stellar ledger, or
               export / save your certified payment stream receipt.
             </p>
+            {networkMismatch && walletNetwork && (
+              <SwitchNetwork
+                currentNetwork={walletNetwork}
+                requiredNetwork={network}
+                onSwitch={onSwitchNetwork ?? (() => undefined)}
+              />
+            )}
             <div className="detail-actions-row">
               <button
                 className="button button--primary detail-action-btn"
@@ -375,7 +395,7 @@ export function StreamDetailClient({
                 onClick={handleAction}
                 disabled={
                   isProcessing ||
-                  isIncidentMode ||
+                  mutationsDisabled ||
                   stream.status === "withdrawn"
                 }
               >
@@ -410,7 +430,7 @@ export function StreamDetailClient({
                   className="button button--danger detail-action-btn"
                   type="button"
                   onClick={() => setIsDestructiveOpen(true)}
-                  disabled={isProcessing || isIncidentMode}
+                  disabled={isProcessing || mutationsDisabled}
                 >
                   {actionSummary.destructiveAction === "cancel"
                     ? "Cancel Stream"
