@@ -59,6 +59,22 @@ describe("StreamPayClient", () => {
     expect(headers.get("x-request-id")).toBe("req-test");
   });
 
+  it("rejects malformed pagination cursors before making requests", async () => {
+    const fetchFn = jest.fn();
+    const client = new StreamPayClient({
+      baseUrl: "https://api.streampay.test",
+      fetchFn,
+    });
+
+    await expect(client.listActivity({ cursor: " bad cursor " })).rejects.toThrow(
+      "Pagination cursor must be a trimmed string",
+    );
+    await expect(client.listStreams({ cursor: "<script>" })).rejects.toThrow(
+      "Pagination cursor contains invalid characters",
+    );
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
   it("adds idempotency keys and JSON bodies for stream creation", async () => {
     const fetchFn = jest.fn().mockResolvedValue(
       jsonResponse({

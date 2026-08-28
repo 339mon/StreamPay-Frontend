@@ -105,6 +105,20 @@ describe("StreamDetailClient", () => {
     expect(screen.getByRole("button", { name: /cancel stream/i })).toBeInTheDocument();
   });
 
+  it("shows chain mismatch before enabling stream mutations", () => {
+    render(
+      React.createElement(StreamDetailClient, {
+        stream: activeStream,
+        network: "mainnet",
+        walletNetwork: "testnet",
+      }),
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("this app requires");
+    expect(screen.getByRole("button", { name: /^Pause$/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /cancel stream/i })).toBeDisabled();
+  });
+
   it("shows the destructive withdraw button for ended streams", () => {
     render(React.createElement(StreamDetailClient, { stream: endedStream }));
 

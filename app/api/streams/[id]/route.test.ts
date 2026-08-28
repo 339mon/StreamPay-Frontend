@@ -132,6 +132,21 @@ describe("Stream Details Route - GET /api/streams/:id and mutations", () => {
     expect(res.status).toBe(404);
   });
 
+  it("does not disclose deep-linked stream details to another tenant", async () => {
+    const req = new Request(`http://localhost/api/streams/${streamId}`, {
+      method: "GET",
+      headers: { "x-tenant-id": "org-attacker" },
+    });
+
+    const res = await GET(req, { params: Promise.resolve({ id: streamId }) });
+    const body = await res.json();
+
+    expect(res.status).toBe(404);
+    expect(body.error.message).toBe(`Stream '${streamId}' not found`);
+    expect(JSON.stringify(body)).not.toContain("Ada Creative Studio");
+    expect(JSON.stringify(body)).not.toContain("GAHJJJKMOKYE4RVP");
+  });
+
   it("invalidates cache on POST and DELETE mutations", async () => {
     process.env.STREAMPAY_CACHE_DISABLED = "false";
 

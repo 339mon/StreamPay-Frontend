@@ -3,7 +3,15 @@
  *
  * SSE endpoint that streams live indexer status updates.
  * Emits an "indexer_status" event every 5 seconds with ledger cursor,
- * ingestion lag, and queue depth.
+ * ingestion lag, queue depth, and — most importantly — a deterministic
+ * `status` value derived from the pure state machine in `lib/indexerStatus.ts`
+ * (loading / syncing / synced / stalled / stopped / error / retrying).
+ *
+ * The reported status is **deterministic**: it is a pure function of the real
+ * cursor state, the operator-controlled circuit breaker, and the current time.
+ * Staleness is the explicit `stale` flag so dashboards and operators can
+ * distinguish a healthy-but-catching-up indexer from one whose cursor has
+ * silently stopped advancing.
  *
  * Clients should use EventSource:
  *   const es = new EventSource('/api/indexer/status');
@@ -13,32 +21,8 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-import { isCircuitBreakerOpen } from "@/app/lib/admin-guard";
 import { applyRateLimit } from "@/src/middleware/rateLimit";
-
-interface IndexerStatus {
-  ledgerCursor: number;
-  lagMs: number;
-  queueDepth: number;
-  syncedAt: string;
-  /**
-   * True when an admin has tripped the indexer circuit breaker via
-   * POST /api/admin/circuit-breaker. Ingestion is halted; cursor and lag
-   * are frozen at their last values and will not advance until reset.
-   */
-  breakerOpen: boolean;
-}
-
-function getIndexerStatus(): IndexerStatus {
-  // In production this would read from the real indexer state store.
-  return {
-    ledgerCursor: 50_000_000 + Math.floor(Math.random() * 1000),
-    lagMs: Math.floor(Math.random() * 3000),
-    queueDepth: Math.floor(Math.random() * 50),
-    syncedAt: new Date().toISOString(),
-    breakerOpen: isCircuitBreakerOpen("indexer"),
-  };
-}
+import { getIndexerStatus } from "./status";
 
 export async function GET(request: Request) {
   const rateLimited = await applyRateLimit(request, "indexer/status", "GET");

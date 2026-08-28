@@ -46,6 +46,7 @@ export const ROUTE_LIMITS: Record<string, LimitType> = {
   "GET:/api/webhooks": "webhook",
   "POST:/api/webhooks": "webhook",
   "GET:/api/indexer/status": "read",
+  "GET:/api/indexer/sse": "read",
   "GET:/api/streams": "read",
   "GET:/api/streams/": "read",
   "GET:/api/activity": "read",

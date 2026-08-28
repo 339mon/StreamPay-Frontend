@@ -162,6 +162,7 @@ async function runNightlyReconciliation(
     finishedAt: new Date().toISOString(),
     sinceISO,
     dryRun: input.dryRun ?? false,
+    mode: (input.dryRun ?? false) ? "DRY_RUN" : "EXECUTE",
     summary,
     diff,
     nextCursor: null,
