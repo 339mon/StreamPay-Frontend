@@ -146,6 +146,16 @@ function buildUrl(baseUrl: string, path: string, query?: RequestOptions["query"]
   return url.toString();
 }
 
+function assertValidPaginationCursor(cursor: unknown): void {
+  if (cursor === undefined || cursor === null || cursor === "") return;
+  if (typeof cursor !== "string" || cursor.trim() !== cursor || cursor.length > 512) {
+    throw new Error("Pagination cursor must be a trimmed string of at most 512 characters");
+  }
+  if (!/^[A-Za-z0-9+/=._:-]+$/.test(cursor)) {
+    throw new Error("Pagination cursor contains invalid characters");
+  }
+}
+
 async function parseJson(response: Response): Promise<unknown> {
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) {
@@ -240,6 +250,8 @@ export class StreamPayClient {
     options: RequestOptions = {},
     body?: unknown,
   ): Promise<T> {
+    assertValidPaginationCursor(options.query?.cursor);
+
     const requestId = this.requestIdFactory();
     const headers = new Headers(options.headers);
     headers.set("accept", "application/json");
