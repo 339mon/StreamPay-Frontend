@@ -124,4 +124,32 @@ describe("IndexerStatus", () => {
     );
     expect(screen.getByText(/updated not-a-date/)).toBeInTheDocument();
   });
+
+  it("displays loading status label and info styling", () => {
+    render(<IndexerStatus data={{ ...baseData, status: "loading" }} />);
+    expect(screen.getByText("Loading")).toBeInTheDocument();
+    const section = screen.getByRole("region", { name: /indexer status/i });
+    expect(section.className).toContain("indexer-status--info");
+  });
+
+  it("displays retrying status label and warning styling", () => {
+    render(<IndexerStatus data={{ ...baseData, status: "retrying" }} />);
+    expect(screen.getByText("Retrying")).toBeInTheDocument();
+    const section = screen.getByRole("region", { name: /indexer status/i });
+    expect(section.className).toContain("indexer-status--warning");
+  });
+
+  it("renders the optional diagnostic message", () => {
+    render(
+      <IndexerStatus
+        data={{ ...baseData, status: "stalled", message: "cursor is stale" }}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("cursor is stale");
+  });
+
+  it("does not render a message node when message is absent", () => {
+    render(<IndexerStatus data={baseData} />);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
 });
