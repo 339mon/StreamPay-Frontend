@@ -27,7 +27,7 @@ import React, { useId } from "react";
  * consistent in both light and dark mode.
  */
 
-export type IndexerState = "synced" | "syncing" | "stalled" | "stopped" | "error";
+export type IndexerState = "loading" | "synced" | "syncing" | "stalled" | "stopped" | "error" | "retrying";
 
 export interface IndexerStatusData {
   /** Network label, e.g. "testnet" or "mainnet". */
@@ -38,9 +38,11 @@ export interface IndexerStatusData {
   latestLedger: number;
   /**
    * High‑level indexer health.
+   * - `loading`: the indexer has started but has not processed a ledger yet.
    * - `synced`: lag is within tolerance (≤ 2 ledgers).
    * - `syncing`: lag is noticeable but the indexer is running.
    * - `stalled`: cursor has not advanced within the stall threshold.
+   * - `retrying`: a transient error occurred and a backoff retry is pending.
    * - `stopped`: the indexer main loop is not running.
    * - `error`: a fatal error has been reported.
    */
@@ -49,6 +51,12 @@ export interface IndexerStatusData {
   lastUpdatedAt: string;
   /** Indexer lag: `latestLedger - lastProcessedLedger`. */
   lag: number;
+  /**
+   * Optional human-readable detail (e.g. "cursor is stale", "circuit breaker
+   * is open"). Rendered when supplied so failures are diagnosable without
+   * exposing raw sensitive state.
+   */
+  message?: string;
 }
 
 export interface IndexerStatusProps {
@@ -86,12 +94,16 @@ function formatLedger(n: number): string {
 
 function statusLabel(state: IndexerState): string {
   switch (state) {
+    case "loading":
+      return "Loading";
     case "synced":
       return "Synced";
     case "syncing":
       return "Syncing";
     case "stalled":
       return "Stalled";
+    case "retrying":
+      return "Retrying";
     case "stopped":
       return "Stopped";
     case "error":
@@ -105,14 +117,15 @@ function severity(
   lag: number,
 ): "success" | "warning" | "error" | "info" {
   if (state === "error" || state === "stalled") return "error";
-  if (state === "stopped") return "warning";
+  if (state === "retrying" || state === "stopped") return "warning";
+  if (state === "loading") return "info";
   if (state === "syncing" || lag > 5) return "warning";
   return "success";
 }
 
 export function IndexerStatus({ data, className = "" }: IndexerStatusProps) {
   const headingId = useId();
-  const { network, lastProcessedLedger, latestLedger, status, lastUpdatedAt, lag } = data;
+  const { network, lastProcessedLedger, latestLedger, status, lastUpdatedAt, lag, message } = data;
   const sev = severity(status, lag);
   const label = statusLabel(status);
 
@@ -171,6 +184,12 @@ export function IndexerStatus({ data, className = "" }: IndexerStatusProps) {
             updated {relativeTime(lastUpdatedAt)}
           </span>
         </div>
+
+        {message ? (
+          <p className="indexer-status__message" role="status">
+            {message}
+          </p>
+        ) : null}
       </div>
 
       <style jsx>{`
@@ -281,6 +300,14 @@ export function IndexerStatus({ data, className = "" }: IndexerStatusProps) {
 
         .indexer-status__timestamp {
           font-size: 0.75rem;
+          color: var(--muted);
+        }
+
+        .indexer-status__message {
+          margin: 0;
+          padding-top: 0.5rem;
+          border-top: 1px solid var(--card-border);
+          font-size: 0.8125rem;
           color: var(--muted);
         }
 
