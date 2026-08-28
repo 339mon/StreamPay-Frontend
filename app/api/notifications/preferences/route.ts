@@ -10,8 +10,13 @@ import { getCorrelationContext, logger } from "@/app/lib/logger";
 import { checkRateLimit, getClientIdentity, rateLimitResponse } from "@/app/lib/rate-limit";
 import { getLimitForRoute } from "@/app/lib/rate-limit-config";
 import { recordRequest, recordThrottle } from "@/app/lib/rate-limit-metrics";
+import {
+  QuietHoursConfig,
+  DEFAULT_QUIET_HOURS,
+  validatePartialQuietHours,
+} from "@/app/lib/quiet-hours";
 
-interface NotificationPreferences {
+export interface NotificationPreferences {
   userId: string;
   email: boolean;
   inApp: boolean;
@@ -23,6 +28,7 @@ interface NotificationPreferences {
     paymentFailed: boolean;
     lowBalance: boolean;
   };
+  quietHours: QuietHoursConfig;
   updatedAt: string;
 }
 
@@ -39,9 +45,12 @@ const DEFAULT_PREFS: Omit<NotificationPreferences, "userId" | "updatedAt"> = {
     streamCancelled: true,
     lowBalance: false,
   },
+  quietHours: {
+    ...DEFAULT_QUIET_HOURS,
+  },
 };
 
-const TOP_LEVEL_FIELDS = ["email", "inApp", "webhook", "events"] as const;
+const TOP_LEVEL_FIELDS = ["email", "inApp", "webhook", "events", "quietHours"] as const;
 const EVENT_FIELDS = [
   "streamCreated",
   "streamCompleted",
@@ -81,14 +90,30 @@ function createErrorResponse(request: Request, code: string, message: string, st
 }
 
 function getPreferences(userId: string): NotificationPreferences {
-  return prefsStore.get(userId) ?? {
+  const existing = prefsStore.get(userId);
+  if (existing) {
+    // Ensure quietHours is populated even if previously saved without it
+    return {
+      ...existing,
+      quietHours: existing.quietHours ?? { ...DEFAULT_QUIET_HOURS },
+    };
+  }
+  return {
     userId,
     ...DEFAULT_PREFS,
     updatedAt: new Date().toISOString(),
   };
 }
 
-function validatePreferencePayload(body: unknown): Partial<Omit<NotificationPreferences, "userId" | "updatedAt">> | null {
+interface PartialPreferencePayload {
+  email?: boolean;
+  inApp?: boolean;
+  webhook?: boolean;
+  events?: Partial<NotificationPreferences["events"]>;
+  quietHours?: Partial<QuietHoursConfig>;
+}
+
+function validatePreferencePayload(body: unknown): PartialPreferencePayload | null {
   if (!isRecord(body)) {
     return null;
   }
@@ -98,7 +123,7 @@ function validatePreferencePayload(body: unknown): Partial<Omit<NotificationPref
     return null;
   }
 
-  const normalized: Partial<Omit<NotificationPreferences, "userId" | "updatedAt">> = {};
+  const normalized: PartialPreferencePayload = {};
 
   if ("email" in body && !isBoolean(body.email)) return null;
   if ("inApp" in body && !isBoolean(body.inApp)) return null;
@@ -126,6 +151,15 @@ function validatePreferencePayload(body: unknown): Partial<Omit<NotificationPref
     }
 
     normalized.events = eventPayload;
+  }
+
+  if ("quietHours" in body) {
+    if (!isRecord(body.quietHours)) return null;
+    const quietResult = validatePartialQuietHours(body.quietHours);
+    if (!quietResult.valid) {
+      return null;
+    }
+    normalized.quietHours = quietResult.value;
   }
 
   return normalized;
@@ -194,7 +228,7 @@ export async function PUT(request: Request) {
     return createErrorResponse(
       request,
       "INVALID_BODY",
-      "Request body must be a JSON object with boolean values for email, inApp, webhook and optional events flags",
+      "Request body must be a JSON object with valid preference fields (email, inApp, webhook, events, quietHours)",
       400,
     );
   }
@@ -206,6 +240,10 @@ export async function PUT(request: Request) {
     events: {
       ...existing.events,
       ...(payload.events ?? {}),
+    },
+    quietHours: {
+      ...(existing.quietHours ?? DEFAULT_QUIET_HOURS),
+      ...(payload.quietHours ?? {}),
     },
     updatedAt: new Date().toISOString(),
   };

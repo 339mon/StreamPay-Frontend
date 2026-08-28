@@ -110,6 +110,14 @@ describe("GET /api/notifications/preferences", () => {
         paymentFailed: true,
         lowBalance: false,
       },
+      quietHours: {
+        enabled: false,
+        startTime: "22:00",
+        endTime: "08:00",
+        timezone: "UTC",
+        daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+        allowCriticalAlerts: true,
+      },
     });
   });
 
@@ -171,7 +179,53 @@ describe("PUT /api/notifications/preferences", () => {
     });
   });
 
-  it("merges partial updates into the existing preference set", async () => {
+  it("rejects invalid quiet hours payload (invalid timezone, malformed times)", async () => {
+    const token = signToken({ sub: WALLET_ADDRESS, actorId: "actor-invalid-qh" });
+
+    // Invalid timezone
+    const res1 = await PUT(
+      requestWithAuthorization({
+        method: "PUT",
+        authorization: `Bearer ${token}`,
+        body: JSON.stringify({
+          quietHours: {
+            timezone: "Mars/Olympus",
+          },
+        }),
+      }),
+    );
+    expect(res1.status).toBe(400);
+
+    // Invalid time
+    const res2 = await PUT(
+      requestWithAuthorization({
+        method: "PUT",
+        authorization: `Bearer ${token}`,
+        body: JSON.stringify({
+          quietHours: {
+            startTime: "25:00",
+          },
+        }),
+      }),
+    );
+    expect(res2.status).toBe(400);
+
+    // Invalid daysOfWeek
+    const res3 = await PUT(
+      requestWithAuthorization({
+        method: "PUT",
+        authorization: `Bearer ${token}`,
+        body: JSON.stringify({
+          quietHours: {
+            daysOfWeek: [8],
+          },
+        }),
+      }),
+    );
+    expect(res3.status).toBe(400);
+  });
+
+  it("merges partial updates into the existing preference set and quiet hours", async () => {
     const token = signToken({ sub: WALLET_ADDRESS, actorId: "actor-merge" });
     const response = await PUT(
       requestWithAuthorization({
@@ -183,6 +237,14 @@ describe("PUT /api/notifications/preferences", () => {
           events: {
             streamCreated: false,
             paymentFailed: false,
+          },
+          quietHours: {
+            enabled: true,
+            startTime: "23:00",
+            endTime: "07:00",
+            timezone: "America/New_York",
+            daysOfWeek: [1, 2, 3, 4, 5],
+            allowCriticalAlerts: false,
           },
         }),
       }),
@@ -202,6 +264,38 @@ describe("PUT /api/notifications/preferences", () => {
         paymentFailed: false,
         lowBalance: false,
       },
+      quietHours: {
+        enabled: true,
+        startTime: "23:00",
+        endTime: "07:00",
+        timezone: "America/New_York",
+        daysOfWeek: [1, 2, 3, 4, 5],
+        allowCriticalAlerts: false,
+      },
+    });
+
+    // Second partial update: only toggle allowCriticalAlerts
+    const secondRes = await PUT(
+      requestWithAuthorization({
+        method: "PUT",
+        authorization: `Bearer ${token}`,
+        body: JSON.stringify({
+          quietHours: {
+            allowCriticalAlerts: true,
+          },
+        }),
+      }),
+    );
+
+    const secondBody = await secondRes.json();
+    expect(secondRes.status).toBe(200);
+    expect(secondBody.preferences.quietHours).toMatchObject({
+      enabled: true,
+      startTime: "23:00",
+      endTime: "07:00",
+      timezone: "America/New_York",
+      daysOfWeek: [1, 2, 3, 4, 5],
+      allowCriticalAlerts: true,
     });
   });
 });
