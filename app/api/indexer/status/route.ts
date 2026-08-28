@@ -21,9 +21,13 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+import { applyRateLimit } from "@/src/middleware/rateLimit";
 import { getIndexerStatus } from "./status";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const rateLimited = await applyRateLimit(request, "indexer/status", "GET");
+  if (rateLimited) return rateLimited;
+
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
