@@ -199,6 +199,8 @@ export async function GET(
       data: {
         streamId,
         checkedAt: new Date().toISOString(),
+        dryRun: true,
+        mode: "DRY_RUN",
         inSync: diffs.length === 0,
         diffs,
         db: dbSnapshot,
